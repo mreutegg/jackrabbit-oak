@@ -1316,24 +1316,14 @@ public final class DocumentNodeStore
         if (node.hasNoChildren() && base.hasNoChildren()) {
             return true;
         }
-        boolean useReadRevision = true;
-        // first lookup with read revisions of nodes and without loader
-        String jsop = diffCache.getChanges(base.getRevision(), 
-                node.getRevision(), node.getPath(), null);
-        if (jsop == null) {
-            useReadRevision = false;
-            // fall back to last revisions with loader, this
-            // guarantees we get a diff
-            jsop = diffCache.getChanges(base.getLastRevision(),
-                    node.getLastRevision(), node.getPath(),
-                    new DiffCache.Loader() {
-                        @Override
-                        public String call() {
-                            return diffImpl(base, node);
-                        }
-                    });
-        }
-        return dispatch(jsop, node, base, diff, useReadRevision);
+        return dispatch(diffCache.getChanges(base.getRootRevision(),
+                node.getRootRevision(), node.getPath(),
+                new DiffCache.Loader() {
+                    @Override
+                    public String call() {
+                        return diffImpl(base, node);
+                    }
+                }), node, base, diff);
     }
 
     String diff(@Nonnull final String fromRevisionId,
@@ -1883,13 +1873,10 @@ public final class DocumentNodeStore
     private boolean dispatch(@Nonnull String jsonDiff,
                              @Nonnull DocumentNodeState node,
                              @Nonnull DocumentNodeState base,
-                             @Nonnull NodeStateDiff diff,
-                             boolean useReadRevision) {
+                             @Nonnull NodeStateDiff diff) {
         if (jsonDiff.trim().isEmpty()) {
             return true;
         }
-        Revision nodeRev = useReadRevision ? node.getRevision() : node.getLastRevision();
-        Revision baseRev = useReadRevision ? base.getRevision() : base.getLastRevision();
         JsopTokenizer t = new JsopTokenizer(jsonDiff);
         boolean continueComparison = true;
         while (continueComparison) {
@@ -1906,13 +1893,13 @@ public final class DocumentNodeStore
                         // skip properties
                     }
                     continueComparison = diff.childNodeAdded(name,
-                            node.getChildNode(name, nodeRev));
+                            node.getChildNode(name));
                     break;
                 }
                 case '-': {
                     String name = unshareString(t.readString());
                     continueComparison = diff.childNodeDeleted(name,
-                            base.getChildNode(name, baseRev));
+                            base.getChildNode(name));
                     break;
                 }
                 case '^': {
@@ -1921,8 +1908,8 @@ public final class DocumentNodeStore
                     if (t.matches('{')) {
                         t.read('}');
                         continueComparison = diff.childNodeChanged(name,
-                                base.getChildNode(name, baseRev),
-                                node.getChildNode(name, nodeRev));
+                                base.getChildNode(name),
+                                node.getChildNode(name));
                     } else if (t.matches('[')) {
                         // ignore multi valued property
                         while (t.read() != ']') {
@@ -2023,29 +2010,32 @@ public final class DocumentNodeStore
         final long getChildrenDoneIn = debug ? now() : 0;
 
         String diffAlgo;
+        Revision fromRev = from.getLastRevision();
+        Revision toRev = to.getLastRevision();
         if (!fromChildren.hasMore && !toChildren.hasMore) {
             diffAlgo = "diffFewChildren";
             diffFewChildren(w, from.getPath(), fromChildren,
-                    from.getLastRevision(), toChildren, to.getLastRevision());
+                    fromRev, toChildren, toRev);
         } else {
             if (FAST_DIFF) {
                 diffAlgo = "diffManyChildren";
-                diffManyChildren(w, from.getPath(),
-                        from.getLastRevision(), to.getLastRevision());
+                fromRev = from.getRootRevision();
+                toRev = to.getRootRevision();
+                diffManyChildren(w, from.getPath(), fromRev, toRev);
             } else {
                 diffAlgo = "diffAllChildren";
                 max = Integer.MAX_VALUE;
                 fromChildren = getChildren(from, null, max);
                 toChildren = getChildren(to, null, max);
                 diffFewChildren(w, from.getPath(), fromChildren,
-                        from.getLastRevision(), toChildren, to.getLastRevision());
+                        fromRev, toChildren, toRev);
             }
         }
 
         if (debug) {
             long end = now();
             LOG.debug("Diff performed via '{}' at [{}] between revisions [{}] => [{}] took {} ms ({} ms)",
-                    diffAlgo, from.getPath(), from.getLastRevision(), to.getLastRevision(),
+                    diffAlgo, from.getPath(), fromRev, toRev,
                     end - start, getChildrenDoneIn - start);
         }
         return w.toString();
