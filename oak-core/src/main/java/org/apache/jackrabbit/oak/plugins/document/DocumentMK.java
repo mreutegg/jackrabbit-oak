@@ -43,7 +43,6 @@ import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState.Children;
 import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.mongo.MongoBlobStore;
-import org.apache.jackrabbit.oak.plugins.document.mongo.MongoDiffCache;
 import org.apache.jackrabbit.oak.plugins.document.mongo.MongoDocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.mongo.MongoVersionGCSupport;
 import org.apache.jackrabbit.oak.plugins.document.persistentCache.CacheType;
@@ -51,6 +50,7 @@ import org.apache.jackrabbit.oak.plugins.document.persistentCache.PersistentCach
 import org.apache.jackrabbit.oak.plugins.document.rdb.RDBBlobStore;
 import org.apache.jackrabbit.oak.plugins.document.rdb.RDBDocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.rdb.RDBOptions;
+import org.apache.jackrabbit.oak.plugins.document.util.RevisionsKey;
 import org.apache.jackrabbit.oak.plugins.document.util.StringValue;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
@@ -545,10 +545,6 @@ public class DocumentMK implements MicroKernel {
                     }
                     this.blobStore = s;
                 }
-
-                if (this.diffCache == null) {
-                    this.diffCache = new MongoDiffCache(db, changesSizeMB, this);
-                }
             }
             return this;
         }
@@ -664,7 +660,7 @@ public class DocumentMK implements MicroKernel {
 
         public DiffCache getDiffCache() {
             if (diffCache == null) {
-                diffCache = new MemoryDiffCache(this);
+                diffCache = new TieredDiffCache(this);
             }
             return diffCache;
         }
@@ -776,6 +772,14 @@ public class DocumentMK implements MicroKernel {
             return memoryCacheSize * diffCachePercentage / 100;
         }
 
+        public long getMemoryDiffCacheSize() {
+            return getDiffCacheSize() / 2;
+        }
+
+        public long getLocalDiffCacheSize() {
+            return getDiffCacheSize() / 2;
+        }
+
         public Builder setUseSimpleRevision(boolean useSimpleRevision) {
             this.useSimpleRevision = useSimpleRevision;
             return this;
@@ -876,8 +880,12 @@ public class DocumentMK implements MicroKernel {
             return buildCache(CacheType.DOC_CHILDREN, getDocChildrenCacheSize(), null, null);
         }
         
-        public Cache<PathRev, StringValue> buildDiffCache() {
-            return buildCache(CacheType.DIFF, getDiffCacheSize(), null, null);
+        public Cache<PathRev, StringValue> buildMemoryDiffCache() {
+            return buildCache(CacheType.DIFF, getMemoryDiffCacheSize(), null, null);
+        }
+
+        public Cache<RevisionsKey, LocalDiffCache.Diff> buildLocalDiffCache() {
+            return buildCache(CacheType.LOCAL_DIFF, getLocalDiffCacheSize(), null, null);
         }
 
         public Cache<CacheValue, NodeDocument> buildDocumentCache(DocumentStore docStore) {

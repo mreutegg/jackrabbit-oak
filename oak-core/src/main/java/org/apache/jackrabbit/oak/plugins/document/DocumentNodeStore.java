@@ -669,6 +669,11 @@ public final class DocumentNodeStore
         return docChildrenCacheStats;
     }
 
+    @Nonnull
+    public Iterable<CacheStats> getDiffCacheStats() {
+        return diffCache.getStats();
+    }
+
     void invalidateDocChildrenCache() {
         docChildrenCache.invalidateAll();
     }

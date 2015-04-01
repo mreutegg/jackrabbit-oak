@@ -63,12 +63,16 @@ public class DocumentNodeStoreDiffTest extends AbstractMongoConnectionTest {
             merge(store, builder);
         }
 
-        CacheStats stats = ((MemoryDiffCache) store.getDiffCache()).getDiffCacheStats();
-        stats.resetStats();
+        Iterable<CacheStats> stats = store.getDiffCacheStats();
+        for (CacheStats cs : stats) {
+            cs.resetStats();
+        }
 
         // must not cause cache misses
         Diff.perform(before, after);
-        assertEquals(0, stats.getMissCount());
+        for (CacheStats cs : stats) {
+            assertEquals(0, cs.getMissCount());
+        }
     }
 
     @Override

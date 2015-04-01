@@ -49,6 +49,7 @@ public class PersistentCache {
     private boolean cacheNodes = true;
     private boolean cacheChildren = true;
     private boolean cacheDiff = true;
+    private boolean cacheLocalDiff = true;
     private boolean cacheDocs;
     private boolean cacheDocChildren;
     private boolean compactOnClose = true;
@@ -81,6 +82,8 @@ public class PersistentCache {
                 cacheChildren = false;
             } else if (p.equals("-diff")) {
                 cacheDiff = false;
+            } else if (p.equals("-localDiff")) {
+                cacheLocalDiff = false;
             } else if (p.equals("+all")) {
                 cacheDocs = true;
                 cacheDocChildren = true;
@@ -280,6 +283,9 @@ public class PersistentCache {
             break;
         case DIFF:
             wrap = cacheDiff;
+            break;
+        case LOCAL_DIFF:
+            wrap = cacheLocalDiff;
             break;
         case DOC_CHILDREN:
             wrap = cacheDocChildren;
