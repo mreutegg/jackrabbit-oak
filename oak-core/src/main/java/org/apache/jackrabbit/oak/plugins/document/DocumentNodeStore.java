@@ -134,6 +134,13 @@ public final class DocumentNodeStore
             Integer.getInteger("oak.documentMK.revisionAge", 60 * 1000);
 
     /**
+     * Feature flag to enable concurrent add/remove operations of hidden empty
+     * nodes. See OAK-2673.
+     */
+    private boolean enableConcurrentAddRemove =
+            Boolean.getBoolean("oak.enableConcurrentAddRemove");
+
+    /**
      * How long to remember the relative order of old revision of all cluster
      * nodes, in milliseconds. The default is one hour.
      */
@@ -576,10 +583,10 @@ public final class DocumentNodeStore
             base = headRevision;
         }
         backgroundOperationLock.readLock().lock();
-        checkOpen();
         boolean success = false;
         Commit c;
         try {
+            checkOpen();
             c = new Commit(this, commitQueue.createRevision(), base, branch);
             success = true;
         } finally {
@@ -606,10 +613,10 @@ public final class DocumentNodeStore
             base = headRevision;
         }
         backgroundOperationLock.readLock().lock();
-        checkOpen();
         boolean success = false;
         MergeCommit c;
         try {
+            checkOpen();
             c = new MergeCommit(this, base, commitQueue.createRevisions(numBranchCommits));
             success = true;
         } finally {
@@ -650,6 +657,14 @@ public final class DocumentNodeStore
 
     public int getMaxBackOffMillis() {
         return maxBackOffMillis;
+    }
+
+    void setEnableConcurrentAddRemove(boolean b) {
+        enableConcurrentAddRemove = b;
+    }
+
+    boolean getEnableConcurrentAddRemove() {
+        return enableConcurrentAddRemove;
     }
 
     @CheckForNull
