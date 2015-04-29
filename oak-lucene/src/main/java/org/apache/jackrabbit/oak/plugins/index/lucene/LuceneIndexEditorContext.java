@@ -36,6 +36,7 @@ import org.apache.jackrabbit.oak.plugins.index.IndexUpdateCallback;
 import org.apache.jackrabbit.oak.plugins.index.lucene.util.SuggestHelper;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.apache.jackrabbit.oak.util.PerfLogger;
 import org.apache.jackrabbit.util.ISO8601;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
@@ -55,7 +56,10 @@ public class LuceneIndexEditorContext {
     private static final Logger log = LoggerFactory
             .getLogger(LuceneIndexEditorContext.class);
 
-    private static IndexWriterConfig getIndexWriterConfig(IndexDefinition definition) {
+    private static final PerfLogger PERF_LOGGER =
+            new PerfLogger(LoggerFactory.getLogger(LuceneIndexEditorContext.class.getName() + ".perf"));
+
+    static IndexWriterConfig getIndexWriterConfig(IndexDefinition definition) {
         // FIXME: Hack needed to make Lucene work in an OSGi environment
         Thread thread = Thread.currentThread();
         ClassLoader loader = thread.getContextClassLoader();
@@ -72,7 +76,7 @@ public class LuceneIndexEditorContext {
         }
     }
 
-    private static Directory newIndexDirectory(IndexDefinition indexDefinition, NodeBuilder definition)
+    static Directory newIndexDirectory(IndexDefinition indexDefinition, NodeBuilder definition)
             throws IOException {
         String path = definition.getString(PERSISTENCE_PATH);
         if (path == null) {
@@ -139,7 +143,9 @@ public class LuceneIndexEditorContext {
 
     IndexWriter getWriter() throws IOException {
         if (writer == null) {
+            final long start = PERF_LOGGER.start();
             writer = new IndexWriter(newIndexDirectory(definition, definitionBuilder), config);
+            PERF_LOGGER.end(start, -1, "Created IndexWriter for directory {}", definition);
         }
         return writer;
     }
@@ -157,7 +163,7 @@ public class LuceneIndexEditorContext {
         }
 
         if (writer != null) {
-
+            final long start = PERF_LOGGER.start();
             updateSuggester();
 
             writer.close();
@@ -168,6 +174,7 @@ public class LuceneIndexEditorContext {
             NodeBuilder status = definitionBuilder.child(":status");
             status.setProperty("lastUpdated", ISO8601.format(Calendar.getInstance()), Type.DATE);
             status.setProperty("indexedNodes",indexedNodes);
+            PERF_LOGGER.end(start, -1, "Closed IndexWriter for directory {}", definition);
         }
     }
 
@@ -238,13 +245,19 @@ public class LuceneIndexEditorContext {
     }
 
     private static Parser initializeTikaParser(IndexDefinition definition) {
-        if (definition.hasCustomTikaConfig()){
-            InputStream is = definition.getTikaConfig();
-            try {
-                return new AutoDetectParser(getTikaConfig(is, definition));
-            } finally {
-                IOUtils.closeQuietly(is);
+        ClassLoader current = Thread.currentThread().getContextClassLoader();
+        try {
+            if (definition.hasCustomTikaConfig()) {
+                Thread.currentThread().setContextClassLoader(LuceneIndexEditorContext.class.getClassLoader());
+                InputStream is = definition.getTikaConfig();
+                try {
+                    return new AutoDetectParser(getTikaConfig(is, definition));
+                } finally {
+                    IOUtils.closeQuietly(is);
+                }
             }
+        }finally {
+            Thread.currentThread().setContextClassLoader(current);
         }
         return defaultParser;
     }

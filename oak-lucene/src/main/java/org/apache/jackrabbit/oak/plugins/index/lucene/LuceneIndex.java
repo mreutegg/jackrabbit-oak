@@ -286,6 +286,7 @@ public class LuceneIndex implements AdvanceFulltextQueryIndex {
             private ScoreDoc lastDoc;
             private int nextBatchSize = LUCENE_QUERY_BATCH_SIZE;
             private boolean noDocs = false;
+            private long lastSearchIndexerVersion;
 
             @Override
             protected LuceneResultRow computeNext() {
@@ -347,6 +348,7 @@ public class LuceneIndex implements AdvanceFulltextQueryIndex {
                         Query query = (Query) luceneRequestFacade.getLuceneRequest();
                         TopDocs docs;
                         long time = System.currentTimeMillis();
+                        checkForIndexVersionChange(searcher);
                         if (lastDoc != null) {
                             LOG.debug("loading the next {} entries for query {}", nextBatchSize, query);
                             docs = searcher.searchAfter(lastDoc, query, nextBatchSize);
@@ -423,6 +425,16 @@ public class LuceneIndex implements AdvanceFulltextQueryIndex {
                 }
 
                 return !queue.isEmpty();
+            }
+
+            private void checkForIndexVersionChange(IndexSearcher searcher) {
+                long currentVersion = LucenePropertyIndex.getVersion(searcher);
+                if (currentVersion != lastSearchIndexerVersion && lastDoc != null){
+                    lastDoc = null;
+                    LOG.debug("Change in index version detected {} => {}. Query would be performed without " +
+                            "offset", currentVersion, lastSearchIndexerVersion);
+                }
+                this.lastSearchIndexerVersion = currentVersion;
             }
         };
         return new LucenePathCursor(itr, settings);
@@ -896,6 +908,12 @@ public class LuceneIndex implements AdvanceFulltextQueryIndex {
             List<Term> terms = new ArrayList<Term>();
             Term onTerm = newFulltextTerm(token, fieldName);
             Terms t = MultiFields.getTerms(reader, onTerm.field());
+
+            //No existing field with given name indexed so no possible term values
+            if (t == null){
+                return new Term[0];
+            }
+
             Automaton a = WildcardQuery.toAutomaton(onTerm);
             CompiledAutomaton ca = new CompiledAutomaton(a);
             TermsEnum te = ca.getTermsEnum(t);

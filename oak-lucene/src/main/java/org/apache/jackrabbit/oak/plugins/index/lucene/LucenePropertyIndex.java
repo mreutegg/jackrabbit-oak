@@ -64,8 +64,10 @@ import org.apache.jackrabbit.oak.spi.query.PropertyValues;
 import org.apache.jackrabbit.oak.spi.query.QueryIndex;
 import org.apache.jackrabbit.oak.spi.query.QueryIndex.AdvanceFulltextQueryIndex;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.apache.jackrabbit.oak.util.PerfLogger;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.document.Document;
+import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.MultiFields;
@@ -161,6 +163,8 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
 
     private static final Logger LOG = LoggerFactory
             .getLogger(LucenePropertyIndex.class);
+    private static final PerfLogger PERF_LOGGER =
+            new PerfLogger(LoggerFactory.getLogger(LucenePropertyIndex.class.getName() + ".perf"));
 
     static final String ATTR_PLAN_RESULT = "oak.lucene.planResult";
 
@@ -265,6 +269,7 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
             private ScoreDoc lastDoc;
             private int nextBatchSize = LUCENE_QUERY_BATCH_SIZE;
             private boolean noDocs = false;
+            private long lastSearchIndexerVersion;
 
             @Override
             protected LuceneResultRow computeNext() {
@@ -325,25 +330,26 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
                             query = customScoreQuery;
                         }
 
+                        checkForIndexVersionChange(searcher);
+
                         TopDocs docs;
-                        long time = System.currentTimeMillis();
+                        long start = PERF_LOGGER.start();
                         if (lastDoc != null) {
                             LOG.debug("loading the next {} entries for query {}", nextBatchSize, query);
                             if (sort == null) {
                                 docs = searcher.searchAfter(lastDoc, query, nextBatchSize);
                             } else {
-                                docs = searcher.searchAfter(lastDoc, query, LUCENE_QUERY_BATCH_SIZE, sort);
+                                docs = searcher.searchAfter(lastDoc, query, nextBatchSize, sort);
                             }
                         } else {
                             LOG.debug("loading the first {} entries for query {}", nextBatchSize, query);
                             if (sort == null) {
                                 docs = searcher.search(query, nextBatchSize);
                             } else {
-                                docs = searcher.search(query, LUCENE_QUERY_BATCH_SIZE, sort);
+                                docs = searcher.search(query, nextBatchSize, sort);
                             }
                         }
-                        time = System.currentTimeMillis() - time;
-                        LOG.debug("... took {} ms", time);
+                        PERF_LOGGER.end(start, -1, "...");
                         nextBatchSize = (int) Math.min(nextBatchSize * 2L, 100000);
 
                         for (ScoreDoc doc : docs.scoreDocs) {
@@ -412,6 +418,16 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
                 }
 
                 return !queue.isEmpty();
+            }
+
+            private void checkForIndexVersionChange(IndexSearcher searcher) {
+                long currentVersion = getVersion(searcher);
+                if (currentVersion != lastSearchIndexerVersion && lastDoc != null){
+                    lastDoc = null;
+                    LOG.debug("Change in index version detected {} => {}. Query would be performed without " +
+                            "offset", currentVersion, lastSearchIndexerVersion);
+                }
+                this.lastSearchIndexerVersion = currentVersion;
             }
         };
         return new LucenePathCursor(itr, plan, settings);
@@ -882,6 +898,14 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
         throw new IllegalStateException("PropertyRestriction not handled " + pr + " for index " + defn );
     }
 
+    static long getVersion(IndexSearcher indexSearcher){
+        IndexReader reader = indexSearcher.getIndexReader();
+        if (reader instanceof DirectoryReader){
+            return ((DirectoryReader) reader).getVersion();
+        }
+        return -1;
+    }
+
     private static void addReferenceConstraint(String uuid, List<Query> qs,
             IndexReader reader) {
         if (reader == null) {
@@ -1148,6 +1172,7 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
                 }
 
             };
+            //TODO should not use distinct
             pathCursor = new PathCursor(pathIterator, true, settings);
         }
 

@@ -32,6 +32,7 @@ import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
 import org.apache.commons.io.FileUtils;
+import org.apache.jackrabbit.oak.ContinuousRevisionGCTest;
 import org.apache.jackrabbit.oak.benchmark.wikipedia.WikipediaImport;
 import org.apache.jackrabbit.oak.fixture.JackrabbitRepositoryFixture;
 import org.apache.jackrabbit.oak.fixture.OakRepositoryFixture;
@@ -210,6 +211,8 @@ public class BenchmarkRunner {
             new CreateNodesBenchmark(),
             new ManyNodes(),
             new ObservationTest(),
+            new RevisionGCTest(),
+            new ContinuousRevisionGCTest(),
             new XmlImportTest(),
             new FlatTreeWithAceForSamePrincipalTest(),
             new ReadDeepTreeTest(
@@ -276,6 +279,9 @@ public class BenchmarkRunner {
             new GetPrincipalTest(
                     numberOfUsers.value(options),
                     flatStructure.value(options)),
+            new GetGroupPrincipalsTest(
+                    numberOfGroups.value(options),
+                    nestedGroups.value(options)),
             new FullTextSearchTest(
                     wikipedia.value(options),
                     flatStructure.value(options),
@@ -284,7 +290,15 @@ public class BenchmarkRunner {
                     wikipedia.value(options),
                     flatStructure.value(options),
                     report.value(options), withStorage.value(options), withServer.value(options)),
-            new FindAuthorizableWithScopeTest(numberOfUsers.value(options), setScope.value(options))
+            new FindAuthorizableWithScopeTest(numberOfUsers.value(options), setScope.value(options)),
+            new LucenePropertyFullTextTest(
+                wikipedia.value(options),
+                flatStructure.value(options),
+                report.value(options), withStorage.value(options)),
+            new LucenePropertyFTSeparated(
+                wikipedia.value(options),
+                flatStructure.value(options),
+                report.value(options), withStorage.value(options))
         };
 
         Set<String> argset = Sets.newHashSet(nonOption.values(options));

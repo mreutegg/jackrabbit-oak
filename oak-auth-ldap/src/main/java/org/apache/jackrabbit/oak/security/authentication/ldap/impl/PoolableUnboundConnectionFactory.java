@@ -16,6 +16,8 @@
  */
 package org.apache.jackrabbit.oak.security.authentication.ldap.impl;
 
+import java.io.IOException;
+
 import org.apache.commons.pool.PoolableObjectFactory;
 import org.apache.directory.api.ldap.model.constants.SchemaConstants;
 import org.apache.directory.api.ldap.model.exception.LdapException;
@@ -43,6 +45,11 @@ public class PoolableUnboundConnectionFactory implements PoolableObjectFactory<L
     private LdapConnectionConfig config;
 
     /**
+     * flag controlling the validation behavior
+     */
+    private boolean lookupOnValidate;
+
+    /**
      * Creates a new instance of PoolableUnboundConnectionFactory
      *
      * @param config the configuration for creating LdapConnections
@@ -51,11 +58,25 @@ public class PoolableUnboundConnectionFactory implements PoolableObjectFactory<L
         this.config = config;
     }
 
+    /**
+     * Checks if a lookup is performed during {@link #validateObject(LdapConnection)}.
+     * @return {@code true} if a lookup is performed.
+     */
+    public boolean getLookupOnValidate() {
+        return lookupOnValidate;
+    }
+
+    /**
+     * @see #getLookupOnValidate()
+     */
+    public void setLookupOnValidate(boolean lookupOnValidate) {
+        this.lookupOnValidate = lookupOnValidate;
+    }
 
     /**
      * {@inheritDoc}
      */
-    public void activateObject(LdapConnection connection) throws Exception {
+    public void activateObject(LdapConnection connection) {
         log.debug("activate connection: {}", connection);
     }
 
@@ -63,7 +84,7 @@ public class PoolableUnboundConnectionFactory implements PoolableObjectFactory<L
     /**
      * {@inheritDoc}
      */
-    public void destroyObject(LdapConnection connection) throws Exception {
+    public void destroyObject(LdapConnection connection) throws IOException {
         log.debug("destroy connection: {}", connection);
         connection.close();
     }
@@ -72,7 +93,7 @@ public class PoolableUnboundConnectionFactory implements PoolableObjectFactory<L
     /**
      * {@inheritDoc}
      */
-    public LdapConnection makeObject() throws Exception {
+    public LdapConnection makeObject() throws LdapException {
         LdapNetworkConnection connection = config.isUseTls()
                 ? new TlsGuardingConnection(config)
                 : new LdapNetworkConnection(config);
@@ -85,7 +106,7 @@ public class PoolableUnboundConnectionFactory implements PoolableObjectFactory<L
     /**
      * {@inheritDoc}
      */
-    public void passivateObject(LdapConnection connection) throws Exception {
+    public void passivateObject(LdapConnection connection) {
         log.debug("passivate connection: {}", connection);
     }
 
@@ -96,10 +117,12 @@ public class PoolableUnboundConnectionFactory implements PoolableObjectFactory<L
     public boolean validateObject(LdapConnection connection) {
         boolean valid = false;
         if (connection.isConnected()) {
-            try {
-                valid = connection.lookup(Dn.ROOT_DSE, SchemaConstants.NO_ATTRIBUTE) != null;
-            } catch (LdapException le) {
-                log.debug("error during connection validation: {}", le.toString());
+            if (lookupOnValidate) {
+                try {
+                    valid = connection.lookup(Dn.ROOT_DSE, SchemaConstants.NO_ATTRIBUTE) != null;
+                } catch (LdapException le) {
+                    log.debug("error during connection validation: {}", le.toString());
+                }
             }
         }
         log.debug("validating connection {}: {}", connection, valid);
@@ -112,7 +135,7 @@ public class PoolableUnboundConnectionFactory implements PoolableObjectFactory<L
      *
      * @see org.apache.directory.ldap.client.api.LdapNetworkConnection#bindAsync(org.apache.directory.api.ldap.model.message.BindRequest)
      */
-    private static class TlsGuardingConnection extends LdapNetworkConnection {
+    private static final class TlsGuardingConnection extends LdapNetworkConnection {
 
         private boolean tlsStarted;
 

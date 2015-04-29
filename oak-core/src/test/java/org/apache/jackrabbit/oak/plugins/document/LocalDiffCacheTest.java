@@ -16,9 +16,9 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 package org.apache.jackrabbit.oak.plugins.document;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -45,7 +45,7 @@ import static org.junit.Assert.assertTrue;
 
 public class LocalDiffCacheTest {
 
-    private DocumentNodeStore store;
+    DocumentNodeStore store;
 
     @After
     public void dispose() {
@@ -99,6 +99,15 @@ public class LocalDiffCacheTest {
         assertEquals(changes, Diff.fromString(diff.asString()).getChanges());
     }
 
+    @Test
+    public void emptyDiff() throws Exception{
+        Map<String, String> changes = new HashMap<String, String>();
+        Diff diff = new Diff(changes, 100);
+        String asString = diff.asString();
+        Diff diff2 = Diff.fromString(asString);
+        assertEquals(diff, diff2);
+    }
+
     private static DocumentNodeState merge(NodeStore store, NodeBuilder builder)
             throws CommitFailedException {
         return (DocumentNodeState) store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
@@ -109,8 +118,12 @@ public class LocalDiffCacheTest {
     }
 
     private static DocumentMK create(DocumentStore ds, int clusterId){
-        return new DocumentMK.Builder().setAsyncDelay(0)
-                .setDocumentStore(ds).setClusterId(clusterId).open();
+        return new DocumentMK.Builder()
+                .setAsyncDelay(0)
+                .setDocumentStore(ds)
+                .setClusterId(clusterId)
+                .setPersistentCache("target/persistentCache,time")
+                .open();
     }
 
     private static long getHitCount(Iterable<CacheStats> stats) {

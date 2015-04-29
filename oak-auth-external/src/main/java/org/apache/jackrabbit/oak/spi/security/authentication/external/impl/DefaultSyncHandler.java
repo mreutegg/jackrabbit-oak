@@ -47,6 +47,7 @@ import org.apache.jackrabbit.api.security.user.Group;
 import org.apache.jackrabbit.api.security.user.User;
 import org.apache.jackrabbit.api.security.user.UserManager;
 import org.apache.jackrabbit.commons.iterator.AbstractLazyIterator;
+import org.apache.jackrabbit.oak.commons.DebugTimer;
 import org.apache.jackrabbit.oak.spi.security.ConfigurationParameters;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalGroup;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentity;
@@ -178,11 +179,11 @@ public class DefaultSyncHandler implements SyncHandler {
      * Creates a synced identity from the given authorizable.
      * @param auth the authorizable
      * @return the id
-     * @throws RepositoryException if an error occurrs
+     * @throws RepositoryException if an error occurs
      */
     @CheckForNull
     private static SyncedIdentityImpl createSyncedIdentity(@Nullable Authorizable auth) throws RepositoryException {
-        ExternalIdentityRef ref = auth == null ? null : getIdentityRef(auth);
+        ExternalIdentityRef ref = (auth == null) ? null : getIdentityRef(auth);
         if (ref == null) {
             return null;
         } else {
@@ -198,7 +199,7 @@ public class DefaultSyncHandler implements SyncHandler {
     /**
      * Internal implementation of the sync context
      */
-    private class ContextImpl implements SyncContext {
+    private final class ContextImpl implements SyncContext {
 
         private final ExternalIdentityProvider idp;
 
@@ -288,6 +289,7 @@ public class DefaultSyncHandler implements SyncHandler {
         /**
          * {@inheritDoc}
          */
+        @Nonnull
         @Override
         public SyncResult sync(@Nonnull ExternalIdentity identity) throws SyncException {
             try {
@@ -332,6 +334,7 @@ public class DefaultSyncHandler implements SyncHandler {
         /**
          * {@inheritDoc}
          */
+        @Nonnull
         @Override
         public SyncResult sync(@Nonnull String id) throws SyncException {
             try {
@@ -434,8 +437,8 @@ public class DefaultSyncHandler implements SyncHandler {
          * @return the repository user
          * @throws RepositoryException if an error occurs
          */
-        @CheckForNull
-        private User createUser(ExternalUser externalUser) throws RepositoryException {
+        @Nonnull
+        private User createUser(@Nonnull ExternalUser externalUser) throws RepositoryException {
             Principal principal = new PrincipalImpl(externalUser.getPrincipalName());
             User user = userManager.createUser(
                     externalUser.getId(),
@@ -455,8 +458,8 @@ public class DefaultSyncHandler implements SyncHandler {
          * @return the repository group
          * @throws RepositoryException if an error occurs
          */
-        @CheckForNull
-        private Group createGroup(ExternalGroup externalGroup) throws RepositoryException {
+        @Nonnull
+        private Group createGroup(@Nonnull ExternalGroup externalGroup) throws RepositoryException {
             Principal principal = new PrincipalImpl(externalGroup.getPrincipalName());
             Group group = userManager.createGroup(
                     externalGroup.getId(),
@@ -467,7 +470,7 @@ public class DefaultSyncHandler implements SyncHandler {
             return group;
         }
 
-
+        @Nonnull
         private SyncResultImpl syncUser(@Nonnull ExternalUser external, @Nonnull User user) throws RepositoryException {
             // first check if user is expired
             if (!forceUserSync && !isExpired(user, config.user().getExpirationTime(), "Properties")) {
@@ -492,7 +495,8 @@ public class DefaultSyncHandler implements SyncHandler {
             return new SyncResultImpl(syncId, SyncResult.Status.UPDATE);
         }
 
-        private SyncResultImpl syncGroup(ExternalGroup external, Group group) throws RepositoryException {
+        @Nonnull
+        private SyncResultImpl syncGroup(@Nonnull ExternalGroup external, @Nonnull Group group) throws RepositoryException {
             // first check if user is expired
             if (!forceGroupSync && !isExpired(group, config.group().getExpirationTime(), "Properties")) {
                 SyncedIdentityImpl syncId = createSyncedIdentity(group);
@@ -550,7 +554,7 @@ public class DefaultSyncHandler implements SyncHandler {
             }
             timer.mark("reading");
 
-            for (ExternalIdentityRef ref: externalGroups) {
+            for (ExternalIdentityRef ref : externalGroups) {
                 log.debug("- processing membership {}", ref.getId());
                 // get group
                 ExternalGroup extGroup;

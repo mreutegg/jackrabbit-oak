@@ -31,7 +31,6 @@ import com.google.common.collect.ImmutableMap;
 import org.apache.jackrabbit.api.JackrabbitSession;
 import org.apache.jackrabbit.api.security.authentication.token.TokenCredentials;
 import org.apache.jackrabbit.api.security.user.Authorizable;
-import org.apache.jackrabbit.api.security.user.User;
 import org.apache.jackrabbit.commons.jackrabbit.authorization.AccessControlUtils;
 import org.apache.jackrabbit.oak.Oak;
 import org.apache.jackrabbit.oak.fixture.JcrCreator;
@@ -78,7 +77,7 @@ abstract class AbstractLoginTest extends AbstractTest {
         try {
             AccessControlUtils.addAccessControlEntry(s, "/", EveryonePrincipal.getInstance(), new String[]{Privilege.JCR_READ}, true);
             if (USER.equals(runAsUser)) {
-                User user = ((JackrabbitSession) s).getUserManager().createUser(USER, USER);
+                ((JackrabbitSession) s).getUserManager().createUser(USER, USER);
             }
         } finally {
             s.save();
