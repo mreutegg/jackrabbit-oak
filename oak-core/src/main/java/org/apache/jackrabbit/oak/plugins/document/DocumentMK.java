@@ -867,10 +867,6 @@ public class DocumentMK {
             return buildCache(CacheType.LOCAL_DIFF, getLocalDiffCacheSize(), null, null);
         }
 
-        public Cache<StringValue, LocalDiffCache.ConsolidatedDiff> buildConsolidatedDiffCache() {
-            return buildCache(CacheType.CONSOLIDATED_DIFF, getDiffCacheSize(), null, null);
-        }
-
         public Cache<CacheValue, NodeDocument> buildDocumentCache(DocumentStore docStore) {
             return buildCache(CacheType.DOCUMENT, getDocumentCacheSize(), null, docStore);
         }

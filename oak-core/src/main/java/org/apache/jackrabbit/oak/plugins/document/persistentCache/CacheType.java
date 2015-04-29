@@ -121,13 +121,13 @@ public enum CacheType {
         }
         @Override
         public <V> String valueToString(V value) {
-            return ((LocalDiffCache.ConsolidatedDiff) value).asString();
+            return ((LocalDiffCache.Diff) value).asString();
         }
         @SuppressWarnings("unchecked")
         @Override
         public <V> V valueFromString(
                 DocumentNodeStore store, DocumentStore docStore, String value) {
-            return (V) LocalDiffCache.ConsolidatedDiff.fromString(value);
+            return (V) LocalDiffCache.Diff.fromString(value);
         }
     },
     
