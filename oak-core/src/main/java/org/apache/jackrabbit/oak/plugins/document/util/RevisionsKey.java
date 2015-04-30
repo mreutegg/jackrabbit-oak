@@ -55,6 +55,11 @@ public final class RevisionsKey implements CacheValue, Comparable<RevisionsKey> 
         return r1.hashCode() ^ r2.hashCode();
     }
 
+    @Override
+    public String toString() {
+        return asString();
+    }
+
     public String asString() {
         return r1 + "/" + r2;
     }

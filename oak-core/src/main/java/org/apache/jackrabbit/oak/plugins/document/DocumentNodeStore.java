@@ -319,8 +319,6 @@ public final class DocumentNodeStore
      */
     private final DiffCache diffCache;
 
-    private final LocalDiffCache localDiffCache;
-
     /**
      * The blob store.
      */
@@ -427,7 +425,6 @@ public final class DocumentNodeStore
                 builder.getWeigher(), builder.getDocChildrenCacheSize());
 
         diffCache = builder.getDiffCache();
-        localDiffCache = builder.getLocalDiffCache();
         checkpoints = new Checkpoints(this);
 
         // check if root node exists
@@ -2462,13 +2459,6 @@ public final class DocumentNodeStore
     }
 
     public DiffCache getDiffCache() {
-        return diffCache;
-    }
-
-    public DiffCache getLocalDiffCache(){
-        if (localDiffCache != null){
-            return localDiffCache;
-        }
         return diffCache;
     }
 

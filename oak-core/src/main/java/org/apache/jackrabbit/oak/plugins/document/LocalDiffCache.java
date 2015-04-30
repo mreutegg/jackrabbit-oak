@@ -31,6 +31,7 @@ import org.apache.jackrabbit.oak.commons.json.JsopBuilder;
 import org.apache.jackrabbit.oak.commons.json.JsopReader;
 import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
 import org.apache.jackrabbit.oak.plugins.document.util.RevisionsKey;
+import org.apache.jackrabbit.oak.plugins.document.util.StringValue;
 
 /**
  * A diff cache, which is pro-actively filled after a commit.
@@ -164,19 +165,29 @@ public class LocalDiffCache implements DiffCache {
             return memory;
         }
 
-        @Override
-        public String toString() {
-            return changes.toString();
-        }
-
         String get(String path) {
             return changes.get(path);
+        }
+
+        @Override
+        public String toString() {
+            return asString();
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == this) {
+                return true;
+            }
+            if (obj instanceof Diff) {
+                Diff other = (Diff) obj;
+                return changes.equals(other.changes);
+            }
+            return false;
         }
     }
 
     private static int size(String s){
-        //Taken from StringValue
-        return 16                           // shallow size
-                + 40 + s.length() * 2;
+        return StringValue.getMemory(s);
     }
 }

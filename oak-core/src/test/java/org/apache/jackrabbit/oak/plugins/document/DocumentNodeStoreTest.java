@@ -1709,7 +1709,7 @@ public class DocumentNodeStoreTest {
             }
         };
         DocumentNodeStore ns = new DocumentMK.Builder()
-                .setDocumentStore(store).getNodeStore();
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
 
         NodeBuilder builder = ns.getRoot().builder();
         builder.child("foo").child("child");

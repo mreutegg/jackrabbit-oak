@@ -77,12 +77,6 @@ public class DocumentNodeStoreDiffTest extends AbstractMongoConnectionTest {
     }
 
     @Override
-    protected DocumentMK.Builder prepare(DocumentMK.Builder builder, DB db) {
-        builder.setDisableLocalDiffCache(true);
-        return super.prepare(builder, db);
-    }
-
-    @Override
     protected Clock getTestClock() throws InterruptedException {
         return new Clock.Virtual();
     }
