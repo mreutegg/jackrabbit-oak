@@ -67,6 +67,8 @@ import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.INDEX_DEFIN
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.INDEX_DEFINITIONS_NODE_TYPE;
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.REINDEX_PROPERTY_NAME;
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.TYPE_PROPERTY_NAME;
+import static org.apache.jackrabbit.oak.plugins.index.PathFilter.PROP_EXCLUDED_PATHS;
+import static org.apache.jackrabbit.oak.plugins.index.PathFilter.PROP_INCLUDED_PATHS;
 import static org.apache.jackrabbit.oak.plugins.index.lucene.LuceneIndexConstants.INCLUDE_PROPERTY_NAMES;
 import static org.apache.jackrabbit.oak.plugins.index.lucene.LuceneIndexConstants.ORDERED_PROP_NAMES;
 import static org.apache.jackrabbit.oak.plugins.index.lucene.LuceneIndexConstants.PROP_NODE;
@@ -340,7 +342,7 @@ public class LucenePropertyIndexTest extends AbstractQueryTest {
         root.commit();
 
         Tree test = root.getTree("/").addChild("test");
-        test.addChild("a").setProperty("tags", of("a","b"), Type.STRINGS);
+        test.addChild("a").setProperty("tags", of("a", "b"), Type.STRINGS);
         test.addChild("b").setProperty("tags", of("a","c"), Type.STRINGS);
         root.commit();
 
@@ -364,8 +366,8 @@ public class LucenePropertyIndexTest extends AbstractQueryTest {
         String explain = explain(q);
         System.out.println(explain);
         String luceneQuery = explain.substring(0, explain.indexOf('\n'));
-        assertEquals("[nt:unstructured] as [content] /* lucene:test1(/oak:index/test1) " + 
-                "+(tags:Products:A tags:Products:A/B) " + 
+        assertEquals("[nt:unstructured] as [content] /* lucene:test1(/oak:index/test1) " +
+                "+(tags:Products:A tags:Products:A/B) " +
                 "+(tags:DocTypes:A tags:DocTypes:B tags:DocTypes:C tags:ProblemType:A)",
                 luceneQuery);
     }
@@ -377,7 +379,7 @@ public class LucenePropertyIndexTest extends AbstractQueryTest {
 
         Tree test = root.getTree("/").addChild("test");
         test.addChild("a").setProperty("tags", of("a","b"), Type.STRINGS);
-        test.addChild("b").setProperty("tags", of("a","c"), Type.STRINGS);
+        test.addChild("b").setProperty("tags", of("a", "c"), Type.STRINGS);
         root.commit();
 
         String q = "SELECT * FROM [nt:unstructured] as content WHERE ISDESCENDANTNODE('/content/dam/en/us')\n" +
@@ -493,6 +495,50 @@ public class LucenePropertyIndexTest extends AbstractQueryTest {
         assertQuery("select [jcr:path] from [nt:base] where [propa] > 10 and [propa] < 30", asList("/test/b"));
         assertQuery("select [jcr:path] from [nt:base] where [propa] in (10,20)", asList("/test/b", "/test/a"));
         assertQuery("select [jcr:path] from [nt:base] where propa is not null", asList("/test/a", "/test/b", "/test/c"));
+    }
+
+    @Test
+    public void pathInclude() throws Exception{
+        Tree idx = createIndex("test1", of("propa", "propb"));
+        idx.setProperty(createProperty(PROP_INCLUDED_PATHS, of("/test/a"), Type.STRINGS));
+        //Do not provide type information
+        root.commit();
+
+        Tree test = root.getTree("/").addChild("test");
+        test.addChild("a").setProperty("propa", 10);
+        test.addChild("a").addChild("b").setProperty("propa", 10);
+        test.addChild("c").setProperty("propa", 10);
+        root.commit();
+
+        assertThat(explain("select [jcr:path] from [nt:base] where [propa] = 10"), containsString("lucene:test1"));
+
+        assertQuery("select [jcr:path] from [nt:base] where [propa] = 10", asList("/test/a", "/test/a/b"));
+    }
+
+    @Test
+    public void pathExclude() throws Exception{
+        Tree idx = createIndex("test1", of("propa", "propb"));
+        idx.setProperty(createProperty(PROP_EXCLUDED_PATHS, of("/test/a"), Type.STRINGS));
+        //Do not provide type information
+        root.commit();
+
+        Tree test = root.getTree("/").addChild("test");
+        test.addChild("a").setProperty("propa", 10);
+        test.addChild("a").addChild("b").setProperty("propa", 10);
+        test.addChild("c").setProperty("propa", 10);
+        root.commit();
+
+        assertThat(explain("select [jcr:path] from [nt:base] where [propa] = 10"), containsString("lucene:test1"));
+
+        assertQuery("select [jcr:path] from [nt:base] where [propa] = 10", asList("/test/c"));
+
+        //Make some change and then check
+        test = root.getTree("/").getChild("test");
+        test.addChild("a").addChild("e").setProperty("propa", 10);
+        test.addChild("f").setProperty("propa", 10);
+        root.commit();
+
+        assertQuery("select [jcr:path] from [nt:base] where [propa] = 10", asList("/test/c", "/test/f"));
     }
 
     @Test
@@ -1287,6 +1333,7 @@ public class LucenePropertyIndexTest extends AbstractQueryTest {
         def.setProperty(REINDEX_PROPERTY_NAME, true);
         def.setProperty(LuceneIndexConstants.FULL_TEXT_ENABLED, false);
         def.setProperty(PropertyStates.createProperty(LuceneIndexConstants.INCLUDE_PROPERTY_NAMES, propNames, Type.STRINGS));
+        def.setProperty(LuceneIndexConstants.SAVE_DIR_LISTING, true);
         return index.getChild(INDEX_DEFINITIONS_NAME).getChild(name);
     }
 
