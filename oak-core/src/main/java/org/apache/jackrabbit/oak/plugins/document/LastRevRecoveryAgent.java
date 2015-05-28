@@ -22,6 +22,7 @@ package org.apache.jackrabbit.oak.plugins.document;
 import static com.google.common.collect.ImmutableList.of;
 import static com.google.common.collect.Iterables.filter;
 import static com.google.common.collect.Iterables.mergeSorted;
+import static org.apache.jackrabbit.oak.plugins.document.UnsavedModifications.Snapshot.IGNORE;
 
 import java.util.Iterator;
 import java.util.List;
@@ -200,7 +201,7 @@ public class LastRevRecoveryAgent {
             //UnsavedModifications is designed to be used in concurrent
             //access mode. For recovery case there is no concurrent access
             //involve so just pass a new lock instance
-            unsaved.persist(nodeStore, new ReentrantLock());
+            unsaved.persist(nodeStore, IGNORE, new ReentrantLock());
 
             log.info("Updated lastRev of [{}] documents while performing lastRev recovery for " +
                     "cluster node [{}]: {}", size, clusterId, updates);

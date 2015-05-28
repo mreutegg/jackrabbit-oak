@@ -29,8 +29,8 @@ import org.apache.jackrabbit.oak.cache.CacheStats;
  */
 class TieredDiffCache implements DiffCache {
 
-    private final LocalDiffCache localCache;
-    private final MemoryDiffCache memoryCache;
+    private final DiffCache localCache;
+    private final DiffCache memoryCache;
 
     TieredDiffCache(DocumentMK.Builder builder) {
         this.localCache = new LocalDiffCache(builder);
