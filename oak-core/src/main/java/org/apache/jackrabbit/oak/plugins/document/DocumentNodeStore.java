@@ -28,7 +28,7 @@ import static org.apache.jackrabbit.oak.plugins.document.Collection.JOURNAL;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.DocumentMK.FAST_DIFF;
 import static org.apache.jackrabbit.oak.plugins.document.DocumentMK.MANY_CHILDREN_THRESHOLD;
-import static org.apache.jackrabbit.oak.plugins.document.JournalEntry.getChanges;
+import static org.apache.jackrabbit.oak.plugins.document.JournalEntry.fillExternalChanges;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateOp.Key;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateOp.Operation;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getIdFromPath;
@@ -87,6 +87,7 @@ import org.apache.jackrabbit.oak.plugins.document.persistentCache.PersistentCach
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.commons.json.JsopStream;
 import org.apache.jackrabbit.oak.commons.json.JsopWriter;
+import org.apache.jackrabbit.oak.commons.sort.StringSort;
 import org.apache.jackrabbit.oak.api.Blob;
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.cache.CacheStats;
@@ -1756,7 +1757,8 @@ public final class DocumentNodeStore
         // then we saw this new revision (from another cluster node)
         Revision otherSeen = Revision.newRevision(0);
 
-        JournalEntry changesDoc = JOURNAL.newDocument(store);
+        StringSort externalSort = JournalEntry.newSorter();
+        
         Map<Revision, Revision> externalChanges = Maps.newHashMap();
         for (Map.Entry<Integer, Revision> e : lastRevMap.entrySet()) {
             int machineId = e.getKey();
@@ -1779,7 +1781,12 @@ public final class DocumentNodeStore
                 }
                 // collect external changes
                 if (last != null) {
-                    changesDoc.apply(getChanges(last, r, store));
+            	    // add changes for this particular clusterId to the externalSort
+            	    try {
+                        fillExternalChanges(externalSort, last, r, store);
+                    } catch (IOException e1) {
+                        LOG.error("backgroundRead: Exception while reading external changes from journal: "+e1, e1);
+                    }
                 }
             }
         }
@@ -1814,7 +1821,14 @@ public final class DocumentNodeStore
                 setHeadRevision(newRevision());
                 if (dispatchChange) {
                     time = clock.getTime();
-                    changesDoc.applyTo(diffCache, oldHead, headRevision);
+                    if (externalSort!=null) {
+                    	// then there were external changes - apply them to the diff cache
+                    	try {
+                            JournalEntry.applyTo(externalSort, diffCache, oldHead, headRevision);
+                        } catch (Exception e1) {
+                            LOG.error("backgroundRead: Exception while processing external changes from journal: "+e1, e1);
+                        }
+                    }
                     stats.populateDiffCache = clock.getTime() - time;
                     time = clock.getTime();
 
