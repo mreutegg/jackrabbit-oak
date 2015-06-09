@@ -19,7 +19,6 @@
 
 package org.apache.jackrabbit.oak.plugins.document;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -52,7 +51,13 @@ public class JournalGarbageCollector {
         this.ds = nodeStore.getDocumentStore();
     }
 
-    public void gc(long maxRevisionAge, TimeUnit unit) throws IOException {
+    /**
+     * Deletes entries in the journal that are older than the given maxRevisionAge.
+     * @param maxRevisionAge entries older than this age will be removed
+     * @param unit the timeunit for maxRevisionAge
+     * @return the number of entries that have been removed
+     */
+    public int gc(long maxRevisionAge, TimeUnit unit) {
         long maxRevisionAgeInMillis = unit.toMillis(maxRevisionAge);
         if (log.isDebugEnabled()) {
             log.debug("gc: Journal garbage collection starts with maxAge: {} min.", TimeUnit.MILLISECONDS.toMinutes(maxRevisionAgeInMillis));
@@ -125,6 +130,7 @@ public class JournalGarbageCollector {
         sw.stop();
         
         log.info("gc: Journal garbage collection took {}, deleted {} entries that were older than {} min.", sw, numDeleted, TimeUnit.MILLISECONDS.toMinutes(maxRevisionAgeInMillis));
+        return numDeleted;
     }
 
 	private List<String> asKeys(List<JournalEntry> deletionBatch) {

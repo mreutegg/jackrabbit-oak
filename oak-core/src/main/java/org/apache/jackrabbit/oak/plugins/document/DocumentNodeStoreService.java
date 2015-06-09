@@ -625,11 +625,7 @@ public class DocumentNodeStoreService {
 
             @Override
             public void run() {
-                try {
-                    nodeStore.getJournalGarbageCollector().gc(journalGCMaxAge, TimeUnit.MILLISECONDS);
-                } catch (IOException e) {
-                    log.error("run: could not successfully finish JournalGC, IOException thrown: "+e, e);
-                }
+                nodeStore.getJournalGarbageCollector().gc(journalGCMaxAge, TimeUnit.MILLISECONDS);
             }
 
         };
