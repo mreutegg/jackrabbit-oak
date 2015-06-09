@@ -60,12 +60,12 @@ import static org.apache.jackrabbit.oak.plugins.document.Collection.JOURNAL;
  *      Push changes to {@link MemoryDiffCache} instead of {@link LocalDiffCache}.
  *      See {@link TieredDiffCache#newEntry(Revision, Revision)}. Maybe a new
  *      method is needed for this purpose?
- * Done: manually tested, automated tests to be done however!
+ * Done (incl junit) 
  *      Create JournalEntry for external changes related to _lastRev recovery.
  *      See {@link LastRevRecoveryAgent#recover(Iterator, int, boolean)}.
- * Done: manually tested, automated tests to be done however!
+ * Done (incl junit)
  *      Cleanup old journal entries in the document store.
- * TODO:
+ * Done:
  *      integrate the JournalGarbageCollector similarly to the VersionGarbageCollector
  */
 public final class JournalEntry extends Document {
