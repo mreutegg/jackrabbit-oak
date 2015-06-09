@@ -18,13 +18,16 @@ package org.apache.jackrabbit.oak.plugins.document;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
@@ -317,11 +320,22 @@ public class JournalTest {
     /** Inspired by LastRevRecoveryTest.testRecover() - simplified and extended with journal related asserts **/
     @Test
     public void lastRevRecoveryJournalTest() throws Exception {
+        doLastRevRecoveryJournalTest(false);
+    }
+    
+    /** Inspired by LastRevRecoveryTest.testRecover() - simplified and extended with journal related asserts **/
+    @Test
+    public void lastRevRecoveryJournalTestWithConcurrency() throws Exception {
+        doLastRevRecoveryJournalTest(true);
+    }
+    
+    void doLastRevRecoveryJournalTest(boolean testConcurrency) throws Exception {
         DocumentMK mk1 = createMK(0 /*clusterId via clusterNodes collection*/, 0);
         DocumentNodeStore ds1 = mk1.getNodeStore();
+        int c1Id = ds1.getClusterId();
         DocumentMK mk2 = createMK(0 /*clusterId via clusterNodes collection*/, 0);
         DocumentNodeStore ds2 = mk2.getNodeStore();
-        int c2Id = ds2.getClusterId();
+        final int c2Id = ds2.getClusterId();
         
         // should have 1 each with just the root changed
         assertJournalEntries(ds1, "{}");
@@ -353,9 +367,9 @@ public class JournalTest {
         //Refresh DS1
         ds1.runBackgroundOperations();
 
-        NodeDocument z1 = getDocument(ds1, "/x/y/z");
+        final NodeDocument z1 = getDocument(ds1, "/x/y/z");
         NodeDocument y1 = getDocument(ds1, "/x/y");
-        NodeDocument x1 = getDocument(ds1, "/x");
+        final NodeDocument x1 = getDocument(ds1, "/x");
 
         Revision zlastRev2 = z1.getLastRev().get(c2Id);
         // /x/y/z is a new node and does not have a _lastRev
@@ -365,33 +379,72 @@ public class JournalTest {
         //lastRev should not be updated for C #2
         assertNull(y1.getLastRev().get(c2Id));
 
+        final LastRevRecoveryAgent recovery = new LastRevRecoveryAgent(ds1);
+
         // besides the former root change, now 1 also has 
         final String change1 = "{\"x\":{\"y\":{}}}";
         assertJournalEntries(ds1, "{}", change1);
         final String change2 = "{\"x\":{}}";
         assertJournalEntries(ds2, "{}", change2);
 
-        LastRevRecoveryAgent recovery = new LastRevRecoveryAgent(ds1);
 
-        //Do not pass y1 but still y1 should be updated
-        recovery.recover(Iterators.forArray(x1,z1), c2Id);
-
-        //Post recovery the lastRev should be updated for /x/y and /x
-        assertEquals(head2, getDocument(ds1, "/x/y").getLastRev().get(c2Id));
-        assertEquals(head2, getDocument(ds1, "/x").getLastRev().get(c2Id));
-        assertEquals(head2, getDocument(ds1, "/").getLastRev().get(c2Id));
-
-        // now 1 is unchanged, but 2 was recovered now, so has one more:
-        assertJournalEntries(ds1, "{}", change1); // unchanged
         String change2b = "{\"x\":{\"y\":{\"z\":{}}}}";
-        assertJournalEntries(ds2, "{}", change2, change2b);
+
+        if (!testConcurrency) {
+            //Do not pass y1 but still y1 should be updated
+            recovery.recover(Iterators.forArray(x1,z1), c2Id);
+    
+            //Post recovery the lastRev should be updated for /x/y and /x
+            assertEquals(head2, getDocument(ds1, "/x/y").getLastRev().get(c2Id));
+            assertEquals(head2, getDocument(ds1, "/x").getLastRev().get(c2Id));
+            assertEquals(head2, getDocument(ds1, "/").getLastRev().get(c2Id));
+    
+            // now 1 is unchanged, but 2 was recovered now, so has one more:
+            assertJournalEntries(ds1, "{}", change1); // unchanged
+            assertJournalEntries(ds2, "{}", change2, change2b);
+            
+            // just some no-ops:
+            recovery.recover(c2Id);
+            List<NodeDocument> emptyList = new LinkedList<NodeDocument>();
+            recovery.recover(emptyList.iterator(), c2Id);
+            assertJournalEntries(ds1, "{}", change1); // unchanged
+            assertJournalEntries(ds2, "{}", change2, change2b);
+
+        } else {
         
-        // just some no-ops:
-        recovery.recover(c2Id);
-        List<NodeDocument> emptyList = new LinkedList<NodeDocument>();
-        recovery.recover(emptyList.iterator(), c2Id);
-        assertJournalEntries(ds1, "{}", change1); // unchanged
-        assertJournalEntries(ds2, "{}", change2, change2b);
+            // do some concurrency testing as well to check if 
+            final int NUM_THREADS = 200;
+            final CountDownLatch ready = new CountDownLatch(NUM_THREADS);
+            final CountDownLatch start = new CountDownLatch(1);
+            final CountDownLatch end = new CountDownLatch(NUM_THREADS);
+            for(int i=0; i<NUM_THREADS; i++) {
+                final List<Throwable> throwables = new LinkedList<Throwable>();
+                Thread th = new Thread(new Runnable() {
+    
+                    @Override
+                    public void run() {
+                        try {
+                            ready.countDown();
+                            start.await();
+                            recovery.recover(Iterators.forArray(x1,z1), c2Id);
+                        } catch (Throwable e) {
+                            synchronized(throwables) {
+                                throwables.add(e);
+                            }
+                        } finally {
+                            end.countDown();
+                        }
+                    }
+                    
+                });
+                th.start();
+            }
+            ready.await(5, TimeUnit.SECONDS);
+            start.countDown();
+            assertTrue(end.await(20, TimeUnit.SECONDS));
+            assertJournalEntries(ds1, "{}", change1); // unchanged
+            assertJournalEntries(ds2, "{}", change2, change2b);
+        }
     }
 
     void assertJournalEntries(DocumentNodeStore ds, String... expectedChanges) {
