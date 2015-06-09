@@ -369,6 +369,8 @@ public final class DocumentNodeStore
 
     private final VersionGarbageCollector versionGarbageCollector;
 
+    private final JournalGarbageCollector journalGarbageCollector;
+    
     private final Executor executor;
 
     private final LastRevRecoveryAgent lastRevRecoveryAgent;
@@ -412,6 +414,7 @@ public final class DocumentNodeStore
         this.asyncDelay = builder.getAsyncDelay();
         this.versionGarbageCollector = new VersionGarbageCollector(
                 this, builder.createVersionGCSupport());
+        this.journalGarbageCollector = new JournalGarbageCollector(this);
         this.lastRevRecoveryAgent = new LastRevRecoveryAgent(this);
         this.disableBranches = builder.isDisableBranches();
         this.missing = new DocumentNodeState(this, "MISSING", new Revision(0, 0, 0)) {
@@ -2583,6 +2586,12 @@ public final class DocumentNodeStore
     public VersionGarbageCollector getVersionGarbageCollector() {
         return versionGarbageCollector;
     }
+
+    @Nonnull
+    public JournalGarbageCollector getJournalGarbageCollector() {
+        return journalGarbageCollector;
+    }
+    
     @Nonnull
     public LastRevRecoveryAgent getLastRevRecoveryAgent() {
         return lastRevRecoveryAgent;

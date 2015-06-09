@@ -54,7 +54,9 @@ public class JournalGarbageCollector {
 
     public void gc(long maxRevisionAge, TimeUnit unit) throws IOException {
         long maxRevisionAgeInMillis = unit.toMillis(maxRevisionAge);
-        log.info("gc: Journal garbage collection starts with maxAge: {} ms.", maxRevisionAgeInMillis);
+        if (log.isDebugEnabled()) {
+            log.debug("gc: Journal garbage collection starts with maxAge: {} min.", TimeUnit.MILLISECONDS.toMinutes(maxRevisionAgeInMillis));
+        }
         Stopwatch sw = Stopwatch.createStarted();
         
         // the journal has ids of the following format:
@@ -122,7 +124,7 @@ public class JournalGarbageCollector {
         
         sw.stop();
         
-        log.info("gc: Journal garbage collected in {}. Deleted {}.", sw, numDeleted);
+        log.info("gc: Journal garbage collection took {}, deleted {} entries that were older than {} min.", sw, numDeleted, TimeUnit.MILLISECONDS.toMinutes(maxRevisionAgeInMillis));
     }
 
 	private List<String> asKeys(List<JournalEntry> deletionBatch) {
