@@ -215,31 +215,35 @@ public class LastRevRecoveryAgent {
     		// as to whether the recovered lastRev has already been
     		// written to the journal.
             unsaved.persist(nodeStore, new UnsavedModifications.Snapshot() {
-				
-				@Override
-				public void acquiring() {
-					final String id = JournalEntry.asId(lastRootRev);
-					final JournalEntry existingEntry = docStore.find(Collection.JOURNAL, id);
-					if (existingEntry!=null) {
-						// then the journal entry was already written - as can happen if
-						// someone else (or the original instance itself) wrote the
-						// journal entry, then died.
-						// in this case, don't write it again.
-						// hence: nothing to be done here. return.
-						return;
-					}
-					
-					if (lastRootRev==null) {
-						// in this case there was no update done on the root
-						// so we do not have to update the journal as well
-						return;
-					}
-					
-					// otherwise store a new journal entry now
-					docStore.create(JOURNAL,
-	                        singletonList(changes.asUpdateOp(lastRootRev)));
-				}
-			}, new ReentrantLock());
+
+                @Override
+                public void acquiring() {
+                    if (lastRootRev == null) {
+                        // this should never happen - when unsaved has no changes
+                        // that is reflected in the 'map' to be empty - in that
+                        // case 'persist()' quits early and never calls
+                        // acquiring() here.
+                        //
+                        // but even if it would occur - if we have no lastRootRev
+                        // then we cannot and probably don't have to persist anything
+                        return;
+                    }
+
+                    final String id = JournalEntry.asId(lastRootRev); // lastRootRev never null at this point
+                    final JournalEntry existingEntry = docStore.find(Collection.JOURNAL, id);
+                    if (existingEntry != null) {
+                        // then the journal entry was already written - as can happen if
+                        // someone else (or the original instance itself) wrote the
+                        // journal entry, then died.
+                        // in this case, don't write it again.
+                        // hence: nothing to be done here. return.
+                        return;
+                    }
+
+                    // otherwise store a new journal entry now
+                    docStore.create(JOURNAL, singletonList(changes.asUpdateOp(lastRootRev)));
+                }
+            }, new ReentrantLock());
 
             log.info("Updated lastRev of [{}] documents while performing lastRev recovery for " +
                     "cluster node [{}]: {}", size, clusterId, updates);

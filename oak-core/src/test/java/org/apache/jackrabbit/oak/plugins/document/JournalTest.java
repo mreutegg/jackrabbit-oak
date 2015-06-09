@@ -385,6 +385,13 @@ public class JournalTest {
         assertJournalEntries(ds1, "{}", change1); // unchanged
         String change2b = "{\"x\":{\"y\":{\"z\":{}}}}";
         assertJournalEntries(ds2, "{}", change2, change2b);
+        
+        // just some no-ops:
+        recovery.recover(c2Id);
+        List<NodeDocument> emptyList = new LinkedList<NodeDocument>();
+        recovery.recover(emptyList.iterator(), c2Id);
+        assertJournalEntries(ds1, "{}", change1); // unchanged
+        assertJournalEntries(ds2, "{}", change2, change2b);
     }
 
     void assertJournalEntries(DocumentNodeStore ds, String... expectedChanges) {
