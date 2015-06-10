@@ -16,6 +16,9 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
+
+import java.io.IOException;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +36,8 @@ import org.apache.jackrabbit.oak.commons.json.JsopReader;
 import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
 import org.apache.jackrabbit.oak.commons.sort.StringSort;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
@@ -42,26 +47,30 @@ import static org.apache.jackrabbit.oak.plugins.document.Collection.JOURNAL;
 /**
  * Keeps track of changes performed between two consecutive background updates.
  *
- * TODO:
+ * Done:
  *      Query external changes in chunks.
  *      {@link #getChanges(Revision, Revision, DocumentStore)} current reads
  *      all JournalEntry documents in one go with a limit of Integer.MAX_VALUE.
- * TODO:
+ * Done:
  *      Use external sort when changes are applied to diffCache. See usage of
  *      {@link #applyTo(DiffCache, Revision, Revision)} in
  *      {@link DocumentNodeStore#backgroundRead(boolean)}.
  *      The utility {@link StringSort} can be used for this purpose.
- * TODO:
+ * Done:
  *      Push changes to {@link MemoryDiffCache} instead of {@link LocalDiffCache}.
  *      See {@link TieredDiffCache#newEntry(Revision, Revision)}. Maybe a new
  *      method is needed for this purpose?
- * TODO:
+ * Done (incl junit) 
  *      Create JournalEntry for external changes related to _lastRev recovery.
  *      See {@link LastRevRecoveryAgent#recover(Iterator, int, boolean)}.
- * TODO:
+ * Done (incl junit)
  *      Cleanup old journal entries in the document store.
+ * Done:
+ *      integrate the JournalGarbageCollector similarly to the VersionGarbageCollector
  */
 public final class JournalEntry extends Document {
+
+    private static final Logger LOG = LoggerFactory.getLogger(JournalEntry.class);
 
     /**
      * The revision format for external changes:
@@ -76,6 +85,10 @@ public final class JournalEntry extends Document {
 
     private static final String BRANCH_COMMITS = "_bc";
 
+    private static final int READ_CHUNK_SIZE = 1024;
+    
+    private static final int STRINGSORT_OVERFLOW_TO_DISK_THRESHOLD = 1024 * 1024; // switch to disk after 1MB
+    
     private final DocumentStore store;
 
     private volatile TreeNode changes = null;
@@ -83,31 +96,143 @@ public final class JournalEntry extends Document {
     JournalEntry(DocumentStore store) {
         this.store = store;
     }
+    
+    static StringSort newSorter() {
+        return new StringSort(STRINGSORT_OVERFLOW_TO_DISK_THRESHOLD, new Comparator<String>() {
+            @Override
+            public int compare(String arg0, String arg1) {
+                return arg0.compareTo(arg1);
+            }
+        });
+    }
+	
+    static void applyTo(@Nonnull StringSort externalSort,
+    				    @Nonnull DiffCache diffCache,
+    				    @Nonnull Revision from,
+    				    @Nonnull Revision to) throws IOException {
+        LOG.debug("applyTo: starting for {} to {}", from, to);
+		externalSort.sort();
+		// note that it is not deduplicated yet
+		LOG.debug("applyTo: sorting done.");
+		
+		final DiffCache.Entry entry = checkNotNull(diffCache).newEntry(from, to, false);
 
+		final Iterator<String> it = externalSort.getIds();
+		if (!it.hasNext()) {
+			// nothing at all? that's quite unusual..
+			
+			// we apply this diff as one '/' to the entry then
+		    entry.append("/", "");
+			entry.done();
+			return;
+		}
+		String previousPath = it.next();
+		TreeNode node = new TreeNode(null, "");
+		node = node.getOrCreatePath(previousPath); 
+		int totalCnt = 0;
+		int deDuplicatedCnt = 0;
+		while(it.hasNext()) {
+			totalCnt++;
+			final String currentPath = it.next();
+			if (previousPath.equals(currentPath)) {
+				// de-duplication
+				continue;
+			}
+			
+			// 'node' contains one hierarchy line, eg /a, /a/b, /a/b/c, /a/b/c/d
+			// including the children on each level.
+			// these children have not yet been appended to the diffCache entry
+			// and have to be added as soon as the 'currentPath' is not
+			// part of that hierarchy anymore and we 'move elsewhere'.
+			// eg if 'currentPath' is /a/b/e, then we must flush /a/b/c/d and /a/b/c
+			while(node!=null && !node.isParentOf(currentPath)) {
+				// add parent to the diff entry
+			    entry.append(node.getPath(), getChanges(node));
+				deDuplicatedCnt++;
+				node = node.parent;
+			}
+			
+			if (node==null) {
+			    // we should never go 'passed' the root, hence node should 
+			    // never be null - if it becomes null anyway, start with
+			    // a fresh root:
+			    node = new TreeNode(null, "");
+	            node = node.getOrCreatePath(currentPath);
+			} else {
+			    // this is the normal route: we add a direct or grand-child
+			    // node to the current node:
+			    node = node.getOrCreatePath(currentPath);
+			}
+			previousPath = currentPath;
+		}
+		
+		// once we're done we still have the last hierarchy line contained in 'node',
+		// eg /x, /x/y, /x/y/z
+		// and that one we must now append to the diffcache entry:
+		while(node!=null) {
+            entry.append(node.getPath(), getChanges(node));
+			deDuplicatedCnt++;
+			node = node.parent;
+		}
+		
+		// and finally: mark the diffcache entry as 'done':
+        entry.done();
+        LOG.debug("applyTo: done. totalCnt: {}, deDuplicatedCnt: {}", totalCnt, deDuplicatedCnt);
+    }
+    
     /**
-     * Gets a document with external changes within the given revision range.
-     * The two revisions must have the same clusterId.
+     * Reads all external changes between the two given revisions (with the same clusterId)
+     * from the journal and appends the paths therein to the provided sorter.
      *
+     * @param sorter the StringSort to which all externally changed paths between
+     * the provided revisions will be added
      * @param from the lower bound of the revision range (exclusive).
      * @param to the upper bound of the revision range (inclusive).
      * @param store the document store to query.
-     * @return a document with the external changes between {@code from} and
-     *          {@code to}.
+     * @throws IOException 
      */
-    static JournalEntry getChanges(@Nonnull Revision from,
-                                   @Nonnull Revision to,
-                                   @Nonnull DocumentStore store) {
+    static void fillExternalChanges(@Nonnull StringSort sorter,
+                                    @Nonnull Revision from,
+                                    @Nonnull Revision to,
+                                    @Nonnull DocumentStore store) throws IOException {
         checkArgument(checkNotNull(from).getClusterId() == checkNotNull(to).getClusterId());
-
+        
         // to is inclusive, but DocumentStore.query() toKey is exclusive
+        final String inclusiveToId = asId(to);
         to = new Revision(to.getTimestamp(), to.getCounter() + 1,
                 to.getClusterId(), to.isBranch());
 
-        JournalEntry doc = JOURNAL.newDocument(store);
-        for (JournalEntry d : store.query(JOURNAL, asId(from), asId(to), Integer.MAX_VALUE)) {
-            doc.apply(d);
+        // read in chunks to support very large sets of changes between subsequent background reads
+        // to do this, provide a (TODO eventually configurable) limit for the number of entries to be returned per query
+        // if the number of elements returned by the query is exactly the provided limit, then
+        // loop and do subsequent queries
+        final String toId = asId(to);
+        String fromId = asId(from);
+        while(true) {
+        	if (fromId.equals(inclusiveToId)) {
+        		// avoid query if from and to are off by just 1 counter (which we do due to exclusiveness of query borders)
+        		// as in this case the query will always be empty anyway - so avoid doing the query in the first place
+        		break;
+        	}
+			List<JournalEntry> partialResult = store.query(JOURNAL, fromId, toId, READ_CHUNK_SIZE);
+			if (partialResult==null) {
+				break;
+			}
+			for(JournalEntry d: partialResult) {
+				d.addTo(sorter);
+			}
+			if (partialResult.size()<READ_CHUNK_SIZE) {
+				break;
+			}
+			// otherwise set 'fromId' to the last entry just processed
+			// that works fine as the query is non-inclusive (ie does not include the from which we'd otherwise double-process)
+			fromId = partialResult.get(partialResult.size()-1).getId();
         }
-        return doc;
+    }
+
+    long getRevisionTimestamp() {
+        final String[] parts = getId().split("_");
+        return Long.parseLong(parts[1]);
     }
 
     void modified(String path) {
@@ -156,43 +281,20 @@ public final class JournalEntry extends Document {
         }
         return op;
     }
-
-    /**
-     * Applies the changes of the {@code other} document on top of this
-     * document.
-     *
-     * @param other the other document with external changes.
-     */
-    void apply(JournalEntry other) {
+    
+    void addTo(final StringSort sort) throws IOException {
         TreeNode n = getChanges();
-        n.apply(other.getChanges());
-        for (JournalEntry e : other.getBranchCommits()) {
-            n.apply(e.getChanges());
-        }
-    }
-
-    /**
-     * Applies the changes of this document to the diff cache.
-     *
-     * @param diffCache the diff cache.
-     * @param from the lower bound revision of this change set.
-     * @param to the upper bound revision of this change set.
-     */
-    void applyTo(@Nonnull DiffCache diffCache,
-                 @Nonnull Revision from,
-                 @Nonnull Revision to) {
-        final DiffCache.Entry entry = checkNotNull(diffCache).newEntry(from, to);
-        TraversingVisitor visitor = new TraversingVisitor() {
+        TraversingVisitor v = new TraversingVisitor() {
+            
             @Override
-            public void node(TreeNode node, String path) {
-                entry.append(path, getChanges(node));
+            public void node(TreeNode node, String path) throws IOException {
+                sort.add(path);
             }
         };
-        getChanges().accept(visitor, "/");
+		n.accept(v, "/");
         for (JournalEntry e : getBranchCommits()) {
-            e.getChanges().accept(visitor, "/");
+            e.getChanges().accept(v, "/");
         }
-        entry.done();
     }
 
     /**
@@ -209,8 +311,9 @@ public final class JournalEntry extends Document {
                 JournalEntry d = store.find(JOURNAL, id);
                 if (d == null) {
                     throw new IllegalStateException(
-                            "Missing external change for revision: " + id);
+                            "Missing external change for branch revision: " + id);
                 }
+                //TODO: could this also be a problem with very large number of branches ???
                 commits.add(d);
             }
         }
@@ -219,7 +322,7 @@ public final class JournalEntry extends Document {
 
     //-----------------------------< internal >---------------------------------
 
-    private String getChanges(TreeNode node) {
+    private static String getChanges(TreeNode node) {
         JsopBuilder builder = new JsopBuilder();
         for (String name : node.keySet()) {
             builder.tag('^');
@@ -229,7 +332,7 @@ public final class JournalEntry extends Document {
         return builder.toString();
     }
 
-    private static String asId(@Nonnull Revision revision) {
+    static String asId(@Nonnull Revision revision) {
         checkNotNull(revision);
         String s = String.format(REVISION_FORMAT, revision.getClusterId(), revision.getTimestamp(), revision.getCounter());
         if (revision.isBranch()) {
@@ -253,7 +356,7 @@ public final class JournalEntry extends Document {
     @Nonnull
     private TreeNode getChanges() {
         if (changes == null) {
-            TreeNode node = new TreeNode();
+            TreeNode node = new TreeNode(null, "");
             String c = (String) get(CHANGES);
             if (c != null) {
                 node.parse(new JsopTokenizer(c));
@@ -267,10 +370,64 @@ public final class JournalEntry extends Document {
 
         private final Map<String, TreeNode> children = Maps.newHashMap();
 
-        void apply(TreeNode node) {
-            for (Map.Entry<String, TreeNode> entry : node.children.entrySet()) {
-                getOrCreate(entry.getKey()).apply(entry.getValue());
+        private final String path;
+        private final TreeNode parent;
+        
+        TreeNode(TreeNode parent, String name) {
+            if (name.contains("/")) {
+                throw new IllegalArgumentException("name must not contain /: "+name);
             }
+            this.parent = parent;
+            if (parent==null) {
+                this.path = "/";
+            } else if (parent.parent==null) {
+                this.path = "/" + name;
+            } else {
+                this.path = parent.path + "/" + name;
+            }
+        }
+        
+        public TreeNode getOrCreatePath(String path) {
+            if (path.equals(this.path)) {
+                // then path denotes the same as myself, hence return myself
+                return this;
+            }
+            if (!path.startsWith(this.path)) {
+                // this must never happen
+                throw new IllegalStateException("path not child of myself. path: "+path+", myself: "+this.path);
+            }
+            String sub = this.path.equals("/") ? path.substring(1) : path.substring(this.path.length()+1);
+            String[] parts = sub.split("/");
+            TreeNode n = this;
+            for (int i = 0; i < parts.length; i++) {
+                if (parts[i]!=null && parts[i].length()>0) {
+                    n = n.getOrCreate(parts[i]);
+                }
+            }
+            return n;
+        }
+
+        public boolean isParentOf(String path) {
+            if (this.path.equals("/")) {
+                // root is parent of everything
+                return true;
+            }
+            if (!path.startsWith(this.path+"/")) {
+                // then I'm not parent of that path
+                return false;
+            }
+            final String sub = path.substring(this.path.length()+1);
+            if (sub.indexOf("/", 1)!=-1) {
+                // if the 'sub' part contains a / then 
+                // it is not a direct child of myself,
+                // so I'm a grand-parent but not a direct-parent
+                return false;
+            }
+            return true;
+        }
+
+        private String getPath() {
+            return path;
         }
 
         void parse(JsopReader reader) {
@@ -303,7 +460,7 @@ public final class JournalEntry extends Document {
             return children.get(name);
         }
 
-        void accept(TraversingVisitor visitor, String path) {
+        void accept(TraversingVisitor visitor, String path) throws IOException {
             visitor.node(this, path);
             for (Map.Entry<String, TreeNode> entry : children.entrySet()) {
                 entry.getValue().accept(visitor, concat(path, entry.getKey()));
@@ -322,7 +479,7 @@ public final class JournalEntry extends Document {
         private TreeNode getOrCreate(String name) {
             TreeNode c = children.get(name);
             if (c == null) {
-                c = new TreeNode();
+                c = new TreeNode(this, name);
                 children.put(name, c);
             }
             return c;
@@ -331,6 +488,7 @@ public final class JournalEntry extends Document {
 
     private interface TraversingVisitor {
 
-        void node(TreeNode node, String path);
+        void node(TreeNode node, String path) throws IOException;
     }
+
 }

@@ -51,7 +51,8 @@ class TieredDiffCache implements DiffCache {
     }
 
     /**
-     * Creates a new entry in the {@link LocalDiffCache} only!
+     * Creates a new entry in the {@link LocalDiffCache} for local changes
+     * and {@link MemoryDiffCache} for external changes
      *
      * @param from the from revision.
      * @param to the to revision.
@@ -59,8 +60,12 @@ class TieredDiffCache implements DiffCache {
      */
     @Nonnull
     @Override
-    public Entry newEntry(@Nonnull Revision from, @Nonnull Revision to) {
-        return localCache.newEntry(from, to);
+    public Entry newEntry(@Nonnull Revision from, @Nonnull Revision to, boolean local) {
+    	if (local) {
+    		return localCache.newEntry(from, to, true);
+    	} else {
+    		return memoryCache.newEntry(from, to, false);
+    	}
     }
 
     @Nonnull
