@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -116,12 +117,7 @@ public class CommitQueueTest {
 
     @Test
     public void concurrentCommits2() throws Exception {
-        final CommitQueue queue = new CommitQueue() {
-            @Override
-            protected Revision newRevision() {
-                return Revision.newRevision(1);
-            }
-        };
+        final CommitQueue queue = new CommitQueue(DummyRevisionContext.INSTANCE);
 
         final CommitQueue.Callback c = new CommitQueue.Callback() {
             private Revision before = Revision.newRevision(1);
@@ -203,6 +199,25 @@ public class CommitQueueTest {
         ds.canceled(c);
         ds.dispose();
         assertNoExceptions();
+    }
+
+    @Test
+    public void suspendUntil() throws Exception {
+        final AtomicReference<Revision> headRevision = new AtomicReference<Revision>();
+        RevisionContext context = new DummyRevisionContext() {
+            @Nonnull
+            @Override
+            public Revision getHeadRevision() {
+                return headRevision.get();
+            }
+        };
+        headRevision.set(context.newRevision());
+        CommitQueue queue = new CommitQueue(context);
+
+        Revision r = queue.createRevision();
+
+
+
     }
 
     private void assertNoExceptions() throws Exception {
