@@ -43,6 +43,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -89,8 +90,12 @@ import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.junit.After;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DocumentNodeStoreTest {
+
+    private static final Logger LOG = LoggerFactory.getLogger(DocumentNodeStoreTest.class);
 
     @After
     public void tearDown() {
@@ -1374,6 +1379,18 @@ public class DocumentNodeStoreTest {
         }
     }
 
+    @Test
+    public void retrieve() throws Exception {
+        DocumentNodeStore store = new DocumentMK.Builder().getNodeStore();
+        String ref = store.checkpoint(60000);
+        assertNotNull(store.retrieve(ref));
+        ref = Revision.newRevision(1).toString();
+        assertNull(store.retrieve(ref));
+        ref = UUID.randomUUID().toString();
+        assertNull(store.retrieve(ref));
+        store.dispose();
+    }
+
     /**
      * Utility class that eases creating single cluster id merge conflicts. The two methods:
      * <ul>
@@ -1584,7 +1601,7 @@ public class DocumentNodeStoreTest {
             }
         }
 
-        System.out.println("Starting the final merge "+ new Date());
+        LOG.info("Starting the final merge {}", new Date());
         merge(ns, builder);
 
         ns.dispose();

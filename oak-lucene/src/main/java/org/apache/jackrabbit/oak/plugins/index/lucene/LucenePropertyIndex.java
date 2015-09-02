@@ -62,6 +62,7 @@ import org.apache.jackrabbit.oak.spi.query.Filter;
 import org.apache.jackrabbit.oak.spi.query.Filter.PropertyRestriction;
 import org.apache.jackrabbit.oak.spi.query.IndexRow;
 import org.apache.jackrabbit.oak.spi.query.PropertyValues;
+import org.apache.jackrabbit.oak.spi.query.QueryConstants;
 import org.apache.jackrabbit.oak.spi.query.QueryIndex;
 import org.apache.jackrabbit.oak.spi.query.QueryIndex.AdvanceFulltextQueryIndex;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
@@ -725,6 +726,16 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
                 continue;
             }
 
+            if (QueryConstants.RESTRICTION_LOCAL_NAME.equals(name)) {
+                if (planResult.evaluateNodeNameRestriction()) {
+                    Query q = createNodeNameQuery(pr);
+                    if (q != null) {
+                        qs.add(q);
+                    }
+                }
+                continue;
+            }
+
             if (pr.first != null && pr.first.equals(pr.last) && pr.firstIncluding
                     && pr.lastIncluding) {
                 String first = pr.first.getValue(STRING);
@@ -739,7 +750,7 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
                     continue;
                 }
             }
-
+            
             PropertyDefinition pd = planResult.getPropDefn(pr);
             if (pd == null) {
                 continue;
@@ -950,6 +961,21 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
             return ((DirectoryReader) reader).getVersion();
         }
         return -1;
+    }
+
+    private static Query createNodeNameQuery(PropertyRestriction pr) {
+        String first = pr.first != null ? pr.first.getValue(STRING) : null;
+        if (pr.first != null && pr.first.equals(pr.last) && pr.firstIncluding
+                && pr.lastIncluding) {
+            // [property]=[value]
+            return new TermQuery(new Term(FieldNames.NODE_NAME, first));
+        }
+
+        if (pr.isLike) {
+            return createLikeQuery(FieldNames.NODE_NAME, first);
+        }
+
+        throw new IllegalStateException("For nodeName queries only EQUALS and LIKE are supported "+pr);
     }
 
     private static void addReferenceConstraint(String uuid, List<Query> qs,
@@ -1239,6 +1265,11 @@ public class LucenePropertyIndex implements AdvancedQueryIndex, QueryIndex, Nati
         public IndexRow next() {
             final IndexRow pathRow = pathCursor.next();
             return new IndexRow() {
+
+                @Override
+                public boolean isVirtualRow() {
+                    return getPath() == null;
+                }
 
                 @Override
                 public String getPath() {

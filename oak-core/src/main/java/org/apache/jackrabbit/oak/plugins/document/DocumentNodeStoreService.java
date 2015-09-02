@@ -460,7 +460,10 @@ public class DocumentNodeStoreService {
         Dictionary<String, Object> props = new Hashtable<String, Object>();
         props.put(Constants.SERVICE_PID, DocumentNodeStore.class.getName());
         props.put(DESCRIPTION, getMetadata(ds));
-        reg = context.getBundleContext().registerService(NodeStore.class.getName(), store, props);
+        // OAK-2844: in order to allow DocumentDiscoveryLiteService to directly
+        // require a service DocumentNodeStore (instead of having to do an 'instanceof')
+        // the registration is now done for both NodeStore and DocumentNodeStore here.
+        reg = context.getBundleContext().registerService(new String[]{NodeStore.class.getName(), DocumentNodeStore.class.getName()}, store, props);
     }
 
     @Deactivate
@@ -588,14 +591,8 @@ public class DocumentNodeStoreService {
         final long blobGcMaxAgeInSecs = toLong(prop(PROP_BLOB_GC_MAX_AGE), DEFAULT_BLOB_GC_MAX_AGE);
 
         if (store.getBlobStore() instanceof GarbageCollectableBlobStore) {
-            BlobGarbageCollector gc = new BlobGarbageCollector() {
-                @Override
-                public void collectGarbage(boolean sweep) throws Exception {
-                    store.createBlobGarbageCollector(blobGcMaxAgeInSecs,
-                            ClusterRepositoryInfo.getId(mk.getNodeStore()))
-                            .collectGarbage(sweep);
-                }
-            };
+            BlobGarbageCollector gc = store.createBlobGarbageCollector(blobGcMaxAgeInSecs, 
+                                                        ClusterRepositoryInfo.getId(mk.getNodeStore()));
             registrations.add(registerMBean(whiteboard, BlobGCMBean.class, new BlobGC(gc, executor),
                     BlobGCMBean.TYPE, "Document node store blob garbage collection"));
         }

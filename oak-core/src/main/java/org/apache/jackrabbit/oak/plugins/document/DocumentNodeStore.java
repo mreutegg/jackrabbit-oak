@@ -75,6 +75,7 @@ import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 
 import org.apache.jackrabbit.oak.api.PropertyState;
+import org.apache.jackrabbit.oak.commons.IOUtils;
 import org.apache.jackrabbit.oak.commons.jmx.AnnotatedStandardMBean;
 import org.apache.jackrabbit.oak.commons.json.JsopReader;
 import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
@@ -347,6 +348,16 @@ public final class DocumentNodeStore
     private final BlobStore blobStore;
 
     /**
+     * The clusterStateChangeListener is invoked on any noticed change in the
+     * clusterNodes collection.
+     * <p>
+     * Note that there is no synchronization between setting this one and using
+     * it, but arguably that is not necessary since it will be set at startup
+     * time and then never be changed.
+     */
+    private ClusterStateChangeListener clusterStateChangeListener;
+
+    /**
      * The BlobSerializer.
      */
     private final BlobSerializer blobSerializer = new BlobSerializer() {
@@ -491,6 +502,10 @@ public final class DocumentNodeStore
                 backgroundWrite();
             }
         }
+        checkLastRevRecovery();
+        // Renew the lease because it may have been stale
+        renewClusterIdLease();
+
         getRevisionComparator().add(headRevision, Revision.newRevision(0));
 
         dispatcher = new ChangeDispatcher(getRoot());
@@ -505,9 +520,6 @@ public final class DocumentNodeStore
                 new BackgroundOperation(this, isDisposed),
                 "DocumentNodeStore background update thread " + threadNamePostfix);
         backgroundUpdateThread.setDaemon(true);
-        checkLastRevRecovery();
-        // Renew the lease because it may have been stale
-        renewClusterIdLease();
 
         backgroundReadThread.start();
         backgroundUpdateThread.start();
@@ -1392,9 +1404,7 @@ public final class DocumentNodeStore
         if (node.hasNoChildren() && base.hasNoChildren()) {
             return true;
         }
-        return dispatch(diffCache.getChanges(base.getRootRevision(),
-                node.getRootRevision(), node.getPath(),
-                new DiffCache.Loader() {
+        return dispatch(diffCache.getChanges(base.getRootRevision(), node.getRootRevision(), node.getPath(), new DiffCache.Loader() {
                     @Override
                     public String call() {
                         return diffImpl(base, node);
@@ -1587,7 +1597,13 @@ public final class DocumentNodeStore
     @CheckForNull
     @Override
     public NodeState retrieve(@Nonnull String checkpoint) {
-        Revision r = Revision.fromString(checkpoint);
+        Revision r;
+        try {
+            r = Revision.fromString(checkpoint);
+        } catch (IllegalArgumentException e) {
+            LOG.warn("Malformed checkpoint reference: {}", checkpoint);
+            return null;
+        }
         SortedMap<Revision, Info> checkpoints = this.checkpoints.getCheckpoints();
         if (checkpoints != null && checkpoints.containsKey(r)) {
             return getRoot(r);
@@ -1645,7 +1661,8 @@ public final class DocumentNodeStore
         runBackgroundReadOperations();
     }
 
-    private void runBackgroundUpdateOperations() {
+    /** Note: made package-protected for testing purpose, would otherwise be private **/
+    void runBackgroundUpdateOperations() {
         if (isDisposed.get()) {
             return;
         }
@@ -1688,7 +1705,8 @@ public final class DocumentNodeStore
 
     //----------------------< background read operations >----------------------
 
-    private void runBackgroundReadOperations() {
+    /** Note: made package-protected for testing purpose, would otherwise be private **/
+    void runBackgroundReadOperations() {
         if (isDisposed.get()) {
             return;
         }
@@ -1732,8 +1750,11 @@ public final class DocumentNodeStore
     /**
      * Updates the state about cluster nodes in {@link #activeClusterNodes}
      * and {@link #inactiveClusterNodes}.
+     * @return true if the cluster state has changed, false if the cluster state
+     * remained unchanged
      */
-    void updateClusterState() {
+    boolean updateClusterState() {
+        boolean hasChanged = false;
         long now = clock.getTime();
         Set<Integer> inactive = Sets.newHashSet();
         for (ClusterNodeInfoDocument doc : ClusterNodeInfoDocument.all(store)) {
@@ -1741,14 +1762,15 @@ public final class DocumentNodeStore
             if (cId != this.clusterId && !doc.isActive()) {
                 inactive.add(cId);
             } else {
-                activeClusterNodes.put(cId, doc.getLeaseEndTime());
+                hasChanged |= activeClusterNodes.put(cId, doc.getLeaseEndTime())==null;
             }
         }
-        activeClusterNodes.keySet().removeAll(inactive);
-        inactiveClusterNodes.keySet().retainAll(inactive);
+        hasChanged |= activeClusterNodes.keySet().removeAll(inactive);
+        hasChanged |= inactiveClusterNodes.keySet().retainAll(inactive);
         for (Integer clusterId : inactive) {
-            inactiveClusterNodes.putIfAbsent(clusterId, now);
+            hasChanged |= inactiveClusterNodes.putIfAbsent(clusterId, now)==null;
         }
+        return hasChanged;
     }
 
     /**
@@ -1794,119 +1816,124 @@ public final class DocumentNodeStore
         Revision otherSeen = Revision.newRevision(0);
 
         StringSort externalSort = JournalEntry.newSorter();
-        
-        Map<Revision, Revision> externalChanges = Maps.newHashMap();
-        for (Map.Entry<Integer, Revision> e : lastRevMap.entrySet()) {
-            int machineId = e.getKey();
-            if (machineId == clusterId) {
-                // ignore own lastRev
-                continue;
-            }
-            Revision r = e.getValue();
-            Revision last = lastKnownRevision.get(machineId);
-            if (last == null || r.compareRevisionTime(last) > 0) {
-                lastKnownRevision.put(machineId, r);
-                // OAK-2345
-                // only consider as external change if
-                // - the revision changed for the machineId
-                // or
-                // - the revision is within the time frame we remember revisions
-                if (last != null
-                        || r.getTimestamp() > revisionPurgeMillis()) {
-                    externalChanges.put(r, otherSeen);
+
+        try {
+            Map<Revision, Revision> externalChanges = Maps.newHashMap();
+            for (Map.Entry<Integer, Revision> e : lastRevMap.entrySet()) {
+                int machineId = e.getKey();
+                if (machineId == clusterId) {
+                    // ignore own lastRev
+                    continue;
                 }
-                // collect external changes
-                if (last != null && externalSort != null) {
-                    // add changes for this particular clusterId to the externalSort
-                    try {
-                        fillExternalChanges(externalSort, last, r, store);
-                    } catch (IOException e1) {
-                        LOG.error("backgroundRead: Exception while reading external changes from journal: "+e1, e1);
-                        externalSort = null;
+                Revision r = e.getValue();
+                Revision last = lastKnownRevision.get(machineId);
+                if (last == null || r.compareRevisionTime(last) > 0) {
+                    lastKnownRevision.put(machineId, r);
+                    // OAK-2345
+                    // only consider as external change if
+                    // - the revision changed for the machineId
+                    // or
+                    // - the revision is within the time frame we remember revisions
+                    if (last != null
+                            || r.getTimestamp() > revisionPurgeMillis()) {
+                        externalChanges.put(r, otherSeen);
                     }
-                }
-            }
-        }
-
-        stats.readHead = clock.getTime() - time;
-        time = clock.getTime();
-
-        if (!externalChanges.isEmpty()) {
-            // invalidate caches
-            if (externalSort == null) {
-                // if no externalSort available, then invalidate the classic way: everything
-                stats.cacheStats = store.invalidateCache();
-                docChildrenCache.invalidateAll();
-            } else {
-                try {
-                    externalSort.sort();
-                    stats.cacheStats = store.invalidateCache(pathToId(externalSort));
-                    // OAK-3002: only invalidate affected items (using journal)
-                    long origSize = docChildrenCache.size();
-                    if (origSize == 0) {
-                        // if docChildrenCache is empty, don't bother
-                        // calling invalidateAll either way 
-                        // (esp calling invalidateAll(Iterable) will
-                        // potentially iterate over all keys even though
-                        // there's nothing to be deleted)
-                        LOG.trace("backgroundRead: docChildrenCache nothing to invalidate");
-                    } else {
-                        // however, if the docChildrenCache is not empty,
-                        // use the invalidateAll(Iterable) variant,
-                        // passing it a Iterable<StringValue>, as that's
-                        // what is contained in the cache
-                        docChildrenCache.invalidateAll(asStringValueIterable(externalSort));
-                        long newSize = docChildrenCache.size();
-                        LOG.trace("backgroundRead: docChildrenCache invalidation result: orig: {}, new: {} ", origSize, newSize);
-                    }
-                } catch (Exception ioe) {
-                    LOG.error("backgroundRead: got IOException during external sorting/cache invalidation (as a result, invalidating entire cache): "+ioe, ioe);
-                    stats.cacheStats = store.invalidateCache();
-                    docChildrenCache.invalidateAll();
-                }
-            }
-            stats.cacheInvalidationTime = clock.getTime() - time;
-            time = clock.getTime();
-
-            // make sure update to revision comparator is atomic
-            // and no local commit is in progress
-            backgroundOperationLock.writeLock().lock();
-            try {
-                stats.lock = clock.getTime() - time;
-
-                // the latest revisions of the current cluster node
-                // happened before the latest revisions of other cluster nodes
-                revisionComparator.add(newRevision(), headSeen);
-                // then we saw other revisions
-                for (Map.Entry<Revision, Revision> e : externalChanges.entrySet()) {
-                    revisionComparator.add(e.getKey(), e.getValue());
-                }
-
-                Revision oldHead = headRevision;
-                // the new head revision is after other revisions
-                setHeadRevision(newRevision());
-                if (dispatchChange) {
-                    commitQueue.headRevisionChanged();
-                    time = clock.getTime();
-                    if (externalSort != null) {
-                        // then there were external changes and reading them
-                        // was successful -> apply them to the diff cache
+                    // collect external changes
+                    if (last != null && externalSort != null) {
+                        // add changes for this particular clusterId to the externalSort
                         try {
-                            JournalEntry.applyTo(externalSort, diffCache, oldHead, headRevision);
-                        } catch (Exception e1) {
-                            LOG.error("backgroundRead: Exception while processing external changes from journal: "+e1, e1);
+                            fillExternalChanges(externalSort, last, r, store);
+                        } catch (IOException e1) {
+                            LOG.error("backgroundRead: Exception while reading external changes from journal: " + e1, e1);
+                            IOUtils.closeQuietly(externalSort);
+                            externalSort = null;
                         }
                     }
-                    stats.populateDiffCache = clock.getTime() - time;
-                    time = clock.getTime();
-
-                    dispatcher.contentChanged(getRoot().fromExternalChange(), null);
                 }
-            } finally {
-                backgroundOperationLock.writeLock().unlock();
             }
-            stats.dispatchChanges = clock.getTime() - time;
+
+            stats.readHead = clock.getTime() - time;
             time = clock.getTime();
+
+            if (!externalChanges.isEmpty()) {
+                // invalidate caches
+                if (externalSort == null) {
+                    // if no externalSort available, then invalidate the classic way: everything
+                    stats.cacheStats = store.invalidateCache();
+                    docChildrenCache.invalidateAll();
+                } else {
+                    try {
+                        externalSort.sort();
+                        stats.cacheStats = store.invalidateCache(pathToId(externalSort));
+                        // OAK-3002: only invalidate affected items (using journal)
+                        long origSize = docChildrenCache.size();
+                        if (origSize == 0) {
+                            // if docChildrenCache is empty, don't bother
+                            // calling invalidateAll either way
+                            // (esp calling invalidateAll(Iterable) will
+                            // potentially iterate over all keys even though
+                            // there's nothing to be deleted)
+                            LOG.trace("backgroundRead: docChildrenCache nothing to invalidate");
+                        } else {
+                            // however, if the docChildrenCache is not empty,
+                            // use the invalidateAll(Iterable) variant,
+                            // passing it a Iterable<StringValue>, as that's
+                            // what is contained in the cache
+                            docChildrenCache.invalidateAll(asStringValueIterable(externalSort));
+                            long newSize = docChildrenCache.size();
+                            LOG.trace("backgroundRead: docChildrenCache invalidation result: orig: {}, new: {} ", origSize, newSize);
+                        }
+                    } catch (Exception ioe) {
+                        LOG.error("backgroundRead: got IOException during external sorting/cache invalidation (as a result, invalidating entire cache): "+ioe, ioe);
+                        stats.cacheStats = store.invalidateCache();
+                        docChildrenCache.invalidateAll();
+                    }
+                }
+                stats.cacheInvalidationTime = clock.getTime() - time;
+                time = clock.getTime();
+
+                // make sure update to revision comparator is atomic
+                // and no local commit is in progress
+                backgroundOperationLock.writeLock().lock();
+                try {
+                    stats.lock = clock.getTime() - time;
+
+                    // the latest revisions of the current cluster node
+                    // happened before the latest revisions of other cluster nodes
+                    revisionComparator.add(newRevision(), headSeen);
+                    // then we saw other revisions
+                    for (Map.Entry<Revision, Revision> e : externalChanges.entrySet()) {
+                        revisionComparator.add(e.getKey(), e.getValue());
+                    }
+
+                    Revision oldHead = headRevision;
+                    // the new head revision is after other revisions
+                    setHeadRevision(newRevision());
+                    if (dispatchChange) {
+                        commitQueue.headRevisionChanged();
+                        time = clock.getTime();
+                        if (externalSort != null) {
+                            // then there were external changes and reading them
+                            // was successful -> apply them to the diff cache
+                            try {
+                                JournalEntry.applyTo(externalSort, diffCache, oldHead, headRevision);
+                            } catch (Exception e1) {
+                                LOG.error("backgroundRead: Exception while processing external changes from journal: " + e1, e1);
+                            }
+                        }
+                        stats.populateDiffCache = clock.getTime() - time;
+                        time = clock.getTime();
+
+                        dispatcher.contentChanged(getRoot().fromExternalChange(), null);
+                    }
+                } finally {
+                    backgroundOperationLock.writeLock().unlock();
+                }
+                stats.dispatchChanges = clock.getTime() - time;
+                time = clock.getTime();
+            }
+        } finally {
+            IOUtils.closeQuietly(externalSort);
         }
         revisionComparator.purge(revisionPurgeMillis());
         stats.purge = clock.getTime() - time;
@@ -2445,6 +2472,16 @@ public final class DocumentNodeStore
         return blobGC;
     }
 
+    void setClusterStateChangeListener(ClusterStateChangeListener clusterStateChangeListener) {
+        this.clusterStateChangeListener = clusterStateChangeListener;
+    }
+
+    void signalClusterStateChange() {
+        if (clusterStateChangeListener != null) {
+            clusterStateChangeListener.handleClusterStateChange();
+        }
+    }
+
     //-----------------------------< DocumentNodeStoreMBean >---------------------------------
 
     public DocumentNodeStoreMBean getMBean() {
@@ -2616,8 +2653,14 @@ public final class DocumentNodeStore
 
         @Override
         protected void execute(@Nonnull DocumentNodeStore nodeStore) {
-            if (nodeStore.renewClusterIdLease()) {
-                nodeStore.updateClusterState();
+            // first renew the clusterId lease
+            nodeStore.renewClusterIdLease();
+
+            // then, independently if the lease had to be updated or not, check
+            // the status:
+            if (nodeStore.updateClusterState()) {
+                // then inform the discovery lite listener - if it is registered
+                nodeStore.signalClusterStateChange();
             }
         }
     }

@@ -154,6 +154,12 @@
           </excludes>
         </configuration>
       </plugin>
+        <plugin>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <configuration>
+            <redirectTestOutputToFile>false</redirectTestOutputToFile>
+          </configuration>
+        </plugin>
     </plugins>
   </build>
 
@@ -314,6 +320,12 @@
     <dependency>
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>junit-addons</groupId>
+      <artifactId>junit-addons</artifactId>
+      <version>1.4</version>
       <scope>test</scope>
     </dependency>
     <dependency>
