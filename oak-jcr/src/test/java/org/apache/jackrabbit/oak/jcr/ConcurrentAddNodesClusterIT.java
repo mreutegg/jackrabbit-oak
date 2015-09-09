@@ -91,6 +91,7 @@ public class ConcurrentAddNodesClusterIT {
 
     @Test
     public void addNodesConcurrent() throws Exception {
+        System.out.println("addNodesConcurrent");
         for (int i = 0; i < NUM_CLUSTER_NODES; i++) {
             DocumentMK mk = new DocumentMK.Builder()
                     .setMongoDB(createConnection().getDB())
@@ -120,6 +121,7 @@ public class ConcurrentAddNodesClusterIT {
     @Ignore("OAK-1807")
     @Test
     public void addNodesConcurrent2() throws Exception {
+        System.out.println("addNodesConcurrent2");
         final Thread mainThread = Thread.currentThread();
         for (int i = 0; i < NUM_CLUSTER_NODES; i++) {
             DocumentMK mk = new DocumentMK.Builder()
@@ -127,8 +129,7 @@ public class ConcurrentAddNodesClusterIT {
                     .setClusterId(i + 1).open();
             mks.add(mk);
         }
-        final Map<String, Exception> exceptions = Collections.synchronizedMap(
-                new HashMap<String, Exception>());
+        final Map<String, Exception> exceptions = Collections.synchronizedMap(new HashMap<String, Exception>());
         final CountDownLatch latch = new CountDownLatch(1);
         final AtomicBoolean stop = new AtomicBoolean();
         final UncaughtExceptionHandler ueh = new UncaughtExceptionHandler() {
@@ -207,6 +208,7 @@ public class ConcurrentAddNodesClusterIT {
 
     @Test
     public void addNodes() throws Exception {
+        System.out.println("addNodes");
         for (int i = 0; i < 2; i++) {
             DocumentMK mk = new DocumentMK.Builder()
                     .setMongoDB(createConnection().getDB())
@@ -241,6 +243,7 @@ public class ConcurrentAddNodesClusterIT {
 
     @Test
     public void addNodes2() throws Exception {
+        System.out.println("addNodes2");
         for (int i = 0; i < 3; i++) {
             DocumentMK mk = new DocumentMK.Builder()
                     .setMongoDB(createConnection().getDB())
@@ -320,6 +323,7 @@ public class ConcurrentAddNodesClusterIT {
 
     @Test
     public void rebaseVisibility() throws Exception {
+        System.out.println("rebaseVisibility");
         for (int i = 0; i < 2; i++) {
             DocumentMK mk = new DocumentMK.Builder()
                     .setMongoDB(createConnection().getDB())
