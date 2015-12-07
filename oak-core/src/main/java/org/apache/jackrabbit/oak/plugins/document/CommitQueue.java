@@ -19,7 +19,6 @@ package org.apache.jackrabbit.oak.plugins.document;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import java.util.Comparator;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.SortedMap;
@@ -114,11 +113,10 @@ final class CommitQueue {
      * @param r the revision to become visible.
      */
     void suspendUntil(@Nonnull Revision r) {
-        Comparator<Revision> comparator = context.getRevisionComparator();
         Semaphore s = null;
         synchronized (suspendedCommits) {
-            Revision headRevision = context.getHeadRevision();
-            if (comparator.compare(r, headRevision) > 0) {
+            RevisionVector headRevision = context.getHeadRevision();
+            if (headRevision.isRevisionNewer(r)) {
                 s = new Semaphore(0);
                 suspendedCommits.put(s, r);
             }
@@ -173,12 +171,12 @@ final class CommitQueue {
             if (suspendedCommits.isEmpty()) {
                 return;
             }
-            Comparator<Revision> comparator = context.getRevisionComparator();
-            Revision headRevision = context.getHeadRevision();
+            RevisionVector headRevision = context.getHeadRevision();
             Iterator<Map.Entry<Semaphore, Revision>> it = suspendedCommits.entrySet().iterator();
             while (it.hasNext()) {
                 Map.Entry<Semaphore, Revision> entry = it.next();
-                if (comparator.compare(entry.getValue(), headRevision) <= 0) {
+                if (!headRevision.isRevisionNewer(entry.getValue())) {
+                    // visible from head revision
                     Semaphore s = entry.getKey();
                     it.remove();
                     s.release();

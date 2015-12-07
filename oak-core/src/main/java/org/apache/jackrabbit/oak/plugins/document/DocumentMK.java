@@ -174,8 +174,8 @@ public class DocumentMK {
         if (path == null || path.equals("")) {
             path = "/";
         }
-        Revision fromRev = Revision.fromString(fromRevisionId);
-        Revision toRev = Revision.fromString(toRevisionId);
+        RevisionVector fromRev = RevisionVector.fromString(fromRevisionId);
+        RevisionVector toRev = RevisionVector.fromString(toRevisionId);
         final DocumentNodeState before = nodeStore.getNode(path, fromRev);
         final DocumentNodeState after = nodeStore.getNode(path, toRev);
         if (before == null || after == null) {
@@ -197,7 +197,7 @@ public class DocumentMK {
             throw new DocumentStoreException("Path is not absolute: " + path);
         }
         revisionId = revisionId != null ? revisionId : nodeStore.getHeadRevision().toString();
-        Revision rev = Revision.fromString(revisionId);
+        RevisionVector rev = RevisionVector.fromString(revisionId);
         DocumentNodeState n;
         try {
             n = nodeStore.getNode(path, rev);
@@ -214,7 +214,7 @@ public class DocumentMK {
             throw new DocumentStoreException("Only depth 0 is supported, depth is " + depth);
         }
         revisionId = revisionId != null ? revisionId : nodeStore.getHeadRevision().toString();
-        Revision rev = Revision.fromString(revisionId);
+        RevisionVector rev = RevisionVector.fromString(revisionId);
         try {
             DocumentNodeState n = nodeStore.getNode(path, rev);
             if (n == null) {
@@ -258,22 +258,21 @@ public class DocumentMK {
     public String commit(String rootPath, String jsonDiff, String baseRevId,
             String message) throws DocumentStoreException {
         boolean success = false;
-        boolean isBranch = false;
-        Revision rev;
-        Commit commit = nodeStore.newCommit(baseRevId != null ? Revision.fromString(baseRevId) : null, null);
+        boolean isBranch;
+        RevisionVector rev;
+        Commit commit = nodeStore.newCommit(baseRevId != null ? RevisionVector.fromString(baseRevId) : null, null);
         try {
-            Revision baseRev = commit.getBaseRevision();
+            RevisionVector baseRev = commit.getBaseRevision();
             isBranch = baseRev != null && baseRev.isBranch();
             parseJsonDiff(commit, jsonDiff, rootPath);
-            rev = commit.apply();
+            commit.apply();
+            rev = nodeStore.done(commit, isBranch, null);
             success = true;
         } catch (DocumentStoreException e) {
             throw new DocumentStoreException(e);
         } finally {
             if (!success) {
                 nodeStore.canceled(commit);
-            } else {
-                nodeStore.done(commit, isBranch, null);
             }
         }
         return rev.toString();
@@ -282,15 +281,15 @@ public class DocumentMK {
     public String branch(@Nullable String trunkRevisionId) throws DocumentStoreException {
         // nothing is written when the branch is created, the returned
         // revision simply acts as a reference to the branch base revision
-        Revision revision = trunkRevisionId != null
-                ? Revision.fromString(trunkRevisionId) : nodeStore.getHeadRevision();
-        return revision.asBranchRevision().toString();
+        RevisionVector revision = trunkRevisionId != null
+                ? RevisionVector.fromString(trunkRevisionId) : nodeStore.getHeadRevision();
+        return revision.asBranchRevision(nodeStore.getClusterId()).toString();
     }
 
     public String merge(String branchRevisionId, String message)
             throws DocumentStoreException {
         // TODO improve implementation if needed
-        Revision revision = Revision.fromString(branchRevisionId);
+        RevisionVector revision = RevisionVector.fromString(branchRevisionId);
         if (!revision.isBranch()) {
             throw new DocumentStoreException("Not a branch: " + branchRevisionId);
         }
@@ -307,9 +306,9 @@ public class DocumentMK {
     public String rebase(@Nonnull String branchRevisionId,
                          @Nullable String newBaseRevisionId)
             throws DocumentStoreException {
-        Revision r = Revision.fromString(branchRevisionId);
-        Revision base = newBaseRevisionId != null ?
-                Revision.fromString(newBaseRevisionId) :
+        RevisionVector r = RevisionVector.fromString(branchRevisionId);
+        RevisionVector base = newBaseRevisionId != null ?
+                RevisionVector.fromString(newBaseRevisionId) :
                 nodeStore.getHeadRevision();
         return nodeStore.rebase(r, base).toString();
     }
@@ -318,11 +317,11 @@ public class DocumentMK {
     public String reset(@Nonnull String branchRevisionId,
                         @Nonnull String ancestorRevisionId)
             throws DocumentStoreException {
-        Revision branch = Revision.fromString(branchRevisionId);
+        RevisionVector branch = RevisionVector.fromString(branchRevisionId);
         if (!branch.isBranch()) {
             throw new DocumentStoreException("Not a branch revision: " + branchRevisionId);
         }
-        Revision ancestor = Revision.fromString(ancestorRevisionId);
+        RevisionVector ancestor = RevisionVector.fromString(ancestorRevisionId);
         if (!ancestor.isBranch()) {
             throw new DocumentStoreException("Not a branch revision: " + ancestorRevisionId);
         }
@@ -368,7 +367,7 @@ public class DocumentMK {
     //------------------------------< internal >--------------------------------
 
     private void parseJsonDiff(Commit commit, String json, String rootPath) {
-        Revision baseRev = commit.getBaseRevision();
+        RevisionVector baseRev = commit.getBaseRevision();
         String baseRevId = baseRev != null ? baseRev.toString() : null;
         Set<String> added = Sets.newHashSet();
         JsopReader t = new JsopTokenizer(json);
@@ -390,7 +389,7 @@ public class DocumentMK {
                     if (toRemove == null) {
                         throw new DocumentStoreException("Node not found: " + path + " in revision " + baseRevId);
                     }
-                    commit.removeNode(path);
+                    commit.removeNode(path, toRemove);
                     nodeStore.markAsDeleted(toRemove, commit, true);
                     commit.removeNodeDiff(path);
                     break;
@@ -451,7 +450,8 @@ public class DocumentMK {
     }
 
     private void parseAddNode(Commit commit, JsopReader t, String path) {
-        DocumentNodeState n = new DocumentNodeState(nodeStore, path, commit.getRevision());
+        DocumentNodeState n = new DocumentNodeState(nodeStore, path,
+                new RevisionVector(commit.getRevision()));
         if (!t.matches('}')) {
             do {
                 String key = t.readString();

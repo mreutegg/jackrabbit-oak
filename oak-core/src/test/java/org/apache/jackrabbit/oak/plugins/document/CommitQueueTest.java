@@ -63,14 +63,15 @@ public class CommitQueueTest {
         AtomicBoolean running = new AtomicBoolean(true);
 
         Closeable observer = store.addObserver(new Observer() {
-            private Revision before = new Revision(0, 0, store.getClusterId());
+            private RevisionVector before = new RevisionVector(
+                    new Revision(0, 0, store.getClusterId()));
 
             @Override
             public void contentChanged(@Nonnull NodeState root, @Nullable CommitInfo info) {
                 DocumentNodeState after = (DocumentNodeState) root;
-                Revision r = after.getRevision();
+                RevisionVector r = after.getRevision();
                 LOG.debug("seen: {}", r);
-                if (r.compareRevisionTime(before) < 0) {
+                if (r.compareTo(before) < 0) {
                     exceptions.add(new Exception(
                             "Inconsistent revision sequence. Before: " +
                                     before + ", after: " + r));
@@ -182,7 +183,7 @@ public class CommitQueueTest {
         final DocumentNodeStore ds = builderProvider.newBuilder().getNodeStore();
 
         // simulate start of a branch commit
-        Commit c = ds.newCommit(ds.getHeadRevision().asBranchRevision(), null);
+        Commit c = ds.newCommit(ds.getHeadRevision().asBranchRevision(ds.getClusterId()), null);
 
         Thread t = new Thread(new Runnable() {
             @Override
@@ -207,15 +208,15 @@ public class CommitQueueTest {
 
     @Test
     public void suspendUntil() throws Exception {
-        final AtomicReference<Revision> headRevision = new AtomicReference<Revision>();
+        final AtomicReference<RevisionVector> headRevision = new AtomicReference<RevisionVector>();
         RevisionContext context = new DummyRevisionContext() {
             @Nonnull
             @Override
-            public Revision getHeadRevision() {
+            public RevisionVector getHeadRevision() {
                 return headRevision.get();
             }
         };
-        headRevision.set(context.newRevision());
+        headRevision.set(new RevisionVector(context.newRevision()));
         final CommitQueue queue = new CommitQueue(context);
 
         final Revision r = context.newRevision();
@@ -240,7 +241,7 @@ public class CommitQueueTest {
         // must still be suspended
         assertEquals(1, queue.numSuspendedThreads());
 
-        headRevision.set(r);
+        headRevision.set(new RevisionVector(r));
         queue.headRevisionChanged();
         // must not be suspended anymore
         assertEquals(0, queue.numSuspendedThreads());
@@ -248,15 +249,15 @@ public class CommitQueueTest {
 
     @Test
     public void suspendUntilTimeout() throws Exception {
-        final AtomicReference<Revision> headRevision = new AtomicReference<Revision>();
+        final AtomicReference<RevisionVector> headRevision = new AtomicReference<RevisionVector>();
         RevisionContext context = new DummyRevisionContext() {
             @Nonnull
             @Override
-            public Revision getHeadRevision() {
+            public RevisionVector getHeadRevision() {
                 return headRevision.get();
             }
         };
-        headRevision.set(context.newRevision());
+        headRevision.set(new RevisionVector(context.newRevision()));
         final CommitQueue queue = new CommitQueue(context);
         queue.setSuspendTimeoutMillis(0);
 

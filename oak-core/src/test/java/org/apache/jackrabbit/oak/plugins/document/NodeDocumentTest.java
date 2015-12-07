@@ -17,7 +17,6 @@
 package org.apache.jackrabbit.oak.plugins.document;
 
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -42,8 +41,6 @@ import org.junit.Test;
 
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.COLLISIONS;
-import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.revisionAreAmbiguous;
-import static org.apache.jackrabbit.oak.plugins.document.Revision.RevisionComparator;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getRootDocument;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -70,45 +67,8 @@ public class NodeDocumentTest {
             NodeDocument.addCollision(op, r, Revision.newRevision(1));
         }
         UpdateUtils.applyChanges(doc, op);
-        Revision head = DummyRevisionContext.INSTANCE.getHeadRevision();
+        RevisionVector head = DummyRevisionContext.INSTANCE.getHeadRevision();
         doc.split(DummyRevisionContext.INSTANCE, head);
-    }
-
-    @Test
-    public void ambiguousRevisions() {
-        // revisions from same cluster node are not ambiguous
-        RevisionContext context = DummyRevisionContext.INSTANCE;
-        Revision r1 = new Revision(1, 0, 1);
-        Revision r2 = new Revision(2, 0, 1);
-        assertFalse(revisionAreAmbiguous(context, r1, r1));
-        assertFalse(revisionAreAmbiguous(context, r1, r2));
-        assertFalse(revisionAreAmbiguous(context, r2, r1));
-
-        // revisions from different cluster nodes are not ambiguous
-        // if seen with stable revision comparator
-        r1 = new Revision(1, 0, 2);
-        r2 = new Revision(2, 0, 1);
-        assertFalse(revisionAreAmbiguous(context, r1, r1));
-        assertFalse(revisionAreAmbiguous(context, r1, r2));
-        assertFalse(revisionAreAmbiguous(context, r2, r1));
-
-        // now use a revision comparator with seen-at support
-        final RevisionComparator comparator = new RevisionComparator(1);
-        context = new DummyRevisionContext() {
-            @Override
-            public Comparator<Revision> getRevisionComparator() {
-                return comparator;
-            }
-        };
-        r1 = new Revision(1, 0, 2);
-        r2 = new Revision(2, 0, 1);
-        // add revision to comparator in reverse time order
-        comparator.add(r2, new Revision(2, 0, 0));
-        comparator.add(r1, new Revision(3, 0, 0)); // r1 seen after r2
-        assertFalse(revisionAreAmbiguous(context, r1, r1));
-        assertFalse(revisionAreAmbiguous(context, r2, r2));
-        assertTrue(revisionAreAmbiguous(context, r1, r2));
-        assertTrue(revisionAreAmbiguous(context, r2, r1));
     }
 
     @Test
@@ -240,7 +200,7 @@ public class NodeDocumentTest {
             builder.setProperty("p-" + clusterIdx, i);
             merge(ns, builder);
             if (r.nextFloat() < 0.2) {
-                Revision head = ns.getHeadRevision();
+                RevisionVector head = ns.getHeadRevision();
                 for (UpdateOp op : SplitOperations.forDocument(
                         getRootDocument(store), ns, head, 2)) {
                     store.createOrUpdate(NODES, op);
@@ -354,7 +314,7 @@ public class NodeDocumentTest {
             }
             merge(ns, builder);
             if (Math.random() < 0.2) {
-                Revision head = ns.getHeadRevision();
+                RevisionVector head = ns.getHeadRevision();
                 NodeDocument doc = ns.getDocumentStore().find(
                         NODES, Utils.getIdFromPath("/test"));
                 for (UpdateOp op : SplitOperations.forDocument(
@@ -374,7 +334,8 @@ public class NodeDocumentTest {
         Revision changeRev = new Revision(baseRev.getTimestamp(), 1000, ns.getClusterId());
         // reset calls to previous documents
         prevDocCalls.clear();
-        doc.getNewestRevision(ns, baseRev, changeRev, null, new HashSet<Revision>());
+        doc.getNewestRevision(ns, new RevisionVector(baseRev), changeRev,
+                null, new HashSet<Revision>());
         // must not read all previous docs
         assertTrue("too many calls for previous documents: " + prevDocCalls,
                 prevDocCalls.size() <= 5);
@@ -391,7 +352,8 @@ public class NodeDocumentTest {
         NodeBuilder b1 = ns1.getRoot().builder();
         b1.child("test");
         merge(ns1, b1);
-        Revision created = ns1.getHeadRevision();
+        RevisionVector headCreated = ns1.getHeadRevision();
+        Revision created = headCreated.getRevision(ns1.getClusterId());
 
         NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/test"));
         Set<Revision> collisions = Sets.newHashSet();
@@ -444,14 +406,14 @@ public class NodeDocumentTest {
         b1 = ns1.getRoot().builder();
         b1.child("test").setProperty("q", "v");
         merge(ns1, b1);
-        Revision committed = ns1.getHeadRevision();
+        Revision committed = ns1.getHeadRevision().getRevision(ns1.getClusterId());
 
         collisions.clear();
         // ns1 must now report committed revision as newest
         // uncommitted is not considered a collision anymore
         // because it is older than the base revision
         doc = store.find(NODES, Utils.getIdFromPath("/test"));
-        newest = doc.getNewestRevision(ns1, created,
+        newest = doc.getNewestRevision(ns1, headCreated,
                 ns1.newRevision(), null, collisions);
         assertEquals(committed, newest);
         assertEquals(0, collisions.size());
@@ -481,7 +443,7 @@ public class NodeDocumentTest {
 
         Set<Revision> collisions = Sets.newHashSet();
         NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/test"));
-        Revision branchBase = ns.getHeadRevision().asBranchRevision();
+        RevisionVector branchBase = ns.getHeadRevision().asBranchRevision(ns.getClusterId());
         try {
             doc.getNewestRevision(ns, branchBase, ns.newRevision(), null, collisions);
             fail("Must fail with IllegalArgumentException");
@@ -489,7 +451,7 @@ public class NodeDocumentTest {
             // expected
         }
         try {
-            Revision head = ns.getHeadRevision();
+            RevisionVector head = ns.getHeadRevision();
             Branch b = ns.getBranches().create(head, ns.newRevision(), null);
             doc.getNewestRevision(ns, head, ns.newRevision(), b, collisions);
             fail("Must fail with IllegalArgumentException");
@@ -510,7 +472,7 @@ public class NodeDocumentTest {
         for (int i = 0; i < 10; i++) {
             int idx = random.nextInt(numChanges);
             Revision r = Iterables.get(doc.getValueMap("p").keySet(), idx);
-            Iterable<Revision> revs = doc.getChanges("p", r, ns);
+            Iterable<Revision> revs = doc.getChanges("p", new RevisionVector(r), ns);
             assertEquals(idx, Iterables.size(revs));
         }
         ns.dispose();
@@ -525,15 +487,17 @@ public class NodeDocumentTest {
         DocumentNodeStore ns2 = createTestStore(store, 0);
         List<DocumentNodeStore> nodeStores = Lists.newArrayList(ns1, ns2);
 
+        List<RevisionVector> headRevisions = Lists.newArrayList();
         for (int i = 0; i < numChanges; i++) {
             DocumentNodeStore ns = nodeStores.get(random.nextInt(nodeStores.size()));
             ns.runBackgroundOperations();
             NodeBuilder builder = ns.getRoot().builder();
             builder.setProperty("p", i);
             merge(ns, builder);
+            headRevisions.add(ns.getHeadRevision());
             ns.runBackgroundOperations();
             if (random.nextDouble() < 0.2) {
-                Revision head = ns.getHeadRevision();
+                RevisionVector head = ns.getHeadRevision();
                 for (UpdateOp op : SplitOperations.forDocument(
                         getRootDocument(store), ns, head, 2)) {
                     store.createOrUpdate(NODES, op);
@@ -541,10 +505,11 @@ public class NodeDocumentTest {
             }
         }
 
+        headRevisions = Lists.reverse(headRevisions);
         NodeDocument doc = getRootDocument(store);
         for (int i = 0; i < 10; i++) {
             int idx = random.nextInt(numChanges);
-            Revision r = Iterables.get(doc.getValueMap("p").keySet(), idx);
+            RevisionVector r = headRevisions.get(idx);
             Iterable<Revision> revs1 = doc.getChanges("p", r, ns1);
             Iterable<Revision> revs2 = doc.getChanges("p", r, ns2);
             assertEquals(Iterables.size(revs1), Iterables.size(revs2));
@@ -574,7 +539,7 @@ public class NodeDocumentTest {
         NodeDocument doc = getRootDocument(store);
         Map<Revision, String> valueMap = doc.getValueMap("p");
         assertEquals(200, valueMap.size());
-        Revision baseRev = valueMap.keySet().iterator().next();
+        RevisionVector baseRev = new RevisionVector(valueMap.keySet().iterator().next());
         Revision commitRev = ns.newRevision();
         UpdateOp op = new UpdateOp(Utils.getIdFromPath("/"), false);
         op.setMapEntry("p", commitRev, "v");
@@ -600,7 +565,7 @@ public class NodeDocumentTest {
             builder.setProperty("p", i);
             merge(ns, builder);
             if (Math.random() < 0.2) {
-                Revision head = ns.getHeadRevision();
+                RevisionVector head = ns.getHeadRevision();
                 for (UpdateOp op : SplitOperations.forDocument(
                         getRootDocument(store), ns, head, 2)) {
                     store.createOrUpdate(NODES, op);
