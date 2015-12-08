@@ -472,7 +472,7 @@ public class NodeDocumentTest {
         for (int i = 0; i < 10; i++) {
             int idx = random.nextInt(numChanges);
             Revision r = Iterables.get(doc.getValueMap("p").keySet(), idx);
-            Iterable<Revision> revs = doc.getChanges("p", new RevisionVector(r), ns);
+            Iterable<Revision> revs = doc.getChanges("p", new RevisionVector(r));
             assertEquals(idx, Iterables.size(revs));
         }
         ns.dispose();
@@ -510,8 +510,8 @@ public class NodeDocumentTest {
         for (int i = 0; i < 10; i++) {
             int idx = random.nextInt(numChanges);
             RevisionVector r = headRevisions.get(idx);
-            Iterable<Revision> revs1 = doc.getChanges("p", r, ns1);
-            Iterable<Revision> revs2 = doc.getChanges("p", r, ns2);
+            Iterable<Revision> revs1 = doc.getChanges("p", r);
+            Iterable<Revision> revs2 = doc.getChanges("p", r);
             assertEquals(Iterables.size(revs1), Iterables.size(revs2));
             assertEquals(idx, Iterables.size(revs1));
         }
@@ -545,7 +545,7 @@ public class NodeDocumentTest {
         op.setMapEntry("p", commitRev, "v");
 
         prevDocCalls.clear();
-        assertFalse(doc.isConflicting(op, baseRev, commitRev, ns, false));
+        assertFalse(doc.isConflicting(op, baseRev, commitRev, false));
         assertTrue("too many calls for previous documents: " + prevDocCalls,
                 prevDocCalls.size() <= 6);
         ns.dispose();

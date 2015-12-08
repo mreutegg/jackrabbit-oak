@@ -996,6 +996,8 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
             }
         }
 
+        lastRevision = trackLastRevision(lastRevision, readRevision, nodeStore, validRevisions);
+
         // lastRevision now points to the revision when this node was
         // last modified directly. but it may also have been 'modified'
         // by an operation on a descendant node, which is tracked in
@@ -1073,14 +1075,12 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
      * @param op the update operation.
      * @param baseRevision the base revision for the update operation.
      * @param commitRevision the commit revision of the update operation.
-     * @param context the revision context.
      * @param enableConcurrentAddRemove feature flag for OAK-2673.
      * @return <code>true</code> if conflicting, <code>false</code> otherwise.
      */
     boolean isConflicting(@Nonnull UpdateOp op,
                           @Nonnull RevisionVector baseRevision,
                           @Nonnull Revision commitRevision,
-                          @Nonnull RevisionContext context,
                           boolean enableConcurrentAddRemove) {
         // did existence of node change after baseRevision?
         // only check local deleted map, which contains the most
@@ -1115,7 +1115,7 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
                 continue;
             }
             // was this property touched after baseRevision?
-            for (Revision rev : getChanges(name, baseRevision, context)) {
+            for (Revision rev : getChanges(name, baseRevision)) {
                 if (rev.equals(commitRevision)) {
                     continue;
                 }
@@ -1539,13 +1539,11 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
      *
      * @param property the name of the property.
      * @param min the lower bound revision (exclusive).
-     * @param context the revision context.
      * @return changes back to {@code min} revision.
      */
     @Nonnull
     Iterable<Revision> getChanges(@Nonnull final String property,
-                                  @Nonnull final RevisionVector min,
-                                  @Nonnull final RevisionContext context) {
+                                  @Nonnull final RevisionVector min) {
         return new Iterable<Revision>() {
             @Override
             public Iterator<Revision> iterator() {
@@ -1756,6 +1754,46 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
     }
 
     //----------------------------< internal >----------------------------------
+
+    private RevisionVector trackLastRevision(@Nonnull RevisionVector lastRevision,
+                                             @Nonnull RevisionVector readRevision,
+                                             @Nonnull RevisionContext context,
+                                             @Nonnull Map<Revision, String> validRevisions) {
+        SortedSet<Revision> mostRecentChanges = Sets.newTreeSet(REVERSE);
+        mostRecentChanges.addAll(getLocalRevisions().keySet());
+        mostRecentChanges.addAll(getLocalCommitRoot().keySet());
+        Set<Integer> clusterIds = Sets.newHashSet();
+        for (Revision r : getLocalRevisions().keySet()) {
+            clusterIds.add(r.getClusterId());
+        }
+        for (Revision r : getLocalCommitRoot().keySet()) {
+            clusterIds.add(r.getClusterId());
+        }
+        for (Revision r : mostRecentChanges) {
+            if (!clusterIds.contains(r.getClusterId())) {
+                // already found most recent change from this cluster node
+                continue;
+            }
+            if (isValidRevision(context, r, null, readRevision, validRevisions)) {
+                Revision commitRev = getCommitRevision(r);
+                if (commitRev != null) {
+                    if (lastRevision.isRevisionNewer(commitRev)
+                            || commitRev.equals(lastRevision.getRevision(commitRev.getClusterId()))) {
+                        lastRevision = lastRevision.update(commitRev);
+                        clusterIds.remove(r.getClusterId());
+                    }
+                }
+            }
+        }
+        // for remaining clusterIds use readRevision
+        for (int cId : clusterIds) {
+            Revision r = readRevision.getRevision(cId);
+            if (r != null && lastRevision.isRevisionNewer(r)) {
+                lastRevision = lastRevision.update(r);
+            }
+        }
+        return lastRevision;
+    }
 
     /**
      * Returns {@code true} if the given {@code revision} is more recent or

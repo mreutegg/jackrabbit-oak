@@ -2518,6 +2518,34 @@ public class DocumentNodeStoreTest {
         assertTrue(diff.modified.contains("/parent/node-x/child"));
     }
 
+    @Test
+    public void lastRevWithRevisionVector() throws Exception {
+        MemoryDocumentStore store = new MemoryDocumentStore();
+        DocumentNodeStore ns1 = builderProvider.newBuilder()
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+        DocumentNodeStore ns2 = builderProvider.newBuilder()
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+
+        NodeBuilder b1 = ns1.getRoot().builder();
+        b1.child("parent");
+        merge(ns1, b1);
+        b1 = ns1.getRoot().builder();
+        NodeBuilder parent = b1.child("parent");
+        parent.setProperty("p", 1);
+        parent.child("child");
+        merge(ns1, b1);
+        ns1.runBackgroundOperations();
+        ns2.runBackgroundOperations();
+
+        NodeBuilder b2 = ns2.getRoot().builder();
+        b2.child("parent").setProperty("p", 2);
+        merge(ns2, b2);
+        ns2.runBackgroundOperations();
+        ns1.runBackgroundOperations();
+
+        assertTrue(ns1.getRoot().getChildNode("parent").hasChildNode("child"));
+    }
+
     private static DocumentNodeState asDocumentNodeState(NodeState state) {
         if (!(state instanceof DocumentNodeState)) {
             throw new IllegalArgumentException("Not a DocumentNodeState");

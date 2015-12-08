@@ -605,7 +605,7 @@ public class Commit {
             // or document did not exist before
             return false;
         }
-        return doc.isConflicting(op, baseRevision, revision, nodeStore,
+        return doc.isConflicting(op, baseRevision, revision,
                 nodeStore.getEnableConcurrentAddRemove());
     }
 
