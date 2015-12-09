@@ -126,6 +126,39 @@ public final class RevisionVector implements Iterable<Revision>, Comparable<Revi
     }
 
     /**
+     * Returns a RevisionVector without the revision element with the given
+     * {@code clusterId}.
+     *
+     * @param clusterId the clusterId of the revision to remove.
+     * @return RevisionVector without the revision element.
+     */
+    public RevisionVector remove(int clusterId) {
+        if (revisions.length == 0) {
+            return this;
+        }
+        boolean found = false;
+        for (Revision r : revisions) {
+            if (r.getClusterId() == clusterId) {
+                found = true;
+                break;
+            } else if (r.getClusterId() > clusterId) {
+                break;
+            }
+        }
+        if (!found) {
+            return this;
+        }
+        Revision[] revs = new Revision[revisions.length - 1];
+        int idx = 0;
+        for (Revision r : revisions) {
+            if (r.getClusterId() != clusterId) {
+                revs[idx++] = r;
+            }
+        }
+        return new RevisionVector(revs, false, false);
+    }
+
+    /**
      * Calculates the parallel minimum of this and the given {@code vector}.
      *
      * @param vector the other vector.

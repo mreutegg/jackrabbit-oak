@@ -35,6 +35,7 @@ import org.junit.Test;
 import com.google.common.collect.ImmutableMap;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
@@ -284,7 +285,70 @@ public class CheckpointsTest {
     }
 
     @Test
-    public void crossClusterReadOldCheckpoint() {
-        // TODO
+    public void crossClusterCheckpointNewClusterNode() throws Exception {
+        DocumentStore store = new MemoryDocumentStore();
+        DocumentNodeStore ns1 = builderProvider.newBuilder()
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+
+        // create 'foo' on ns1
+        NodeBuilder b1 = ns1.getRoot().builder();
+        b1.child("foo");
+        ns1.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        // checkpoint sees 'foo' but not 'bar'
+        String checkpoint = ns1.checkpoint(Long.MAX_VALUE);
+
+        // create 'bar' on ns1
+        b1 = ns1.getRoot().builder();
+        b1.child("bar");
+        ns1.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        // make visible
+        ns1.runBackgroundOperations();
+
+        // now start second node store
+        DocumentNodeStore ns2 = builderProvider.newBuilder()
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+        NodeBuilder b2 = ns2.getRoot().builder();
+        b2.child("baz");
+        ns2.merge(b2, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        NodeState root = ns2.retrieve(checkpoint);
+        assertNotNull(root);
+        assertTrue(root.hasChildNode("foo"));
+        assertFalse(root.hasChildNode("bar"));
+        assertFalse(root.hasChildNode("baz"));
+    }
+
+    @Test
+    public void crossClusterReadOldCheckpoint() throws Exception {
+        DocumentStore store = new MemoryDocumentStore();
+        DocumentNodeStore ns1 = builderProvider.newBuilder()
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+
+        NodeBuilder b1 = ns1.getRoot().builder();
+        b1.child("foo");
+        ns1.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+        ns1.runBackgroundOperations();
+
+        // manually create a check point in 1.2 format
+        Revision headRev = Revision.fromString(ns1.getHeadRevision().toString());
+        long expires = Long.MAX_VALUE;
+        String data = "{\"expires\":\"" + expires + "\"}";
+        UpdateOp update = new UpdateOp("checkpoint", false);
+        update.setMapEntry("data", headRev, data);
+        store.createOrUpdate(Collection.SETTINGS, update);
+
+        // now start second node store
+        DocumentNodeStore ns2 = builderProvider.newBuilder()
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+        NodeBuilder b2 = ns2.getRoot().builder();
+        b2.child("baz");
+        ns2.merge(b2, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        NodeState root = ns2.retrieve(headRev.toString());
+        assertNotNull(root);
+        assertTrue(root.hasChildNode("foo"));
+        assertFalse(root.hasChildNode("baz"));
     }
 }

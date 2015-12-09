@@ -929,9 +929,8 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
                                                @Nullable Revision lastModified) {
         Map<Revision, String> validRevisions = Maps.newHashMap();
         Branch branch = nodeStore.getBranches().getBranch(readRevision);
-        LastRevs lastRevs = new LastRevs(getLastRev(), readRevision, branch);
-        // overlay with unsaved last modified from this instance
-        lastRevs.update(lastModified);
+        LastRevs lastRevs = createLastRevs(readRevision,
+                validRevisions, branch, lastModified);
 
         Revision min = getLiveRevision(nodeStore, readRevision, validRevisions, lastRevs);
         if (min == null) {
@@ -940,7 +939,6 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
         }
         String path = getPath();
         DocumentNodeState n = new DocumentNodeState(nodeStore, path, readRevision, hasChildren());
-        RevisionVector lastRevision = new RevisionVector(min); // TODO: correct?
         for (String key : keySet()) {
             if (!Utils.isPropertyName(key)) {
                 continue;
@@ -976,41 +974,43 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
             String propertyName = Utils.unescapePropertyName(key);
             String v = value != null ? value.value : null;
             n.setProperty(propertyName, v);
-            // keep track of when this node was last modified
-
-            if (value != null && lastRevision.isRevisionNewer(value.revision)) {
-                lastRevision = lastRevision.update(value.revision);
-            }
         }
 
-        lastRevision = trackLastRevision(lastRevision, readRevision, nodeStore, validRevisions);
-
-        // lastRevision now points to the revision when this node was
-        // last modified directly. but it may also have been 'modified'
-        // by an operation on a descendant node, which is tracked in
-        // _lastRev.
-
         // when was this node last modified?
+        RevisionVector lastRevision = new RevisionVector(min);
         RevisionVector branchBase = null;
         if (branch != null) {
             branchBase = branch.getBase(readRevision.getBranchRevision());
         }
-        for (Revision r : lastRevs.get().values()) {
-            // ignore if newer than readRevision
+        for (Revision r : lastRevs) {
             if (readRevision.isRevisionNewer(r)) {
                 // the node has a _lastRev which is newer than readRevision
                 // this means we don't know when this node was
                 // modified by an operation on a descendant node between
                 // current lastRevision and readRevision. therefore we have
                 // to stay on the safe side and use readRevision
-                lastRevision = readRevision;
+                Revision rev = readRevision.getRevision(r.getClusterId());
+                if (rev != null) {
+                    lastRevision = lastRevision.update(rev);
+                } else {
+                    // readRevision does not have a revision for this
+                    // clusterId -> remove from lastRevision
+                    lastRevision = lastRevision.remove(r.getClusterId());
+                }
             } else if (branchBase != null && branchBase.isRevisionNewer(r)) {
                 // readRevision is on a branch and the node has a
                 // _lastRev which is newer than the base of the branch
                 // we cannot use this _lastRev because it is not visible
                 // from this branch. highest possible revision of visible
                 // changes is the base of the branch
-                lastRevision = lastRevision.pmax(branchBase); // TODO: correct?
+                Revision rev = branchBase.getRevision(r.getClusterId());
+                if (rev != null) {
+                    lastRevision = lastRevision.update(rev);
+                } else {
+                    // branchBase does not have a revision for this
+                    // clusterId -> remove from lastRevision
+                    lastRevision = lastRevision.remove(r.getClusterId());
+                }
             } else if (lastRevision.isRevisionNewer(r)) {
                 lastRevision = lastRevision.update(r);
             }
@@ -1742,6 +1742,60 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
 
     //----------------------------< internal >----------------------------------
 
+    private LastRevs createLastRevs(@Nonnull RevisionVector readRevision,
+                                    @Nonnull Map<Revision, String> validRevisions,
+                                    @Nullable Branch branch,
+                                    @Nullable Revision pendingLastRev) {
+        LastRevs lastRevs = new LastRevs(getLastRev(), readRevision, branch);
+        // overlay with unsaved last modified from this instance
+        lastRevs.update(pendingLastRev);
+        // collect clusterIds
+        SortedSet<Revision> mostRecentChanges = Sets.newTreeSet(REVERSE);
+        mostRecentChanges.addAll(getLocalRevisions().keySet());
+        mostRecentChanges.addAll(getLocalCommitRoot().keySet());
+        Set<Integer> clusterIds = Sets.newHashSet();
+        for (Revision r : getLocalRevisions().keySet()) {
+            clusterIds.add(r.getClusterId());
+        }
+        for (Revision r : getLocalCommitRoot().keySet()) {
+            clusterIds.add(r.getClusterId());
+        }
+        for (Revision r : mostRecentChanges) {
+            if (!clusterIds.contains(r.getClusterId())) {
+                // already found most recent change from this cluster node
+                continue;
+            }
+            String commitValue = validRevisions.get(r);
+            if (commitValue == null) {
+                commitValue = resolveCommitValue(r);
+            }
+            if (commitValue == null) {
+                continue;
+            }
+            // resolve revision
+            Revision commitRev = resolveCommitRevision(r, commitValue);
+            if (Utils.isCommitted(commitValue)) {
+                lastRevs.update(commitRev);
+                clusterIds.remove(r.getClusterId());
+            } else if (branch != null) {
+                Revision branchRev = commitRev.asBranchRevision();
+                if (branch.containsCommit(branchRev)) {
+                    lastRevs.updateBranch(branchRev);
+                    clusterIds.remove(r.getClusterId());
+                }
+            }
+        }
+        return lastRevs;
+    }
+
+    private String resolveCommitValue(Revision revision) {
+        NodeDocument commitRoot = getCommitRoot(revision);
+        if (commitRoot == null) {
+            return null;
+        }
+        return commitRoot.getCommitValue(revision);
+    }
+
     private RevisionVector trackLastRevision(@Nonnull RevisionVector lastRevision,
                                              @Nonnull RevisionVector readRevision,
                                              @Nonnull RevisionContext context,
@@ -2013,17 +2067,12 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
             Revision propRev = entry.getKey();
             String commitValue = validRevisions.get(propRev);
             if (commitValue == null) {
-                // resolve revision
-                NodeDocument commitRoot = getCommitRoot(propRev);
-                if (commitRoot == null) {
-                    continue;
-                }
-                commitValue = commitRoot.getCommitValue(propRev);
-                if (commitValue == null) {
-                    continue;
-                }
+                commitValue = resolveCommitValue(propRev);
             }
-
+            if (commitValue == null) {
+                continue;
+            }
+            // resolve revision
             Revision commitRev = resolveCommitRevision(propRev, commitValue);
             if (Utils.isCommitted(commitValue)) {
                 lastRevs.update(commitRev);
