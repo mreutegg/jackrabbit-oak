@@ -398,8 +398,8 @@ public class Commit {
                             dse = new DocumentStoreException(msg);
                         } else {
                             dse = new ConflictException(msg,
-                                    commitRootDoc.getMostRecentConflictFor(
-                                        Collections.singleton(revision), nodeStore));
+                                    commitRootDoc.getConflictsFor(
+                                        Collections.singleton(revision)));
                         }
                         throw dse;
                     } else {

@@ -654,43 +654,31 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
     }
 
     /**
-     * Returns the most recent conflict on the given {@code branchCommits} if
-     * there are any. The returned revision is the commit, which created the
-     * collision marker for one of the {@code branchCommits}.
+     * Returns the conflicts on the given {@code changes} if there are any. The
+     * returned revisions are the commits, which created the collision markers
+     * for one of the {@code changes}.
      *
-     * TODO: return all conflict revisions
-     *
-     * @param branchCommits the branch commits to check.
-     * @param context a revision context.
-     * @return the conflict revision or {@code null} if there aren't any or
-     *          the collision marker does not have a revision value.
+     * @param changes the changes to check.
+     * @return the conflict revisions.
      */
-    @CheckForNull
-    Revision getMostRecentConflictFor(@Nonnull Iterable<Revision> branchCommits,
-                                      @Nonnull RevisionContext context) {
-        checkNotNull(branchCommits);
-        checkNotNull(context);
+    @Nonnull
+    Set<Revision> getConflictsFor(@Nonnull Iterable<Revision> changes) {
+        checkNotNull(changes);
 
-        Revision conflict = null;
-
+        Set<Revision> conflicts = Sets.newHashSet();
         Map<Revision, String> collisions = getLocalMap(COLLISIONS);
-        for (Revision r : branchCommits) {
+        for (Revision r : changes) {
             String value = collisions.get(r.asTrunkRevision());
             if (value == null) {
                 continue;
             }
-            Revision c;
             try {
-                c = Revision.fromString(value);
+                conflicts.add(Revision.fromString(value));
             } catch (IllegalArgumentException e) {
                 // backward compatibility: collision marker with value 'true'
-                continue;
-            }
-            if (conflict == null || conflict.compareRevisionTimeThenClusterId(c) < 0) {
-                conflict = c;
             }
         }
-        return conflict;
+        return conflicts;
     }
 
     /**
@@ -855,7 +843,6 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
         // select the newest committed change
         Revision newestRev = null;
         for (Revision r : newestRevs.values()) {
-            // TODO: also consider visibility from baseRev?
             newestRev = Utils.max(newestRev, r, StableRevisionComparator.INSTANCE);
         }
 

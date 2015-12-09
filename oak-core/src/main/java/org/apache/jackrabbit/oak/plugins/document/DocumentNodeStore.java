@@ -1344,9 +1344,9 @@ public final class DocumentNodeStore
                     getBranches().remove(b);
                 } else {
                     NodeDocument root = Utils.getRootDocument(store);
-                    Revision conflictRev = root.getMostRecentConflictFor(b.getCommits(), this);
+                    Set<Revision> conflictRevs = root.getConflictsFor(b.getCommits());
                     String msg = "Conflicting concurrent change. Update operation failed: " + op;
-                    throw new ConflictException(msg, conflictRev).asCommitFailedException();
+                    throw new ConflictException(msg, conflictRevs).asCommitFailedException();
                 }
             } else {
                 // no commits in this branch -> do nothing
@@ -1539,7 +1539,6 @@ public final class DocumentNodeStore
         if (rv == null) {
             return null;
         }
-        RevisionVector head = getHeadRevision();
         // make sure all changes up to checkpoint are visible
         suspendUntilAll(Sets.newHashSet(rv));
         return getRoot(rv);

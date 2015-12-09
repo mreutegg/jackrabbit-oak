@@ -27,7 +27,6 @@ import java.util.Set;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.VersionGCStats;
@@ -39,6 +38,7 @@ import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.junit.Test;
 
+import static com.google.common.collect.Sets.newHashSet;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.COLLISIONS;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getRootDocument;
@@ -72,16 +72,15 @@ public class NodeDocumentTest {
     }
 
     @Test
-    public void getMostRecentConflictFor() {
-        RevisionContext context = DummyRevisionContext.INSTANCE;
+    public void getConflictsFor() {
         MemoryDocumentStore docStore = new MemoryDocumentStore();
         String id = Utils.getPathFromId("/");
         NodeDocument doc = new NodeDocument(docStore);
         doc.put(Document.ID, id);
 
         Iterable<Revision> branchCommits = Collections.emptyList();
-        Revision conflict = doc.getMostRecentConflictFor(branchCommits, context);
-        assertNull(conflict);
+        Set<Revision> conflicts = doc.getConflictsFor(branchCommits);
+        assertTrue(conflicts.isEmpty());
 
         // add some collisions
         UpdateOp op = new UpdateOp(id, false);
@@ -98,24 +97,24 @@ public class NodeDocumentTest {
         UpdateUtils.applyChanges(doc, op);
 
         branchCommits = Collections.singleton(r0);
-        conflict = doc.getMostRecentConflictFor(branchCommits, context);
-        assertNull(conflict);
+        conflicts = doc.getConflictsFor(branchCommits);
+        assertTrue(conflicts.isEmpty());
 
         branchCommits = Collections.singleton(r1.asBranchRevision());
-        conflict = doc.getMostRecentConflictFor(branchCommits, context);
-        assertEquals(c1, conflict);
+        conflicts = doc.getConflictsFor(branchCommits);
+        assertEquals(newHashSet(c1), conflicts);
 
         branchCommits = Collections.singleton(r2.asBranchRevision());
-        conflict = doc.getMostRecentConflictFor(branchCommits, context);
-        assertEquals(c2, conflict);
+        conflicts = doc.getConflictsFor(branchCommits);
+        assertEquals(newHashSet(c2), conflicts);
 
         branchCommits = Lists.newArrayList(r1.asBranchRevision(), r2.asBranchRevision());
-        conflict = doc.getMostRecentConflictFor(branchCommits, context);
-        assertEquals(c2, conflict);
+        conflicts = doc.getConflictsFor(branchCommits);
+        assertEquals(newHashSet(c1, c2), conflicts);
 
         branchCommits = Lists.newArrayList(r2.asBranchRevision(), r1.asBranchRevision());
-        conflict = doc.getMostRecentConflictFor(branchCommits, context);
-        assertEquals(c2, conflict);
+        conflicts = doc.getConflictsFor(branchCommits);
+        assertEquals(newHashSet(c1, c2), conflicts);
     }
 
     @Test
@@ -288,7 +287,7 @@ public class NodeDocumentTest {
     @Test
     public void getNewestRevisionTooExpensive() throws Exception {
         final int NUM_CHANGES = 200;
-        final Set<String> prevDocCalls = Sets.newHashSet();
+        final Set<String> prevDocCalls = newHashSet();
         DocumentStore store = new MemoryDocumentStore() {
             @Override
             public <T extends Document> T find(Collection<T> collection,
@@ -356,7 +355,7 @@ public class NodeDocumentTest {
         Revision created = headCreated.getRevision(ns1.getClusterId());
 
         NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/test"));
-        Set<Revision> collisions = Sets.newHashSet();
+        Set<Revision> collisions = newHashSet();
         Revision newest = doc.getNewestRevision(ns1, ns1.getHeadRevision(),
                 ns1.newRevision(), null, collisions);
         assertEquals(created, newest);
@@ -441,7 +440,7 @@ public class NodeDocumentTest {
         builder.child("test");
         merge(ns, builder);
 
-        Set<Revision> collisions = Sets.newHashSet();
+        Set<Revision> collisions = newHashSet();
         NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/test"));
         RevisionVector branchBase = ns.getHeadRevision().asBranchRevision(ns.getClusterId());
         try {
@@ -524,7 +523,7 @@ public class NodeDocumentTest {
     @Test
     public void isConflicting() throws Exception {
         final int numChanges = 200;
-        final Set<String> prevDocCalls = Sets.newHashSet();
+        final Set<String> prevDocCalls = newHashSet();
         MemoryDocumentStore store = new MemoryDocumentStore() {
             @Override
             public <T extends Document> T find(Collection<T> collection,
