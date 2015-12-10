@@ -50,9 +50,6 @@ import static java.util.Arrays.sort;
  * vector instances, this order is unrelated to when changes are visible in
  * a DocumentNodeStore cluster. Do not use this method to determine whether
  * a given revision vector happened before or after another!
- *
- * TODO: what about branch revisions?
- * TODO: measure memory RevisionVector
  */
 public final class RevisionVector implements Iterable<Revision>, Comparable<RevisionVector>, CacheValue {
 

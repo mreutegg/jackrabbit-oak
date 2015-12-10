@@ -1021,7 +1021,7 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
             lastRevs.updateBranch(branch.getUnsavedLastRevision(path, readRevision.getBranchRevision()));
             Revision r = lastRevs.getBranchRevision();
             if (r != null) {
-                lastRevision = lastRevision.update(r); // TODO: correct?
+                lastRevision = lastRevision.update(r);
             }
         }
         n.setLastRevision(lastRevision);
@@ -1796,46 +1796,6 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
         return commitRoot.getCommitValue(revision);
     }
 
-    private RevisionVector trackLastRevision(@Nonnull RevisionVector lastRevision,
-                                             @Nonnull RevisionVector readRevision,
-                                             @Nonnull RevisionContext context,
-                                             @Nonnull Map<Revision, String> validRevisions) {
-        SortedSet<Revision> mostRecentChanges = Sets.newTreeSet(REVERSE);
-        mostRecentChanges.addAll(getLocalRevisions().keySet());
-        mostRecentChanges.addAll(getLocalCommitRoot().keySet());
-        Set<Integer> clusterIds = Sets.newHashSet();
-        for (Revision r : getLocalRevisions().keySet()) {
-            clusterIds.add(r.getClusterId());
-        }
-        for (Revision r : getLocalCommitRoot().keySet()) {
-            clusterIds.add(r.getClusterId());
-        }
-        for (Revision r : mostRecentChanges) {
-            if (!clusterIds.contains(r.getClusterId())) {
-                // already found most recent change from this cluster node
-                continue;
-            }
-            if (isValidRevision(context, r, null, readRevision, validRevisions)) {
-                Revision commitRev = getCommitRevision(r);
-                if (commitRev != null) {
-                    if (lastRevision.isRevisionNewer(commitRev)
-                            || commitRev.equals(lastRevision.getRevision(commitRev.getClusterId()))) {
-                        lastRevision = lastRevision.update(commitRev);
-                        clusterIds.remove(r.getClusterId());
-                    }
-                }
-            }
-        }
-        // for remaining clusterIds use readRevision
-        for (int cId : clusterIds) {
-            Revision r = readRevision.getRevision(cId);
-            if (r != null && lastRevision.isRevisionNewer(r)) {
-                lastRevision = lastRevision.update(r);
-            }
-        }
-        return lastRevision;
-    }
-
     /**
      * Returns {@code true} if the given {@code revision} is more recent or
      * equal to the committed revision in {@code valueMap}. This method assumes
@@ -1853,7 +1813,6 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
         }
         // shortcut when revision is the first key
         Revision first = valueMap.firstKey();
-        // TODO: correct?
         if (Longs.compare(first.getTimestamp(), revision.getTimestamp()) <= 0) {
             return true;
         }
@@ -1861,7 +1820,6 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
         for (Revision r : valueMap.keySet()) {
             Revision c = getCommitRevision(r);
             if (c != null) {
-                // TODO: correct?
                 return Longs.compare(c.getTimestamp(), revision.getTimestamp()) <= 0;
             }
         }
@@ -2082,7 +2040,6 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
             }
 
             if (isValidRevision(context, propRev, commitValue, readRevision, validRevisions)) {
-                // TODO: need to check older revisions as well?
                 return new Value(commitRev, entry.getValue());
             }
         }
