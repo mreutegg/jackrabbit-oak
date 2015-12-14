@@ -17,6 +17,7 @@
 package org.apache.jackrabbit.oak.spi.state;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Strings.repeat;
 
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
@@ -100,7 +101,7 @@ public final class NodeStateUtils {
     private static String toString(NodeState ns, int level, String prepend,
             String name) {
         StringBuilder node = new StringBuilder();
-        node.append(prepend).append(name);
+        node.append(repeat(prepend, level)).append(name);
 
         StringBuilder props = new StringBuilder();
         boolean first = true;
@@ -120,7 +121,7 @@ public final class NodeStateUtils {
         }
         for (ChildNodeEntry c : ns.getChildNodeEntries()) {
             node.append(IOUtils.LINE_SEPARATOR);
-            node.append(toString(c.getNodeState(), level++, prepend + prepend,
+            node.append(toString(c.getNodeState(), level + 1, prepend,
                     c.getName()));
         }
         return node.toString();
