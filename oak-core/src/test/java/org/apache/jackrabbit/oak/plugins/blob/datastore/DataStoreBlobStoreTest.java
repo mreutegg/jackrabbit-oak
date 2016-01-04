@@ -19,7 +19,6 @@
 
 package org.apache.jackrabbit.oak.plugins.blob.datastore;
 
-import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
@@ -39,6 +38,7 @@ import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.oak.spi.blob.AbstractBlobStoreTest;
 import org.apache.jackrabbit.oak.spi.blob.BlobStoreInputStream;
+import org.apache.jackrabbit.oak.spi.blob.stats.BlobStatsCollector;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
@@ -57,6 +57,18 @@ public class DataStoreBlobStoreTest extends AbstractBlobStoreTest {
     @Override
     public void setUp() throws Exception {
         store = DataStoreUtils.getBlobStore();
+    }
+
+    @Override
+    protected void setupCollector(BlobStatsCollector statsCollector) {
+        if (store instanceof DataStoreBlobStore){
+            ((DataStoreBlobStore) store).setBlobStatsCollector(statsCollector);
+        }
+    }
+
+    @Override
+    protected boolean supportsStatsCollection() {
+        return true;
     }
 
     @Test
@@ -113,7 +125,7 @@ public class DataStoreBlobStoreTest extends AbstractBlobStoreTest {
         assertEquals(dr, ds.getRecordIfStored(dr.getIdentifier()));
         assertEquals(dr, ds.getRecord(dr.getIdentifier()));
 
-        assertTrue(ds.getInputStream(dr.getIdentifier().toString()) instanceof BufferedInputStream);
+//        assertTrue(ds.getInputStream(dr.getIdentifier().toString()) instanceof BufferedInputStream);
         assertEquals(actualSize, ds.getBlobLength(dr.getIdentifier().toString()));
         assertEquals(testDI.toString(), BlobId.of(ds.writeBlob(new ByteArrayInputStream(data))).blobId);
     }

@@ -34,7 +34,7 @@ public class SimpleStatsTest {
     @Test
     public void usageTest() throws Exception {
         AtomicLong counter = new AtomicLong();
-        SimpleStats stats = new SimpleStats(counter);
+        SimpleStats stats = new SimpleStats(counter, SimpleStats.Type.COUNTER);
 
         stats.mark();
         assertEquals(1, counter.get());
@@ -44,6 +44,12 @@ public class SimpleStatsTest {
         assertEquals(2, counter.get());
 
         stats.dec();
+        assertEquals(1, counter.get());
+
+        stats.inc(7);
+        assertEquals(8, counter.get());
+
+        stats.dec(7);
         assertEquals(1, counter.get());
 
         stats.mark(2);
@@ -77,6 +83,12 @@ public class SimpleStatsTest {
         noop.inc();
         assertEquals(0, noop.getCount());
 
+        noop.inc(5);
+        assertEquals(0, noop.getCount());
+
+        noop.dec(7);
+        assertEquals(0, noop.getCount());
+
         noop.update(100, TimeUnit.SECONDS);
         assertEquals(0, noop.getCount());
 
@@ -98,7 +110,26 @@ public class SimpleStatsTest {
         assertNotNull(ts.getValuePerSecond());
         assertNotNull(ts.getValuePerWeek());
         assertEquals(0, ts.getMissingValue());
+    }
+
+    @Test
+    public void meterResetAndCount() throws Exception{
+        AtomicLong counter = new AtomicLong();
+        MeterStats stats = new SimpleStats(counter, SimpleStats.Type.METER);
+
+        stats.mark();
+        assertEquals(1, stats.getCount());
+
+        stats.mark();
+        assertEquals(2, stats.getCount());
+
+        stats.mark(5);
+        assertEquals(7, stats.getCount());
+
+        counter.set(0);
+        assertEquals(7, stats.getCount());
 
     }
+
 
 }

@@ -19,6 +19,7 @@ package org.apache.jackrabbit.oak.plugins.index.solr.query;
 import java.util.Collection;
 import java.util.List;
 
+import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.plugins.index.solr.configuration.OakSolrConfiguration;
 import org.apache.jackrabbit.oak.query.QueryImpl;
 import org.apache.jackrabbit.oak.query.fulltext.FullTextAnd;
@@ -90,6 +91,14 @@ class FilterQueryParser {
                     // can not use full "x is null"
                     continue;
                 }
+                // facets
+                if (QueryImpl.REP_FACET.equals(pr.propertyName)) {
+                    solrQuery.setFacetMinCount(1);
+                    solrQuery.setFacet(true);
+                    String value = pr.first.getValue(Type.STRING);
+                    solrQuery.addFacetField(value.substring(QueryImpl.REP_FACET.length() + 1, value.length() - 1)+"_facet");
+                } 
+
                 // native query support
                 if (SolrQueryIndex.NATIVE_SOLR_QUERY.equals(pr.propertyName) || SolrQueryIndex.NATIVE_LUCENE_QUERY.equals(pr.propertyName)) {
                     String nativeQueryString = String.valueOf(pr.first.getValue(pr.first.getType()));

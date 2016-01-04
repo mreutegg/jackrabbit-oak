@@ -36,12 +36,14 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import javax.sql.DataSource;
 
 import org.apache.jackrabbit.oak.commons.StringUtils;
 import org.apache.jackrabbit.oak.plugins.blob.CachingBlobStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStoreException;
+import org.apache.jackrabbit.oak.plugins.document.rdb.RDBJDBCTools.PreparedStatementComponent;
 import org.apache.jackrabbit.oak.spi.blob.AbstractBlobStore;
 import org.apache.jackrabbit.oak.util.OakVersion;
 import org.slf4j.Logger;
@@ -364,7 +366,7 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
 
         if (data == null) {
             Connection con = this.ch.getROConnection();
-
+            long start = System.nanoTime();
             try {
                 PreparedStatement prep = con.prepareStatement("select DATA from " + this.tnData + " where ID = ?");
                 try {
@@ -377,6 +379,8 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                 } finally {
                     prep.close();
                 }
+
+                getStatsCollector().downloaded(id, System.nanoTime() - start, TimeUnit.NANOSECONDS, data.length);
                 cache.put(id, data);
             } finally {
                 con.commit();
@@ -497,31 +501,28 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
         PreparedStatement prepData = null;
 
         try {
-            StringBuilder inClause = new StringBuilder();
-            int batch = chunkIds.size();
-            for (int i = 0; i < batch; i++) {
-                inClause.append('?');
-                if (i != batch - 1) {
-                    inClause.append(',');
-                }
-            }
+            PreparedStatementComponent inClause = RDBJDBCTools.createInStatement("ID", chunkIds, false);
+
+            StringBuilder metaStatement = new StringBuilder("delete from " + this.tnMeta + " where ")
+                    .append(inClause.getStatementComponent());
+            StringBuilder dataStatement = new StringBuilder("delete from " + this.tnData + " where ")
+                    .append(inClause.getStatementComponent());
 
             if (maxLastModifiedTime > 0) {
-                prepMeta = con.prepareStatement("delete from " + this.tnMeta + " where ID in (" + inClause.toString()
-                        + ") and LASTMOD <= ?");
-                prepMeta.setLong(batch + 1, maxLastModifiedTime);
-
-                prepData = con.prepareStatement("delete from " + this.tnData + " where ID in (" + inClause.toString()
-                        + ") and not exists(select * from " + this.tnMeta + " m where ID = m.ID and m.LASTMOD <= ?)");
-                prepData.setLong(batch + 1, maxLastModifiedTime);
-            } else {
-                prepMeta = con.prepareStatement("delete from " + this.tnMeta + " where ID in (" + inClause.toString() + ")");
-                prepData = con.prepareStatement("delete from " + this.tnData + " where ID in (" + inClause.toString() + ")");
+                metaStatement.append(" and LASTMOD <= ?");
+                dataStatement.append(" and not exists(select * from " + this.tnMeta + " m where ID = m.ID and m.LASTMOD <= ?)");
             }
 
-            for (int idx = 0; idx < batch; idx++) {
-                prepMeta.setString(idx + 1, chunkIds.get(idx));
-                prepData.setString(idx + 1, chunkIds.get(idx));
+            prepMeta = con.prepareStatement(metaStatement.toString());
+            prepData = con.prepareStatement(dataStatement.toString());
+
+            int mindex = 1, dindex = 1;
+            mindex = inClause.setParameters(prepMeta, mindex);
+            dindex = inClause.setParameters(prepData, dindex);
+
+            if (maxLastModifiedTime > 0) {
+                prepMeta.setLong(mindex, maxLastModifiedTime);
+                prepData.setLong(dindex, maxLastModifiedTime);
             }
 
             count = prepMeta.executeUpdate();

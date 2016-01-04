@@ -25,6 +25,7 @@ import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
+import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.sql.DataSource;
@@ -45,6 +46,8 @@ import org.apache.jackrabbit.oak.commons.json.JsopReader;
 import org.apache.jackrabbit.oak.commons.json.JsopStream;
 import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
 import org.apache.jackrabbit.oak.json.JsopDiff;
+import org.apache.jackrabbit.oak.plugins.blob.BlobStoreStats;
+import org.apache.jackrabbit.oak.plugins.blob.CachingBlobStore;
 import org.apache.jackrabbit.oak.plugins.blob.ReferencedBlob;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState.Children;
 import org.apache.jackrabbit.oak.plugins.document.cache.NodeDocumentCache;
@@ -64,10 +67,12 @@ import org.apache.jackrabbit.oak.plugins.document.rdb.RDBVersionGCSupport;
 import org.apache.jackrabbit.oak.plugins.document.util.MongoConnection;
 import org.apache.jackrabbit.oak.plugins.document.util.RevisionsKey;
 import org.apache.jackrabbit.oak.plugins.document.util.StringValue;
+import org.apache.jackrabbit.oak.spi.blob.AbstractBlobStore;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
 import org.apache.jackrabbit.oak.spi.blob.MemoryBlobStore;
 import org.apache.jackrabbit.oak.stats.Clock;
+import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -512,6 +517,9 @@ public class DocumentMK {
         private String persistentCacheURI = DEFAULT_PERSISTENT_CACHE_URI;
         private PersistentCache persistentCache;
         private LeaseFailureHandler leaseFailureHandler;
+        private StatisticsProvider statisticsProvider = StatisticsProvider.NOOP;
+        private BlobStoreStats blobStoreStats;
+        private CacheStats blobStoreCacheStats;
 
         public Builder() {
         }
@@ -562,6 +570,7 @@ public class DocumentMK {
 
             if (this.blobStore == null) {
                 GarbageCollectableBlobStore s = new MongoBlobStore(db, blobCacheSizeMB * 1024 * 1024L);
+                configureBlobStore(s);
                 PersistentCache p = getPersistentCache();
                 if (p != null) {
                     s = p.wrapBlobStore(s);
@@ -591,6 +600,7 @@ public class DocumentMK {
             this.documentStore = new RDBDocumentStore(ds, this);
             if(this.blobStore == null) {
                 this.blobStore = new RDBBlobStore(ds);
+                configureBlobStore(blobStore);
             }
             return this;
         }
@@ -605,6 +615,7 @@ public class DocumentMK {
             this.documentStore = new RDBDocumentStore(ds, this, options);
             if(this.blobStore == null) {
                 this.blobStore = new RDBBlobStore(ds, options);
+                configureBlobStore(blobStore);
             }
             return this;
         }
@@ -628,6 +639,7 @@ public class DocumentMK {
         public Builder setRDBConnection(DataSource documentStoreDataSource, DataSource blobStoreDataSource) {
             this.documentStore = new RDBDocumentStore(documentStoreDataSource, this);
             this.blobStore = new RDBBlobStore(blobStoreDataSource);
+            configureBlobStore(blobStore);
             return this;
         }
 
@@ -724,6 +736,7 @@ public class DocumentMK {
         public BlobStore getBlobStore() {
             if (blobStore == null) {
                 blobStore = new MemoryBlobStore();
+                configureBlobStore(blobStore);
             }
             return blobStore;
         }
@@ -854,6 +867,21 @@ public class DocumentMK {
         public Builder clock(Clock clock) {
             this.clock = clock;
             return this;
+        }
+
+        public Builder setStatisticsProvider(StatisticsProvider statisticsProvider){
+            this.statisticsProvider = statisticsProvider;
+            return this;
+        }
+
+        @CheckForNull
+        public BlobStoreStats getBlobStoreStats() {
+            return blobStoreStats;
+        }
+
+        @CheckForNull
+        public CacheStats getBlobStoreCacheStats() {
+            return blobStoreCacheStats;
         }
 
         public Clock getClock() {
@@ -1014,6 +1042,24 @@ public class DocumentMK {
                     maximumWeight(maxWeight).
                     recordStats().
                     build();
+        }
+
+        /**
+         * BlobStore which are created by builder might get wrapped.
+         * So here we perform any configuration and also access any
+         * service exposed by the store
+         *
+         * @param blobStore store to config
+         */
+        private void configureBlobStore(BlobStore blobStore) {
+            if (blobStore instanceof AbstractBlobStore){
+                this.blobStoreStats = new BlobStoreStats(statisticsProvider);
+                ((AbstractBlobStore) blobStore).setStatsCollector(blobStoreStats);
+            }
+
+            if (blobStore instanceof CachingBlobStore){
+                blobStoreCacheStats = ((CachingBlobStore) blobStore).getCacheStats();
+            }
         }
 
     }

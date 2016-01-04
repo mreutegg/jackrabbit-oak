@@ -21,6 +21,8 @@ import static java.util.Arrays.asList;
 import static org.apache.commons.io.FileUtils.byteCountToDisplaySize;
 import static org.apache.jackrabbit.oak.checkpoint.Checkpoints.CP;
 import static org.apache.jackrabbit.oak.plugins.segment.RecordType.NODE;
+import static org.apache.jackrabbit.oak.plugins.segment.SegmentGraph.writeGCGraph;
+import static org.apache.jackrabbit.oak.plugins.segment.SegmentGraph.writeSegmentGraph;
 import static org.apache.jackrabbit.oak.plugins.segment.file.FileStore.newFileStore;
 import static org.apache.jackrabbit.oak.plugins.segment.file.tooling.ConsistencyChecker.checkConsistency;
 import static org.slf4j.LoggerFactory.getLogger;
@@ -99,7 +101,6 @@ import org.apache.jackrabbit.oak.plugins.document.util.MapDBMapFactory;
 import org.apache.jackrabbit.oak.plugins.document.util.MapFactory;
 import org.apache.jackrabbit.oak.plugins.document.util.MongoConnection;
 import org.apache.jackrabbit.oak.plugins.segment.FileStoreDiff;
-import org.apache.jackrabbit.oak.plugins.segment.FileStoreHelper;
 import org.apache.jackrabbit.oak.plugins.segment.PCMAnalyser;
 import org.apache.jackrabbit.oak.plugins.segment.RecordId;
 import org.apache.jackrabbit.oak.plugins.segment.RecordUsageAnalyser;
@@ -112,6 +113,7 @@ import org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy;
 import org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy.CleanupType;
 import org.apache.jackrabbit.oak.plugins.segment.file.FileStore;
 import org.apache.jackrabbit.oak.plugins.segment.file.FileStore.ReadOnlyStore;
+import org.apache.jackrabbit.oak.plugins.segment.file.FileStoreRevisionRecovery;
 import org.apache.jackrabbit.oak.plugins.segment.file.JournalReader;
 import org.apache.jackrabbit.oak.plugins.segment.file.tooling.RevisionHistory;
 import org.apache.jackrabbit.oak.plugins.segment.file.tooling.RevisionHistory.HistoryElement;
@@ -221,6 +223,9 @@ public final class Main {
                 break;
             case TARMKDIFF:
                 FileStoreDiff.main(args);
+                break;
+            case TARMKRECOVERY:
+                FileStoreRevisionRecovery.main(args);
                 break;
             case HELP:
             default:
@@ -811,6 +816,9 @@ public final class Main {
         OptionSpec<Long> epochArg = parser.accepts(
                 "epoch", "Epoch of the segment time stamps (derived from journal.log if not given)")
                 .withRequiredArg().ofType(Long.class);
+        OptionSpec<Void> gcGraphArg = parser.accepts(
+                "gc", "Write the gc generation graph instead of the full graph");
+
         OptionSet options = parser.parse(args);
 
         File directory = directoryArg.value(options);
@@ -847,7 +855,13 @@ public final class Main {
 
         System.out.println("Setting epoch to " + epoch);
         System.out.println("Writing graph to " + outFile);
-        FileStoreHelper.writeSegmentGraph(fileStore, new FileOutputStream(outFile), epoch);
+
+        FileOutputStream out = new FileOutputStream(outFile);
+        if (options.has(gcGraphArg)) {
+            writeGCGraph(fileStore, out);
+        } else {
+            writeSegmentGraph(fileStore, out, epoch);
+        }
     }
 
     private static void check(String[] args) throws IOException {
@@ -1316,7 +1330,8 @@ public final class Main {
         REPAIR("repair"),
         TIKA("tika"),
         GARBAGE("garbage"),
-        TARMKDIFF("tarmkdiff");
+        TARMKDIFF("tarmkdiff"),
+        TARMKRECOVERY("tarmkrecovery");
 
         private final String name;
 

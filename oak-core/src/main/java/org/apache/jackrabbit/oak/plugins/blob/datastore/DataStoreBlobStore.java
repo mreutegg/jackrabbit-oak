@@ -34,6 +34,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -54,9 +55,12 @@ import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
 import org.apache.jackrabbit.core.data.MultiDataStoreAware;
 import org.apache.jackrabbit.oak.cache.CacheLIRS;
+import org.apache.jackrabbit.oak.cache.CacheStats;
 import org.apache.jackrabbit.oak.commons.StringUtils;
 import org.apache.jackrabbit.oak.plugins.blob.SharedDataStore;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
+import org.apache.jackrabbit.oak.spi.blob.stats.StatsCollectingStreams;
+import org.apache.jackrabbit.oak.spi.blob.stats.BlobStatsCollector;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,6 +75,8 @@ public class DataStoreBlobStore implements DataStore, SharedDataStore, BlobStore
     private final Logger log = LoggerFactory.getLogger(getClass());
 
     private final DataStore delegate;
+
+    private BlobStatsCollector stats = BlobStatsCollector.NOOP;
 
     /**
      * If set to true then the blob length information would be encoded as part of blobId
@@ -94,6 +100,16 @@ public class DataStoreBlobStore implements DataStore, SharedDataStore, BlobStore
      */
     private int maxCachedBinarySize = 1024 * 1024;
 
+    private final Weigher<String, byte[]> weigher = new Weigher<String, byte[]>() {
+        @Override
+        public int weigh(@Nonnull String key, @Nonnull byte[] value) {
+            return StringUtils.estimateMemoryUsage(key) + value.length;
+        }
+    };
+
+    private final CacheStats cacheStats;
+
+    public static final String MEM_CACHE_NAME = "BlobStore-MemCache";
 
     public DataStoreBlobStore(DataStore delegate) {
         this(delegate, true, DEFAULT_CACHE_SIZE);
@@ -107,16 +123,14 @@ public class DataStoreBlobStore implements DataStore, SharedDataStore, BlobStore
         this.delegate = delegate;
         this.encodeLengthInId = encodeLengthInId;
 
+        long cacheSize = (long) cacheSizeInMB * FileUtils.ONE_MB;
         this.cache = CacheLIRS.<String, byte[]>newBuilder()
-                .module("DataStoreBlobStore")
-                .maximumWeight((long) cacheSizeInMB * FileUtils.ONE_MB)
-                .weigher(new Weigher<String, byte[]>() {
-                    @Override
-                    public int weigh(@Nonnull String key, @Nonnull byte[] value) {
-                        return StringUtils.estimateMemoryUsage(key) + value.length;
-                    }
-                })
+                .module(MEM_CACHE_NAME)
+                .recordStats()
+                .maximumWeight(cacheSize)
+                .weigher(weigher)
                 .build();
+        this.cacheStats = new CacheStats(cache, MEM_CACHE_NAME, weigher, cacheSize);
     }
 
     //~----------------------------------< DataStore >
@@ -188,10 +202,13 @@ public class DataStoreBlobStore implements DataStore, SharedDataStore, BlobStore
     public String writeBlob(InputStream stream) throws IOException {
         boolean threw = true;
         try {
+            long start = System.nanoTime();
             checkNotNull(stream);
             DataRecord dr = writeStream(stream);
             String id = getBlobId(dr);
             threw = false;
+            stats.uploaded(System.nanoTime() - start, TimeUnit.NANOSECONDS, dr.getLength());
+            stats.uploadCompleted(id);
             return id;
         } catch (DataStoreException e) {
             throw new IOException(e);
@@ -465,8 +482,16 @@ public class DataStoreBlobStore implements DataStore, SharedDataStore, BlobStore
         return delegate;
     }
 
+    public CacheStats getCacheStats() {
+        return cacheStats;
+    }
+
     public void setMaxCachedBinarySize(int maxCachedBinarySize) {
         this.maxCachedBinarySize = maxCachedBinarySize;
+    }
+
+    public void setBlobStatsCollector(BlobStatsCollector stats) {
+        this.stats = stats;
     }
 
     //~---------------------------------------------< Internal >
@@ -477,7 +502,7 @@ public class DataStoreBlobStore implements DataStore, SharedDataStore, BlobStore
             if (!(in instanceof BufferedInputStream)){
                 in = new BufferedInputStream(in);
             }
-            return in;
+            return StatsCollectingStreams.wrap(stats, blobId, in);
         } catch (DataStoreException e) {
             throw new IOException(e);
         }

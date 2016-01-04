@@ -25,11 +25,22 @@ import java.util.Map;
 
 import javax.jcr.RepositoryException;
 
+import org.apache.felix.scr.annotations.Component;
+import org.apache.felix.scr.annotations.Reference;
 import org.apache.jackrabbit.core.data.DataStore;
 import org.apache.jackrabbit.core.data.DataStoreException;
+import org.apache.jackrabbit.oak.api.jmx.CacheStatsMBean;
 import org.apache.jackrabbit.oak.commons.PropertiesUtil;
+import org.apache.jackrabbit.oak.osgi.OsgiWhiteboard;
+import org.apache.jackrabbit.oak.spi.blob.stats.BlobStoreStatsMBean;
+import org.apache.jackrabbit.oak.plugins.blob.BlobStoreStats;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
+import org.apache.jackrabbit.oak.spi.whiteboard.CompositeRegistration;
+import org.apache.jackrabbit.oak.spi.whiteboard.Registration;
+import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
+import org.apache.jackrabbit.oak.stats.StatisticsProvider;
+import org.osgi.framework.BundleContext;
 import org.osgi.framework.Constants;
 import org.osgi.framework.ServiceRegistration;
 import org.osgi.service.component.ComponentContext;
@@ -37,7 +48,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.apache.jackrabbit.oak.spi.blob.osgi.SplitBlobStoreService.PROP_SPLIT_BLOBSTORE;
+import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.registerMBean;
 
+@Component(componentAbstract = true)
 public abstract class AbstractDataStoreService {
     private static final String PROP_HOME = "repository.home";
 
@@ -47,9 +60,14 @@ public abstract class AbstractDataStoreService {
 
     private ServiceRegistration reg;
 
+    private Registration mbeanReg;
+
     private Logger log = LoggerFactory.getLogger(getClass());
 
-    private DataStore dataStore;
+    @Reference
+    private StatisticsProvider statisticsProvider;
+
+    private DataStoreBlobStore dataStore;
 
     protected void activate(ComponentContext context, Map<String, Object> config) throws RepositoryException {
         DataStore ds = createDataStore(context, config);
@@ -61,7 +79,9 @@ public abstract class AbstractDataStoreService {
         }
         PropertiesUtil.populate(ds, config, false);
         ds.init(homeDir);
+        BlobStoreStats stats = new BlobStoreStats(getStatisticsProvider());
         this.dataStore = new DataStoreBlobStore(ds, encodeLengthInId, cacheSizeInMB);
+        this.dataStore.setBlobStatsCollector(stats);
         PropertiesUtil.populate(dataStore, config, false);
 
         Dictionary<String, Object> props = new Hashtable<String, Object>();
@@ -75,6 +95,8 @@ public abstract class AbstractDataStoreService {
                 BlobStore.class.getName(),
                 GarbageCollectableBlobStore.class.getName()
         }, dataStore , props);
+
+        mbeanReg = registerMBeans(context.getBundleContext(), dataStore, stats);
     }
 
     protected void deactivate() throws DataStoreException {
@@ -82,13 +104,25 @@ public abstract class AbstractDataStoreService {
             reg.unregister();
         }
 
+        if (mbeanReg != null){
+            mbeanReg.unregister();
+        }
+
         dataStore.close();
     }
 
     protected abstract DataStore createDataStore(ComponentContext context, Map<String, Object> config);
 
+    protected StatisticsProvider getStatisticsProvider(){
+        return statisticsProvider;
+    }
+
     protected String[] getDescription(){
         return new String[] {"type=unknown"};
+    }
+
+    void setStatisticsProvider(StatisticsProvider statisticsProvider) {
+        this.statisticsProvider = statisticsProvider;
     }
 
     protected static String lookup(ComponentContext context, String property) {
@@ -101,5 +135,21 @@ public abstract class AbstractDataStoreService {
             return context.getProperties().get(property).toString();
         }
         return null;
+    }
+
+    private static Registration registerMBeans(BundleContext context, DataStoreBlobStore ds, BlobStoreStats stats){
+        Whiteboard wb = new OsgiWhiteboard(context);
+        return new CompositeRegistration(
+                registerMBean(wb,
+                        BlobStoreStatsMBean.class,
+                        stats,
+                        BlobStoreStatsMBean.TYPE,
+                        ds.getClass().getSimpleName()),
+                registerMBean(wb,
+                        CacheStatsMBean.class,
+                        ds.getCacheStats(),
+                        CacheStatsMBean.TYPE,
+                        ds.getCacheStats().getName())
+        );
     }
 }

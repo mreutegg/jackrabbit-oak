@@ -16,7 +16,6 @@
  */
 package org.apache.jackrabbit.oak.plugins.segment.file;
 
-import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Lists.newArrayList;
@@ -69,6 +68,7 @@ import org.apache.jackrabbit.oak.plugins.segment.Compactor;
 import org.apache.jackrabbit.oak.plugins.segment.PersistedCompactionMap;
 import org.apache.jackrabbit.oak.plugins.segment.RecordId;
 import org.apache.jackrabbit.oak.plugins.segment.Segment;
+import org.apache.jackrabbit.oak.plugins.segment.SegmentGraph.SegmentGraphVisitor;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentId;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentNodeState;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentNodeStore;
@@ -495,7 +495,11 @@ public class FileStore implements SegmentStore {
                     new Runnable() {
                         @Override
                         public void run() {
-                            maybeCompact(true);
+                            try {
+                                maybeCompact(true);
+                            } catch (IOException e) {
+                                log.error("Error running compaction", e);
+                            }
                         }
                     });
 
@@ -527,7 +531,7 @@ public class FileStore implements SegmentStore {
         }
     }
 
-    public boolean maybeCompact(boolean cleanup) {
+    public boolean maybeCompact(boolean cleanup) throws IOException {
         gcMonitor.info("TarMK GC #{}: started", gcCount.incrementAndGet());
 
         Runtime runtime = Runtime.getRuntime();
@@ -959,8 +963,8 @@ public class FileStore implements SegmentStore {
      * are fully kept (they are only removed in cleanup, if there is no
      * reference to them).
      */
-    public void compact() {
-        checkArgument(!compactionStrategy.equals(NO_COMPACTION),
+    public void compact() throws IOException {
+        checkState(!compactionStrategy.equals(NO_COMPACTION),
                 "You must set a compactionStrategy before calling compact");
         gcMonitor.info("TarMK GC #{}: compaction started, strategy={}", gcCount, compactionStrategy);
         Stopwatch watch = Stopwatch.createStarted();
@@ -1221,7 +1225,7 @@ public class FileStore implements SegmentStore {
     }
 
     @Override
-    public void writeSegment(SegmentId id, byte[] data, int offset, int length) {
+    public void writeSegment(SegmentId id, byte[] data, int offset, int length) throws IOException {
         fileStoreLock.writeLock().lock();
         try {
             long size = writer.writeEntry(
@@ -1232,8 +1236,6 @@ public class FileStore implements SegmentStore {
                 newWriter();
             }
             approximateSize.addAndGet(TarWriter.BLOCK_SIZE + length + TarWriter.getPaddingSize(length));
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         } finally {
             fileStoreLock.writeLock().unlock();
         }
@@ -1370,15 +1372,16 @@ public class FileStore implements SegmentStore {
 
         /**
          * Build the graph of segments reachable from an initial set of segments
-         * @param referencedIds  the initial set of segments
+         * @param roots     the initial set of segments
+         * @param visitor   visitor receiving call back while following the segment graph
          * @throws IOException
          */
-        public Map<UUID, Set<UUID>> getSegmentGraph(Set<UUID> referencedIds) throws IOException {
-            Map<UUID, Set<UUID>> graph = newHashMap();
+        public void traverseSegmentGraph(
+            @Nonnull Set<UUID> roots,
+            @Nonnull SegmentGraphVisitor visitor) throws IOException {
             for (TarReader reader : super.readers) {
-                graph.putAll(reader.getReferenceGraph(referencedIds));
+                reader.traverseSegmentGraph(checkNotNull(roots), checkNotNull(visitor));
             }
-            return graph;
         }
 
         @Override
@@ -1417,7 +1420,6 @@ public class FileStore implements SegmentStore {
         public boolean maybeCompact(boolean cleanup) {
             throw new UnsupportedOperationException("Read Only Store");
         }
-
     }
 
     private class SetHead implements Callable<Boolean> {

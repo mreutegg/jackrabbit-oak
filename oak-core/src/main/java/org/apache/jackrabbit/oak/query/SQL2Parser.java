@@ -872,7 +872,7 @@ public class SQL2Parser {
                             read(")");
                             column.propertyName = ":spellcheck";
                         }
-                        readOptionalAlias(column);                        
+                        readOptionalAlias(column);
                     } else if (readIf(".")) {
                         column.selectorName = column.propertyName;
                         if (readIf("*")) {

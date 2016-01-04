@@ -22,14 +22,7 @@ package org.apache.jackrabbit.oak.stats;
 import aQute.bnd.annotation.ProviderType;
 
 @ProviderType
-public interface CounterStats extends Stats{
-    /**
-     * Returns the counter's current value.
-     *
-     * @return the counter's current value
-     */
-    long getCount();
-
+public interface CounterStats extends Stats, Counting{
     /**
      * Increment the counter by one.
      */
@@ -39,4 +32,18 @@ public interface CounterStats extends Stats{
      * Decrement the counter by one.
      */
     void dec();
+
+    /**
+     * Increment the counter by {@code n}.
+     *
+     * @param n the amount by which the counter will be increased
+     */
+    void inc(long n);
+
+    /**
+     * Decrement the counter by {@code n}.
+     *
+     * @param n the amount by which the counter will be decreased
+     */
+    void dec(long n);
 }

@@ -747,6 +747,15 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
                     clusterIds.add(prevRev.getClusterId());
                 }
             }
+            if (!clusterIds.isEmpty()) {
+                // add clusterIds of local changes as well
+                for (Revision r : getLocalCommitRoot().keySet()) {
+                    clusterIds.add(r.getClusterId());
+                }
+                for (Revision r : getLocalRevisions().keySet()) {
+                    clusterIds.add(r.getClusterId());
+                }
+            }
         }
         // if we don't have clusterIds, we can use the local changes only
         boolean fullScan = true;
@@ -776,14 +785,14 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
             }
             if (!fullScan) {
                 // check if we can stop going through changes
-                if (clusterIds.contains(r.getClusterId())) {
-                    if (!lower.isRevisionNewer(r)) {
-                        clusterIds.remove(r.getClusterId());
-                        if (clusterIds.isEmpty()) {
-                            // all remaining revisions are older than
-                            // the lower bound
-                            break;
-                        }
+                if (clusterIds.contains(r.getClusterId())
+                        && !lower.isRevisionNewer(r)
+                        && newestRevs.containsKey(r.getClusterId())) {
+                    clusterIds.remove(r.getClusterId());
+                    if (clusterIds.isEmpty()) {
+                        // all remaining revisions are older than
+                        // the lower bound
+                        break;
                     }
                 }
             }

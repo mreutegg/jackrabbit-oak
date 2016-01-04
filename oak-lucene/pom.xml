@@ -112,6 +112,7 @@
                 org.apache.jackrabbit.oak.plugins.index.lucene,
                 org.apache.jackrabbit.oak.plugins.index.lucene.util,
                 org.apache.jackrabbit.oak.plugins.index.lucene.score,
+                org.apache.jackrabbit.oak.plugins.index.lucene.spi,
             </Export-Package>
             <_exportcontents>
                 org.apache.lucene.*;version=${lucene.version}
@@ -236,6 +237,11 @@
     <dependency>
       <groupId>org.apache.lucene</groupId>
       <artifactId>lucene-misc</artifactId>
+      <version>${lucene.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.lucene</groupId>
+      <artifactId>lucene-facet</artifactId>
       <version>${lucene.version}</version>
     </dependency>
 

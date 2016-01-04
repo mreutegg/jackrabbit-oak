@@ -20,11 +20,15 @@
 package org.apache.jackrabbit.oak.plugins.metric;
 
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import com.codahale.metrics.Counter;
+import com.codahale.metrics.Counting;
+import com.codahale.metrics.Histogram;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.Timer;
 import org.apache.jackrabbit.oak.stats.CounterStats;
+import org.apache.jackrabbit.oak.stats.HistogramStats;
 import org.apache.jackrabbit.oak.stats.MeterStats;
 import org.apache.jackrabbit.oak.stats.SimpleStats;
 import org.apache.jackrabbit.oak.stats.TimerStats;
@@ -34,65 +38,91 @@ import org.apache.jackrabbit.oak.stats.TimerStats;
  * and Metrics based meters so as to allow both systems to collect
  * stats
  */
-final class CompositeStats implements CounterStats, MeterStats, TimerStats {
-    private final SimpleStats delegate;
+final class CompositeStats implements CounterStats, MeterStats, TimerStats, HistogramStats {
+    private final AtomicLong delegate;
     private final Counter counter;
     private final Timer timer;
     private final Meter meter;
+    private final Histogram histogram;
+    private final Counting counting;
 
-    public CompositeStats(SimpleStats delegate, Counter counter) {
-        this(delegate, counter, null, null);
+    public CompositeStats(AtomicLong delegate, Counter counter) {
+        this(delegate, counter, null, null, null, counter);
     }
 
-    public CompositeStats(SimpleStats delegate, Timer timer) {
-        this(delegate, null, timer, null);
+    public CompositeStats(AtomicLong delegate, Timer timer) {
+        this(delegate, null, timer, null, null, timer);
     }
 
-    public CompositeStats(SimpleStats delegate, Meter meter) {
-        this(delegate, null, null, meter);
+    public CompositeStats(AtomicLong delegate, Meter meter) {
+        this(delegate, null, null, meter, null, meter);
     }
 
-    private CompositeStats(SimpleStats delegate, Counter counter,
-                           Timer timer, Meter meter) {
+    public CompositeStats(AtomicLong delegate, Histogram histogram) {
+        this(delegate, null, null, null, histogram, histogram);
+    }
+
+    private CompositeStats(AtomicLong delegate, Counter counter,
+                           Timer timer, Meter meter, Histogram histogram, Counting counting) {
         this.delegate = delegate;
         this.counter = counter;
         this.timer = timer;
         this.meter = meter;
+        this.histogram = histogram;
+        this.counting = counting;
     }
 
     @Override
     public long getCount() {
-        return delegate.getCount();
+        return counting.getCount();
     }
 
     @Override
     public void inc() {
-        delegate.inc();
+        delegate.getAndIncrement();
         counter.inc();
     }
 
     @Override
     public void dec() {
-        delegate.dec();
+        delegate.getAndDecrement();
         counter.dec();
     }
 
     @Override
+    public void inc(long n) {
+        delegate.getAndAdd(n);
+        counter.inc(n);
+    }
+
+    @Override
+    public void dec(long n) {
+        delegate.getAndAdd(-n);
+        counter.dec(n);
+    }
+
+    @Override
     public void mark() {
-        delegate.mark();
+        delegate.getAndIncrement();
         meter.mark();
     }
 
     @Override
     public void mark(long n) {
-        delegate.mark(n);
+        delegate.getAndAdd(n);
         meter.mark(n);
     }
 
     @Override
     public void update(long duration, TimeUnit unit) {
-        delegate.update(duration, unit);
+        delegate.getAndAdd(unit.toMillis(duration));
         timer.update(duration, unit);
+    }
+
+    @Override
+    public void update(long value) {
+        delegate.getAndAdd(value);
+        histogram.update(value);
     }
 
     @Override
@@ -101,15 +131,19 @@ final class CompositeStats implements CounterStats, MeterStats, TimerStats {
     }
 
     boolean isMeter() {
-        return meter != null && timer == null && counter == null;
+        return meter != null;
     }
 
     boolean isTimer() {
-        return meter == null && timer != null && counter == null;
+        return timer != null;
     }
 
     boolean isCounter() {
-        return meter == null && timer == null && counter != null;
+        return counter != null;
+    }
+
+    boolean isHistogram(){
+        return histogram != null;
     }
 
     Counter getCounter() {
@@ -124,18 +158,23 @@ final class CompositeStats implements CounterStats, MeterStats, TimerStats {
         return meter;
     }
 
+    Histogram getHistogram(){
+        return histogram;
+    }
+
+
     private static final class StatsContext implements Context {
         private final Timer.Context context ;
-        private final SimpleStats simpleStats;
+        private final AtomicLong delegate;
 
-        private StatsContext(Timer.Context context, SimpleStats delegate) {
+        private StatsContext(Timer.Context context, AtomicLong delegate) {
             this.context = context;
-            this.simpleStats = delegate;
+            this.delegate = delegate;
         }
 
         public long stop() {
             long nanos = context.stop();
-            simpleStats.update(nanos, TimeUnit.NANOSECONDS);
+            delegate.getAndAdd(TimeUnit.NANOSECONDS.toMillis(nanos));
             return nanos;
         }
 
