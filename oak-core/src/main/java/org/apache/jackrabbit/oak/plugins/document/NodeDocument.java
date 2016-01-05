@@ -967,7 +967,7 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
                 // not reading the most recent value, we may need to
                 // consider previous documents as well
                 for (Revision prev : getPreviousRanges().keySet()) {
-                    if (Longs.compare(prev.getTimestamp(), value.revision.getTimestamp()) > 0) {
+                    if (prev.compareRevisionTimeThenClusterId(value.revision) > 0) {
                         // a previous document has more recent changes
                         // than value.revision
                         value = null;
@@ -1822,14 +1822,14 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
         }
         // shortcut when revision is the first key
         Revision first = valueMap.firstKey();
-        if (Longs.compare(first.getTimestamp(), revision.getTimestamp()) <= 0) {
+        if (first.compareRevisionTimeThenClusterId(revision) <= 0) {
             return true;
         }
         // need to check commit status
         for (Revision r : valueMap.keySet()) {
             Revision c = getCommitRevision(r);
             if (c != null) {
-                return Longs.compare(c.getTimestamp(), revision.getTimestamp()) <= 0;
+                return c.compareRevisionTimeThenClusterId(revision) <= 0;
             }
         }
         // no committed revision found in valueMap
