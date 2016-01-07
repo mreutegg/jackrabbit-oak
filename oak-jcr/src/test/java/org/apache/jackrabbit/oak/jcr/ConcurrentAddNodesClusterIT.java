@@ -102,6 +102,15 @@ public class ConcurrentAddNodesClusterIT {
         for (int i = 0; i < mks.size(); i++) {
             DocumentMK mk = mks.get(i);
             Repository repo = new Jcr(mk.getNodeStore()).createRepository();
+            if (i == 0) {
+                Session s = createAdminSession(repo);
+                try {
+                    ensureIndex(s.getRootNode(), PROP_NAME);
+                } finally {
+                    s.logout();
+                }
+            }
+            mk.getNodeStore().runBackgroundOperations();
             repos.add(repo);
             workers.add(new Thread(new Worker(repo, exceptions), "Worker-" + (i + 1)));
         }
@@ -431,7 +440,6 @@ public class ConcurrentAddNodesClusterIT {
             try {
                 Session session = createAdminSession(repo);
                 try {
-                    ensureIndex(session.getRootNode(), PROP_NAME);
                     String nodeName = "testroot-" + Thread.currentThread().getName();
                     createNodes(session, nodeName, LOOP_COUNT, NODE_COUNT, exceptions);
                 } finally {
