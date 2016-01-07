@@ -15,7 +15,7 @@
 
 sudo: false
 install:  true
-script:   mvn --batch-mode -Dtest=ConcurrentAddNodesClusterIT test -pl :oak-jcr -am
+script:   mvn --batch-mode -DfailIfNoTests=false -Dtest=ConcurrentAddNodesClusterIT test -pl :oak-jcr -am
 language: java
 jdk:
   - oraclejdk7
