@@ -17,25 +17,36 @@
  * under the License.
  */
 
-package org.apache.jackrabbit.oak.plugins.document;
+package org.apache.jackrabbit.oak.plugins.segment.file;
 
 /**
- * Interface defining the minimum required properties of NodeDocument
- * which should be accessible without requiring the complete NodeDocument
- * to be deserialized
+ * FileStoreMonitor are notified for any writes or deletes
+ * performed by FileStore
  */
-public interface CachedNodeDocument {
+interface FileStoreMonitor {
+    FileStoreMonitor DEFAULT = new FileStoreMonitor() {
+        @Override
+        public void written(long bytes) {
 
-    Long getModCount();
+        }
 
-    long getCreated();
+        @Override
+        public void reclaimed(long bytes) {
 
-    long getLastCheckTime();
+        }
+    };
 
-    void markUpToDate(long checkTime);
+    /**
+     * Notifies the monitor when data is written
+     *
+     * @param bytes number of bytes written
+     */
+    void written(long bytes);
 
-    boolean isUpToDate(long lastCheckTime);
-
-    String getPath();
-
+    /**
+     * Notifies the monitor when memory is reclaimed
+     *
+     * @param bytes number of bytes reclaimed
+     */
+    void reclaimed(long bytes);
 }

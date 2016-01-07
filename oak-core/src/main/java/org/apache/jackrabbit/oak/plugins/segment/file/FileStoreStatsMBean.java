@@ -17,25 +17,27 @@
  * under the License.
  */
 
-package org.apache.jackrabbit.oak.plugins.document;
+package org.apache.jackrabbit.oak.plugins.segment.file;
 
-/**
- * Interface defining the minimum required properties of NodeDocument
- * which should be accessible without requiring the complete NodeDocument
- * to be deserialized
- */
-public interface CachedNodeDocument {
+import javax.management.openmbean.CompositeData;
 
-    Long getModCount();
+public interface FileStoreStatsMBean {
 
-    long getCreated();
+    String TYPE = "FileStoreStats";
 
-    long getLastCheckTime();
+    long getApproximateSize();
 
-    void markUpToDate(long checkTime);
+    int getTarFileCount();
 
-    boolean isUpToDate(long lastCheckTime);
+    /**
+     * @return  time series of the writes to repository
+     */
+    CompositeData getWriteStats();
 
-    String getPath();
+    /**
+     * @return  time series of the writes to repository
+     */
+    CompositeData getRepositorySize();
 
+    String fileStoreInfoAsString();
 }
