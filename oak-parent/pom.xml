@@ -197,7 +197,7 @@
               <segment.db>${segment.db}</segment.db>
               <nsfixtures>${fixtures}</nsfixtures>
             </systemPropertyVariables>
-            <redirectTestOutputToFile>true</redirectTestOutputToFile>
+            <redirectTestOutputToFile>false</redirectTestOutputToFile>
           </configuration>
         </plugin>
         <plugin>

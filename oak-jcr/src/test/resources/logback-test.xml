@@ -33,12 +33,13 @@
     <logger name="com.mongodb.tcp" level="ERROR"/>
     <logger name="org.apache.jackrabbit.oak.jcr.operations" level="INFO"/>
     <logger name="org.apache.jackrabbit.oak.security.authentication" level="WARN"/>
+    <logger name="org.apache.jackrabbit.oak.plugins.document.DocumentNodeStoreBranch" level="DEBUG"/>
 
     <root level="INFO">
         <!--
         <appender-ref ref="console"/>
         -->
-        <appender-ref ref="file"/>
+        <appender-ref ref="console"/>
     </root>
 
 </configuration>
