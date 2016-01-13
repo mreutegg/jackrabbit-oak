@@ -443,6 +443,36 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
     }
 
     @Test
+    public void testModifyDeletedOnce() {
+        // https://issues.apache.org/jira/browse/OAK-3852
+        String id = this.getClass().getName() + ".testModifyDeletedOnce";
+        // create a test node
+        UpdateOp up = new UpdateOp(id, true);
+        up.set("_id", id);
+        up.set(NodeDocument.DELETED_ONCE, Boolean.FALSE);
+        boolean success = super.ds.create(Collection.NODES, Collections.singletonList(up));
+        assertTrue(success);
+        removeMe.add(id);
+        NodeDocument nd = super.ds.find(Collection.NODES, id, 0);
+        assertNotNull(nd);
+        Boolean dovalue = (Boolean)nd.get(NodeDocument.DELETED_ONCE);
+        if (dovalue != null) {
+            // RDB persistence does not distinguish null and false
+            assertEquals(dovalue.booleanValue(), Boolean.FALSE);
+        }
+
+        // update
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.set(NodeDocument.DELETED_ONCE, Boolean.TRUE);
+        super.ds.update(Collection.NODES, Collections.singletonList(id), up);
+        nd = super.ds.find(Collection.NODES, id, 0);
+        assertNotNull(nd);
+        assertNotNull(nd.get(NodeDocument.DELETED_ONCE));
+        assertEquals(((Boolean)nd.get(NodeDocument.DELETED_ONCE)).booleanValue(), Boolean.TRUE);
+    }
+
+    @Test
     public void testInterestingStrings() {
         // test case  "gclef:\uD834\uDD1E" will fail on MySQL unless properly configured to use utf8mb4 charset        // Assume.assumeTrue(!(super.dsname.equals("RDB-MySQL")));
 

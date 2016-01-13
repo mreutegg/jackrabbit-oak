@@ -134,7 +134,7 @@ public class FileStoreIT {
         assertTrue(store.setHead(base, head));
         assertEquals("bar", store.getHead().getString("foo"));
 
-        Compactor compactor = new Compactor(store);
+        Compactor compactor = new Compactor(store.getTracker());
         SegmentNodeState compacted =
                 compactor.compact(EMPTY_NODE, head, EMPTY_NODE);
         store.close();
@@ -162,8 +162,8 @@ public class FileStoreIT {
         store = new FileStore(directory, 1, false);
         head = store.getHead();
         assertTrue(store.size() > largeBinarySize);
-        writer = new SegmentWriter(store, V_11);
-        compactor = new Compactor(store);
+        writer = new SegmentWriter(store, V_11, "");
+        compactor = new Compactor(store.getTracker());
         compacted = compactor.compact(EMPTY_NODE, head, EMPTY_NODE);
         builder = head.builder();
         builder.setChildNode("old", head); // reference to pre-compacted state

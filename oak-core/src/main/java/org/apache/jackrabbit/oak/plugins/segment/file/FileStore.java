@@ -76,7 +76,6 @@ import org.apache.jackrabbit.oak.plugins.segment.SegmentNotFoundException;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentStore;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentTracker;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentVersion;
-import org.apache.jackrabbit.oak.plugins.segment.SegmentWriter;
 import org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.gc.GCMonitor;
@@ -589,7 +588,12 @@ public class FileStore implements SegmentStore {
 
         byte gainThreshold = compactionStrategy.getGainThreshold();
         boolean runCompaction = true;
-        if (gainThreshold > 0) {
+        if (gainThreshold <= 0) {
+            gcMonitor.info("TarMK GC #{}: estimation skipped because gain threshold value ({} <= 0)", gcCount,
+                gainThreshold);
+        } else if (compactionStrategy.isPaused()) {
+            gcMonitor.info("TarMK GC #{}: estimation skipped because compaction is paused", gcCount);
+        } else {
             gcMonitor.info("TarMK GC #{}: estimation started", gcCount);
             Supplier<Boolean> shutdown = newShutdownSignal();
             CompactionGainEstimate estimate = estimateCompactionGain(shutdown);
@@ -622,9 +626,6 @@ public class FileStore implements SegmentStore {
                             estimate.getReachableSize(), estimate.getTotalSize());
                 }
             }
-        } else {
-            gcMonitor.info("TarMK GC #{}: estimation skipped due to gain threshold value ({}). Running compaction",
-                    gcCount, gainThreshold);
         }
 
         if (runCompaction) {
@@ -873,11 +874,10 @@ public class FileStore implements SegmentStore {
 
         // Do actual cleanup outside of the lock to prevent blocking
         // concurrent writers for a long time
-        CompactionMap cm = tracker.getCompactionMap();
         LinkedList<File> toRemove = newLinkedList();
         Set<UUID> cleanedIds = newHashSet();
         for (TarReader reader : cleaned.keySet()) {
-            cleaned.put(reader, reader.cleanup(referencedIds, cm, cleanedIds));
+            cleaned.put(reader, reader.cleanup(referencedIds, cleanedIds));
             if (shutdown) {
                 gcMonitor.info("TarMK GC #{}: cleanup interrupted", gcCount);
                 break;
@@ -917,6 +917,7 @@ public class FileStore implements SegmentStore {
             toRemove.addLast(file);
         }
 
+        CompactionMap cm = tracker.getCompactionMap();
         cm.remove(cleanedIds);
         long finalSize = size();
         approximateSize.set(finalSize);
@@ -930,13 +931,6 @@ public class FileStore implements SegmentStore {
                 humanReadableByteCount(sum(cm.getEstimatedWeights())), cm.getDepth(),
                 sum(cm.getEstimatedWeights()), cm.getDepth());
         return toRemove;
-    }
-
-    /**
-     * @return  a new {@link SegmentWriter} instance for writing to this store.
-     */
-    public SegmentWriter createSegmentWriter(String wid) {
-        return new SegmentWriter(this, getVersion(), wid);
     }
 
     /**
@@ -1007,7 +1001,7 @@ public class FileStore implements SegmentStore {
         gcMonitor.info("TarMK GC #{}: compaction started, strategy={}", gcCount, compactionStrategy);
         Stopwatch watch = Stopwatch.createStarted();
         Supplier<Boolean> compactionCanceled = newCancelCompactionCondition();
-        Compactor compactor = new Compactor(this, compactionStrategy, compactionCanceled);
+        Compactor compactor = new Compactor(tracker, compactionStrategy, compactionCanceled);
         SegmentNodeState before = getHead();
         long existing = before.getChildNode(SegmentNodeStore.CHECKPOINTS)
                 .getChildNodeCount(Long.MAX_VALUE);

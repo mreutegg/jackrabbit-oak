@@ -16,7 +16,10 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javax.annotation.CheckForNull;
 
@@ -136,6 +139,73 @@ public class ClusterConflictTest {
 
         for (Exception e : exceptions) {
             throw e;
+        }
+    }
+
+    // OAK-3859
+    @Test
+    public void mixedConflictAndCollision() throws Exception {
+        NodeBuilder b1 = ns1.getRoot().builder();
+        b1.child("test");
+        merge(ns1, b1);
+
+        ns1.runBackgroundOperations();
+        ns2.runBackgroundOperations();
+
+        AtomicLong counter = new AtomicLong();
+        final List<Exception> exceptions = Collections.synchronizedList(
+                new ArrayList<Exception>());
+        // the writers perform conflicting changes
+        List<Thread> writers = Lists.newArrayList();
+        writers.add(new Thread(new Writer(exceptions, ns1, counter)));
+        writers.add(new Thread(new Writer(exceptions, ns1, counter)));
+        for (Thread t : writers) {
+            t.start();
+        }
+
+        for (int i = 0; i < 10; i++) {
+            NodeBuilder b21 = ns2.getRoot().builder();
+            // this change does not conflict with changes on ns1 but
+            // will be considered a collision
+            b21.child("test").setProperty("q", 1);
+            merge(ns2, b21);
+        }
+
+        for (Thread t : writers) {
+            t.join(10000);
+        }
+
+        for (Exception e : exceptions) {
+            throw e;
+        }
+    }
+
+    private static class Writer implements Runnable {
+
+        private final List<Exception> exceptions;
+        private final NodeStore ns;
+        private final AtomicLong counter;
+
+        public Writer(List<Exception> exceptions,
+                      NodeStore ns,
+                      AtomicLong counter) {
+            this.exceptions = exceptions;
+            this.ns = ns;
+            this.counter = counter;
+        }
+
+        @Override
+        public void run() {
+            try {
+                for (int i = 0; i < 200; i++) {
+                    NodeBuilder b = ns.getRoot().builder();
+                    b.child("test").setProperty("p", counter.incrementAndGet());
+                    merge(ns, b);
+                }
+            } catch (CommitFailedException e) {
+                e.printStackTrace();
+                exceptions.add(e);
+            }
         }
     }
 
