@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.mockito.AdditionalAnswers.delegatesTo;
+import static org.mockito.Matchers.anyBoolean;
 import static org.mockito.Matchers.anyInt;
 import static org.mockito.Matchers.anyObject;
 import static org.mockito.Matchers.anyString;
@@ -815,10 +816,12 @@ public class DocumentDiscoveryLiteServiceTest {
                 logger.info("Going to waitBeforeUnlocking");
                 waitBeforeUnlocking.acquire();
                 logger.info("Done with waitBeforeUnlocking");
-                missingLastRevUtil.releaseRecoveryLock((Integer) invocation.getArguments()[0]);
+                missingLastRevUtil.releaseRecoveryLock(
+                        (Integer) invocation.getArguments()[0],
+                        (Boolean) invocation.getArguments()[1]);
                 return null;
             }
-        }).when(mockedLongduringMissingLastRevUtil).releaseRecoveryLock(anyInt());
+        }).when(mockedLongduringMissingLastRevUtil).releaseRecoveryLock(anyInt(), anyBoolean());
 
         // let go (or tschaedere loh)
         waitBeforeLocking.release();

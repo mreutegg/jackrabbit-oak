@@ -955,9 +955,9 @@ public class DocumentMK {
         public MissingLastRevSeeker createMissingLastRevSeeker() {
             final DocumentStore store = getDocumentStore();
             if (store instanceof MongoDocumentStore) {
-                return new MongoMissingLastRevSeeker((MongoDocumentStore) store);
+                return new MongoMissingLastRevSeeker((MongoDocumentStore) store, getClock());
             } else {
-                return new MissingLastRevSeeker(store);
+                return new MissingLastRevSeeker(store, getClock());
             }
         }
 

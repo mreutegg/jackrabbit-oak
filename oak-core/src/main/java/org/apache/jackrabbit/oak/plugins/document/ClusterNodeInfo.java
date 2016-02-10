@@ -443,6 +443,7 @@ public class ClusterNodeInfo {
         int clusterNodeId = 0;
         int maxId = 0;
         ClusterNodeState state = ClusterNodeState.NONE;
+        RecoverLockState lockState = RecoverLockState.NONE;
         Long prevLeaseEnd = null;
         boolean newEntry = false;
 
@@ -519,6 +520,7 @@ public class ClusterNodeInfo {
                 clusterNodeId = id;
                 state = ClusterNodeState.fromString((String) doc.get(STATE));
                 prevLeaseEnd = leaseEnd;
+                lockState = RecoverLockState.fromString((String) doc.get(REV_RECOVERY_LOCK));
             }
         }
 
@@ -540,7 +542,7 @@ public class ClusterNodeInfo {
         // Do not expire entries and stick on the earlier state, and leaseEnd so,
         // that _lastRev recovery if needed is done.
         return new ClusterNodeInfo(clusterNodeId, store, machineId, instanceId, state,
-                RecoverLockState.NONE, prevLeaseEnd, newEntry);
+                lockState, prevLeaseEnd, newEntry);
     }
 
     private static boolean waitForLeaseExpiry(DocumentStore store, ClusterNodeInfoDocument cdoc, long leaseEnd, String machineId,
