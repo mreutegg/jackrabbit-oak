@@ -34,6 +34,7 @@ import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.registerM
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Dictionary;
 import java.util.HashMap;
 import java.util.Hashtable;
@@ -55,6 +56,8 @@ import org.apache.felix.scr.annotations.PropertyOption;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.ReferencePolicy;
+import org.apache.jackrabbit.commons.SimpleValueFactory;
+import org.apache.jackrabbit.oak.api.Descriptors;
 import org.apache.jackrabbit.oak.api.jmx.CacheStatsMBean;
 import org.apache.jackrabbit.oak.api.jmx.CheckpointMBean;
 import org.apache.jackrabbit.oak.cache.CacheStats;
@@ -82,6 +85,7 @@ import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
 import org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardExecutor;
 import org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
+import org.apache.jackrabbit.oak.util.GenericDescriptors;
 import org.osgi.framework.Bundle;
 import org.osgi.framework.BundleException;
 import org.osgi.framework.Constants;
@@ -230,6 +234,19 @@ public class DocumentNodeStoreService {
     )
     private static final String PROP_JOURNAL_GC_MAX_AGE_MILLIS = "journalGCMaxAge";
 
+    /**
+     * Batch size used during to lookup and delete journal entries during journalGC
+     */
+    private static final int DEFAULT_JOURNAL_GC_BATCH_SIZE = 100;
+    @Property (intValue = DEFAULT_JOURNAL_GC_BATCH_SIZE,
+            label = "Batch size used for journalGC",
+            description = "The journal gc queries the journal for entries older than configured to delete them. " +
+                    "It does so in batches to speed up the process. The batch size can be configured via this " +
+                    " property. The trade-off is between reducing number of operations with a larger batch size, " +
+                    " and consuming more memory less memory with a smaller batch size."
+    )
+    public static final String PROP_JOURNAL_GC_BATCH_SIZE = "journalGcBatchSize";
+
     private static final long MB = 1024 * 1024;
 
     private static enum DocumentStoreType {
@@ -319,13 +336,6 @@ public class DocumentNodeStoreService {
     )
     public static final String PROP_DS_TYPE = "documentStoreType";
     private DocumentStoreType documentStoreType;
-
-    private static final String DEFAULT_SHARED_DS_REPO_ID = "";
-    @Property(value = DEFAULT_SHARED_DS_REPO_ID,
-            label = "SharedDataStore RepositoryID",
-            description = "Custom RepositoryID for SharedDataStore. This overrides any generated value."
-    )
-    public static final String PROP_SHARED_DS_REPO_ID = "sharedDSRepoId";
 
     @Reference
     private StatisticsProvider statisticsProvider;
@@ -464,12 +474,18 @@ public class DocumentNodeStoreService {
         mkBuilder.setExecutor(executor);
         mk = mkBuilder.open();
 
+        // ensure a clusterId is initialized 
+        // and expose it as 'oak.clusterid' repository descriptor
+        GenericDescriptors clusterIdDesc = new GenericDescriptors();
+        clusterIdDesc.put(ClusterRepositoryInfo.OAK_CLUSTERID_REPOSITORY_DESCRIPTOR_KEY, 
+                new SimpleValueFactory().createValue(
+                        ClusterRepositoryInfo.getOrCreateId(mk.getNodeStore())), true, false);
+        whiteboard.register(Descriptors.class, clusterIdDesc, Collections.emptyMap());
+        
         // If a shared data store register the repo id in the data store
         if (SharedDataStoreUtils.isShared(blobStore)) {
-            String customRepoID = PropertiesUtil.toString(prop(PROP_SHARED_DS_REPO_ID), DEFAULT_SHARED_DS_REPO_ID);
-
             try {
-                String repoId = ClusterRepositoryInfo.createId(mk.getNodeStore(), customRepoID);
+                String repoId = ClusterRepositoryInfo.getOrCreateId(mk.getNodeStore());
                 ((SharedDataStore) blobStore).addMetadataRecord(new ByteArrayInputStream(new byte[0]),
                     SharedDataStoreUtils.SharedStoreRecordType.REPOSITORY.getNameFromId(repoId));
             } catch (Exception e) {
@@ -676,7 +692,7 @@ public class DocumentNodeStoreService {
 
         if (store.getBlobStore() instanceof GarbageCollectableBlobStore) {
             BlobGarbageCollector gc = store.createBlobGarbageCollector(blobGcMaxAgeInSecs, 
-                                                        ClusterRepositoryInfo.getId(mk.getNodeStore()));
+                                                        ClusterRepositoryInfo.getOrCreateId(mk.getNodeStore()));
             registrations.add(registerMBean(whiteboard, BlobGCMBean.class, new BlobGC(gc, executor),
                     BlobGCMBean.TYPE, "Document node store blob garbage collection"));
         }
@@ -722,11 +738,14 @@ public class DocumentNodeStoreService {
                 DEFAULT_JOURNAL_GC_INTERVAL_MILLIS);
         final long journalGCMaxAge = toLong(context.getProperties().get(PROP_JOURNAL_GC_MAX_AGE_MILLIS),
                 DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS);
+        final int journalGCBatchSize = toInteger(context.getProperties().get(PROP_JOURNAL_GC_BATCH_SIZE),
+                DEFAULT_JOURNAL_GC_BATCH_SIZE);
+        
         Runnable journalGCJob = new Runnable() {
 
             @Override
             public void run() {
-                nodeStore.getJournalGarbageCollector().gc(journalGCMaxAge, TimeUnit.MILLISECONDS);
+                nodeStore.getJournalGarbageCollector().gc(journalGCMaxAge, journalGCBatchSize, TimeUnit.MILLISECONDS);
             }
 
         };

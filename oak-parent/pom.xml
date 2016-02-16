@@ -42,7 +42,7 @@
     <project.reporting.outputEncoding>
       ${project.build.sourceEncoding}
     </project.reporting.outputEncoding>
-    <jackrabbit.version>2.11.3</jackrabbit.version>
+    <jackrabbit.version>2.12.0</jackrabbit.version>
     <mongo.host>127.0.0.1</mongo.host>
     <mongo.port>27017</mongo.port>
     <mongo.db>MongoMKDB</mongo.db>
@@ -147,6 +147,7 @@
                 <failOnError>true</failOnError>
                 <filters>
                   <!-- Disable baseline for explicitly NOT managed packages. See OAK-3842 -->
+                  <filter>!org.apache.jackrabbit.oak.cache</filter>
                   <filter>!org.apache.jackrabbit.oak.commons</filter>
                   <filter>!org.apache.jackrabbit.oak.commons.benchmark</filter>
                   <filter>!org.apache.jackrabbit.oak.commons.cache</filter>
@@ -404,6 +405,22 @@
               <skip>${skip.coverage}</skip>
               <dataFile>${project.build.directory}/coverage-reports/jacoco-ut.exec</dataFile>
               <outputDirectory>${project.reporting.outputDirectory}/jacoco-ut</outputDirectory>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <executions>
+          <execution>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+            <configuration>
+              <excludes>
+                <exclude>logback-test.xml</exclude>
+              </excludes>
             </configuration>
           </execution>
         </executions>
