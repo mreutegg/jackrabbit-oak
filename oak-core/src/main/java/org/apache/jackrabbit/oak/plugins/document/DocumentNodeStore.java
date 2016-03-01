@@ -321,6 +321,13 @@ public final class DocumentNodeStore
     private Thread clusterUpdateThread;
 
     /**
+     * Sweep thread cleaning up uncommitted changes and rewriting merged branch
+     * commits.
+     */
+    private Thread backgroundSweepThread;
+
+
+    /**
      * Read/Write lock for background operations. Regular commits will acquire
      * a shared lock, while a background write acquires an exclusive lock.
      */
@@ -438,6 +445,8 @@ public final class DocumentNodeStore
     
     private final Executor executor;
 
+    private final MissingLastRevSeeker lastRevSeeker;
+
     private final LastRevRecoveryAgent lastRevRecoveryAgent;
 
     private final boolean disableBranches;
@@ -516,8 +525,8 @@ public final class DocumentNodeStore
                 this, builder.createVersionGCSupport());
         this.journalGarbageCollector = new JournalGarbageCollector(this);
         this.referencedBlobs = builder.createReferencedBlobs(this);
-        this.lastRevRecoveryAgent = new LastRevRecoveryAgent(this,
-                builder.createMissingLastRevSeeker());
+        this.lastRevSeeker = builder.createMissingLastRevSeeker();
+        this.lastRevRecoveryAgent = new LastRevRecoveryAgent(this, lastRevSeeker);
         this.disableBranches = builder.isDisableBranches();
         this.missing = new DocumentNodeState(this, "MISSING",
                 new RevisionVector(new Revision(0, 0, 0))) {
@@ -617,6 +626,13 @@ public final class DocumentNodeStore
             clusterUpdateThread.start();
         }
 
+        backgroundSweepThread = new Thread(new BackgroundSweeper(this, isDisposed),
+                "DocumentNodeStore background sweep thread " + threadNamePostfix);
+        backgroundSweepThread.setDaemon(true);
+        if (!readOnlyMode) {
+            backgroundSweepThread.start();
+        }
+
         persistentCache = builder.getPersistentCache();
         if (!readOnlyMode && persistentCache != null) {
             DynamicBroadcastConfig broadcastConfig = new DocumentBroadcastConfig(this);
@@ -677,6 +693,11 @@ public final class DocumentNodeStore
         // notify background threads waiting on isDisposed
         synchronized (isDisposed) {
             isDisposed.notifyAll();
+        }
+        try {
+            backgroundSweepThread.join();
+        } catch (InterruptedException e) {
+            // ignore
         }
         try {
             backgroundReadThread.join();
@@ -1921,6 +1942,43 @@ public final class DocumentNodeStore
         nodeStoreStatsCollector.doneBackgroundRead(readStats);
     }
 
+    //----------------------< background sweep operation >----------------------
+
+    public void runBackgroundSweepOperation() {
+        int cId = getClusterId();
+        Revision head = getHeadRevision().getRevision(cId);
+        if (head == null) {
+            LOG.info("Head revision {} does not have an entry for " +
+                    "clusterId {}. Skipping background sweeping of " +
+                    "documents.", getHeadRevision(), cId);
+            return;
+        }
+        final DocumentStore store = getDocumentStore();
+        NodeDocument rootDoc = Utils.getRootDocument(store);
+        RevisionVector sweepRevs = rootDoc.getSweepRevisions();
+        Revision lastSweepRev = sweepRevs.getRevision(cId);
+        if (lastSweepRev == null) {
+            // sweep all
+            lastSweepRev = new Revision(0, 0, cId);
+        }
+        Revision newSweepRev = new NodeDocumentSweeper(
+                head, lastSweepRev, lastRevSeeker,
+                getBranches()).sweep(new NodeDocumentSweepListener() {
+            @Override
+            public void sweepUpdate(UpdateOp op) {
+                // TODO: perform batch update or pass operation to background update thread?
+                synchronized (backgroundWriteMonitor) {
+                    store.findAndUpdate(NODES, op);
+                    LOG.debug("Background sweep updated {}", op.getId());
+                }
+            }
+        });
+        UpdateOp op = new UpdateOp(Utils.getIdFromPath("/"), false);
+        NodeDocument.setSweepRevision(op, newSweepRev);
+        store.findAndUpdate(NODES, op);
+    }
+
+
     /**
      * Renews the cluster lease if necessary.
      *
@@ -2828,7 +2886,7 @@ public final class DocumentNodeStore
                     }
                 }
                 DocumentNodeStore nodeStore = ref.get();
-                if (nodeStore != null) {
+                if (nodeStore != null && !isDisposed.get()) {
                     try {
                         execute(nodeStore);
                         if (failing) {
@@ -2922,6 +2980,20 @@ public final class DocumentNodeStore
             if (nodeStore.updateClusterState()) {
                 nodeStore.signalClusterStateChange();
             }
+        }
+    }
+
+    static class BackgroundSweeper extends NodeStoreTask {
+
+        BackgroundSweeper(DocumentNodeStore nodeStore,
+                          AtomicBoolean isDisposed) {
+            // run once a minute
+            super(nodeStore, isDisposed, Suppliers.ofInstance(60 * 1000));
+        }
+
+        @Override
+        protected void execute(@Nonnull final DocumentNodeStore ns) {
+            ns.runBackgroundSweepOperation();
         }
     }
 
