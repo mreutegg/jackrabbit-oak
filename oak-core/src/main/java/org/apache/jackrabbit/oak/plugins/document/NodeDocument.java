@@ -54,7 +54,6 @@ import org.slf4j.LoggerFactory;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
-import com.google.common.primitives.Longs;
 
 import static com.google.common.base.Objects.equal;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -220,6 +219,14 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
      * during the next split run.
      */
     private static final String STALE_PREV = "_stalePrev";
+
+    /**
+     * The revision set by the background document sweeper. The revision
+     * indicates up to which revision documents have been cleaned by the sweeper
+     * and all previous revisions by this cluster node can be considered
+     * committed.
+     */
+    private static final String SWEEP_REV = "_sweepRev";
 
     //~----------------------------< Split Document Types >
 
@@ -1618,6 +1625,17 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
         return getLocalMap(STALE_PREV);
     }
 
+    @Nonnull
+    RevisionVector getSweepRevisions() {
+        return new RevisionVector(transform(getLocalMap(SWEEP_REV).values(),
+                new Function<String, Revision>() {
+            @Override
+            public Revision apply(String s) {
+                return Revision.fromString(s);
+            }
+        }));
+    }
+
     //-------------------------< UpdateOp modifiers >---------------------------
 
     public static void setChildrenFlag(@Nonnull UpdateOp op,
@@ -1747,6 +1765,13 @@ public final class NodeDocument extends Document implements CachedNodeDocument{
 
     public static void setHasBinary(@Nonnull UpdateOp op) {
         checkNotNull(op).set(HAS_BINARY_FLAG, HAS_BINARY_VAL);
+    }
+
+    public static void setSweepRevision(@Nonnull UpdateOp op,
+                                        @Nonnull Revision revision) {
+        checkNotNull(op).setMapEntry(SWEEP_REV,
+                new Revision(0, 0, revision.getClusterId()),
+                revision.toString());
     }
 
     //----------------------------< internal >----------------------------------
