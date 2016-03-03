@@ -28,4 +28,8 @@ public class TestUtils {
             throws CommitFailedException {
         return ns.merge(root, EmptyHook.INSTANCE, CommitInfo.EMPTY);
     }
+
+    public static void runBackgroundReadOperation(DocumentNodeStore store) {
+        store.runBackgroundReadOperations();
+    }
 }

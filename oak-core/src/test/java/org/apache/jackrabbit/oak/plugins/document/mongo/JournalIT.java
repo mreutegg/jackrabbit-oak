@@ -30,6 +30,7 @@ import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.JournalGarbageCollector;
 import org.apache.jackrabbit.oak.plugins.document.MongoConnectionFactory;
 import org.apache.jackrabbit.oak.plugins.document.MongoUtils;
+import org.apache.jackrabbit.oak.plugins.document.TestUtils;
 import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.util.MongoConnection;
 import org.apache.jackrabbit.oak.spi.blob.MemoryBlobStore;
@@ -41,6 +42,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.jackrabbit.oak.plugins.document.TestUtils.runBackgroundReadOperation;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 
@@ -133,7 +135,7 @@ public class JournalIT extends AbstractJournalTest {
 
             // doing a backgroundOp now should trigger invalidation
             // which thx to the external modification will remove the entry from the cache:
-            ns1.runBackgroundOperations();
+            runBackgroundReadOperation(ns1);
             for(String electedPath : electedPaths) {
                 assertDocCache(ns1, false, electedPath);
             }

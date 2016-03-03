@@ -255,6 +255,10 @@ public class Utils {
         return depth + ":" + path;
     }
 
+    public static String getRootId() {
+        return getIdFromPath("/");
+    }
+
     /**
      * Returns the parent id for given id if possible
      *

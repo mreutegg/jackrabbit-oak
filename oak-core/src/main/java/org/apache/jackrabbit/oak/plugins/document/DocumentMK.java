@@ -147,7 +147,7 @@ public class DocumentMK {
     }
 
     void backgroundRead() {
-        nodeStore.backgroundRead();
+        nodeStore.runBackgroundReadOperations();
     }
 
     void backgroundWrite() {
