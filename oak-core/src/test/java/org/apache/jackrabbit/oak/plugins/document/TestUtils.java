@@ -85,11 +85,15 @@ public class TestUtils {
         return nb;
     }
 
-    public static DocumentNodeState asDocumentState(NodeState state){
-        if (state instanceof DocumentNodeState){
+    public static DocumentNodeState asDocumentState(NodeState state) {
+        if (state instanceof DocumentNodeState) {
             return (DocumentNodeState) state;
         }
         fail("Not of type DocumentNodeState " + state.getClass());
         return null;
+    }
+
+    public static void runBackgroundReadOperation(DocumentNodeStore store) {
+        store.runBackgroundReadOperations();
     }
 }

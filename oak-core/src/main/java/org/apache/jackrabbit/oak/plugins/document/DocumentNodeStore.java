@@ -32,6 +32,8 @@ import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.DocumentMK.FAST_DIFF;
 import static org.apache.jackrabbit.oak.plugins.document.DocumentMK.MANY_CHILDREN_THRESHOLD;
 import static org.apache.jackrabbit.oak.plugins.document.JournalEntry.fillExternalChanges;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.getModifiedInSecs;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setSweepRevision;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateOp.Key;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateOp.Operation;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getIdFromPath;
@@ -321,6 +323,11 @@ public final class DocumentNodeStore
     private Thread clusterUpdateThread;
 
     /**
+     * Monitor object to synchronize background sweeps.
+     */
+    private final Object backgroundSweepMonitor = new Object();
+
+    /**
      * Sweep thread cleaning up uncommitted changes and rewriting merged branch
      * commits.
      */
@@ -558,6 +565,7 @@ public final class DocumentNodeStore
             RevisionVector head = new RevisionVector(commitRev);
             DocumentNodeState n = new DocumentNodeState(this, "/", head);
             commit.addNode(n);
+            setSweepRevision(commit.getUpdateOperationForNode("/"), commitRev);
             commit.applyToDocumentStore();
             unsavedLastRevisions.put("/", commitRev);
             setRoot(head);
@@ -574,11 +582,20 @@ public final class DocumentNodeStore
             }
             initializeRootState(rootDoc);
             // check if _lastRev for our clusterId exists
-            if (!rootDoc.getLastRev().containsKey(clusterId)) {
-                unsavedLastRevisions.put("/", getRoot().getRootRevision().getRevision(clusterId));
-                if (!readOnlyMode) {
-                    backgroundWrite();
+            if (!rootDoc.getLastRev().containsKey(clusterId) && !readOnlyMode) {
+                Revision rev = getHeadRevision().getRevision(clusterId);
+                if (rev == null) {
+                    throw new IllegalStateException(
+                            "Missing revision for clusterId " + clusterId +
+                                    " on head: " + getHeadRevision());
                 }
+                unsavedLastRevisions.put("/", rev);
+                backgroundWrite();
+                // this is a startup on a new clusterId.
+                // set sweep revision to current head
+                UpdateOp op = new UpdateOp(Utils.getRootId(), false);
+                setSweepRevision(op, rev);
+                store.findAndUpdate(NODES, op);
             }
         }
 
@@ -625,6 +642,9 @@ public final class DocumentNodeStore
         if (!readOnlyMode) {
             clusterUpdateThread.start();
         }
+
+        // perform an initial document sweep
+        internalRunBackgroundSweepOperations();
 
         backgroundSweepThread = new Thread(new BackgroundSweeper(this, isDisposed),
                 "DocumentNodeStore background sweep thread " + threadNamePostfix);
@@ -1855,6 +1875,7 @@ public final class DocumentNodeStore
 
     /** Used for testing only */
     public void runBackgroundOperations() {
+        runBackgroundSweepOperations();
         runBackgroundUpdateOperations();
         runBackgroundReadOperations();
     }
@@ -1876,30 +1897,14 @@ public final class DocumentNodeStore
     }
 
     private void internalRunBackgroundUpdateOperations() {
-        BackgroundWriteStats stats = null;
+        BackgroundWriteStats stats;
         synchronized (backgroundWriteMonitor) {
             long start = clock.getTime();
-            long time = start;
-            // clean orphaned branches and collisions
-            cleanOrphanedBranches();
-            cleanCollisions();
-            long cleanTime = clock.getTime() - time;
-            time = clock.getTime();
-            // split documents (does not create new revisions)
-            backgroundSplit();
-            long splitTime = clock.getTime() - time;
             // write back pending updates to _lastRev
             stats = backgroundWrite();
-            stats.split = splitTime;
-            stats.clean = cleanTime;
             stats.totalWriteTime = clock.getTime() - start;
-            String msg = "Background operations stats ({})";
-            if (stats.totalWriteTime > TimeUnit.SECONDS.toMillis(10)) {
-                // log as info if it took more than 10 seconds
-                LOG.info(msg, stats);
-            } else {
-                LOG.debug(msg, stats);
-            }
+            String msg = "Background update operation stats ({})";
+            logBackgroundOperation(start, msg, stats);
         }
         //Push stats outside of sync block
         nodeStoreStatsCollector.doneBackgroundUpdate(stats);
@@ -1925,59 +1930,67 @@ public final class DocumentNodeStore
 
     /** OAK-2624 : background read operations are split from background update ops */
     private void internalRunBackgroundReadOperations() {
-        BackgroundReadStats readStats = null;
+        BackgroundReadStats readStats;
         synchronized (backgroundReadMonitor) {
             long start = clock.getTime();
             // pull in changes from other cluster nodes
             readStats = backgroundRead();
             readStats.totalReadTime = clock.getTime() - start;
             String msg = "Background read operations stats (read:{} {})";
-            if (clock.getTime() - start > TimeUnit.SECONDS.toMillis(10)) {
-                // log as info if it took more than 10 seconds
-                LOG.info(msg, readStats.totalReadTime, readStats);
-            } else {
-                LOG.debug(msg, readStats.totalReadTime, readStats);
-            }
+            logBackgroundOperation(start, msg, readStats.totalReadTime, readStats);
         }
         nodeStoreStatsCollector.doneBackgroundRead(readStats);
     }
 
     //----------------------< background sweep operation >----------------------
 
-    public void runBackgroundSweepOperation() {
-        int cId = getClusterId();
-        Revision head = getHeadRevision().getRevision(cId);
-        if (head == null) {
-            LOG.info("Head revision {} does not have an entry for " +
-                    "clusterId {}. Skipping background sweeping of " +
-                    "documents.", getHeadRevision(), cId);
+    void runBackgroundSweepOperations() {
+        if (isDisposed.get()) {
             return;
         }
-        final DocumentStore store = getDocumentStore();
-        NodeDocument rootDoc = Utils.getRootDocument(store);
-        RevisionVector sweepRevs = rootDoc.getSweepRevisions();
-        Revision lastSweepRev = sweepRevs.getRevision(cId);
-        if (lastSweepRev == null) {
-            // sweep all
-            lastSweepRev = new Revision(0, 0, cId);
-        }
-        Revision newSweepRev = new NodeDocumentSweeper(
-                head, lastSweepRev, lastRevSeeker,
-                getBranches()).sweep(new NodeDocumentSweepListener() {
-            @Override
-            public void sweepUpdate(UpdateOp op) {
-                // TODO: perform batch update or pass operation to background update thread?
-                synchronized (backgroundWriteMonitor) {
-                    store.findAndUpdate(NODES, op);
-                    LOG.debug("Background sweep updated {}", op.getId());
-                }
+        try {
+            internalRunBackgroundSweepOperations();
+        } catch (RuntimeException e) {
+            if (isDisposed.get()) {
+                LOG.warn("Background sweep operation failed (will be retried with next run): " + e.toString(), e);
+                return;
             }
-        });
-        UpdateOp op = new UpdateOp(Utils.getIdFromPath("/"), false);
-        NodeDocument.setSweepRevision(op, newSweepRev);
-        store.findAndUpdate(NODES, op);
+            throw e;
+        }
     }
 
+    void internalRunBackgroundSweepOperations() {
+        BackgroundWriteStats stats = new BackgroundWriteStats();
+        synchronized (backgroundSweepMonitor) {
+            long start = clock.getTime();
+            long time = start;
+            // clean orphaned branches and collisions
+            cleanOrphanedBranches();
+            cleanCollisions();
+            stats.clean = clock.getTime() - time;
+            time = clock.getTime();
+            // split documents (does not create new revisions)
+            backgroundSplit();
+            stats.split = clock.getTime() - time;
+            time = clock.getTime();
+            backgroundSweep();
+            stats.sweep = clock.getTime() - time;
+            String msg = "Background sweep operation stats ({})";
+            logBackgroundOperation(start, msg, stats);
+        }
+        nodeStoreStatsCollector.doneBackgroundUpdate(stats);
+    }
+
+    private void logBackgroundOperation(long startTime,
+                                        String msg,
+                                        Object... arguments) {
+        if (clock.getTime() - startTime > TimeUnit.SECONDS.toMillis(10)) {
+            // log as info if it took more than 10 seconds
+            LOG.info(msg, arguments);
+        } else {
+            LOG.debug(msg, arguments);
+        }
+    }
 
     /**
      * Renews the cluster lease if necessary.
@@ -2041,7 +2054,7 @@ public final class DocumentNodeStore
     /**
      * Perform a background read and make external changes visible.
      */
-    BackgroundReadStats backgroundRead() {
+    private BackgroundReadStats backgroundRead() {
         BackgroundReadStats stats = new BackgroundReadStats();
         long time = clock.getTime();
         String id = Utils.getIdFromPath("/");
@@ -2241,6 +2254,47 @@ public final class DocumentNodeStore
             }
             it.remove();
         }
+    }
+
+    private void backgroundSweep() {
+        int cId = getClusterId();
+        Revision head = getHeadRevision().getRevision(cId);
+        if (head == null) {
+            LOG.warn("Head revision {} does not have an entry for " +
+                    "clusterId {}. Skipping background sweeping of " +
+                    "documents.", getHeadRevision(), cId);
+            return;
+        }
+        final DocumentStore store = getDocumentStore();
+        NodeDocument rootDoc = Utils.getRootDocument(store);
+        RevisionVector sweepRevs = rootDoc.getSweepRevisions();
+        Revision lastSweepRev = sweepRevs.getRevision(cId);
+        if (lastSweepRev == null) {
+            // sweep all
+            lastSweepRev = new Revision(0, 0, cId);
+        }
+        // only sweep documents when the _modified time changed
+        long lastSweepTick = getModifiedInSecs(lastSweepRev.getTimestamp());
+        long currentTick = getModifiedInSecs(clock.getTime());
+        if (lastSweepTick == currentTick) {
+            return;
+        }
+
+        Revision newSweepRev = new NodeDocumentSweeper(
+                head, lastSweepRev, lastRevSeeker,
+                getBranches()).sweep(new NodeDocumentSweepListener() {
+            @Override
+            public void sweepUpdate(UpdateOp op) {
+                // TODO: perform batch update or pass operation to background update thread?
+                synchronized (backgroundWriteMonitor) {
+                    store.findAndUpdate(NODES, op);
+                    LOG.debug("Background sweep updated {}", op.getId());
+                }
+            }
+        });
+        UpdateOp op = new UpdateOp(Utils.getIdFromPath("/"), false);
+        setSweepRevision(op, newSweepRev);
+        store.findAndUpdate(NODES, op);
     }
 
     @Nonnull
@@ -2541,7 +2595,7 @@ public final class DocumentNodeStore
                 }
             }
         }
-        long minValue = NodeDocument.getModifiedInSecs(minTimestamp);
+        long minValue = getModifiedInSecs(minTimestamp);
         String fromKey = Utils.getKeyLowerLimit(path);
         String toKey = Utils.getKeyUpperLimit(path);
         Set<String> paths = Sets.newHashSet();
@@ -2987,13 +3041,12 @@ public final class DocumentNodeStore
 
         BackgroundSweeper(DocumentNodeStore nodeStore,
                           AtomicBoolean isDisposed) {
-            // run once a minute
-            super(nodeStore, isDisposed, Suppliers.ofInstance(60 * 1000));
+            super(nodeStore, isDisposed);
         }
 
         @Override
         protected void execute(@Nonnull final DocumentNodeStore ns) {
-            ns.runBackgroundSweepOperation();
+            ns.runBackgroundSweepOperations();
         }
     }
 
