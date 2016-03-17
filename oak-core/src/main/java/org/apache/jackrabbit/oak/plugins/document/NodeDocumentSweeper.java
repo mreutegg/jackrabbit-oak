@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -23,6 +24,7 @@ import java.util.concurrent.ExecutionException;
 import javax.annotation.CheckForNull;
 
 import com.google.common.cache.Cache;
+import com.google.common.collect.Lists;
 
 import org.apache.jackrabbit.oak.cache.CacheLIRS;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
@@ -38,9 +40,11 @@ import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setDeleted
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setRevision;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.PROPERTY_OR_DELETED;
 
-class NodeDocumentSweeper {
+final class NodeDocumentSweeper {
 
     private static final Logger LOG = LoggerFactory.getLogger(NodeDocumentSweeper.class);
+
+    private static final int INVALIDATE_ENTRY_SIZE = 1000;
 
     private static final int REV_CACHE_SIZE = 16 * 1024;
 
@@ -58,6 +62,8 @@ class NodeDocumentSweeper {
 
     private final UnmergedBranches branches;
 
+    private final List<String> paths = Lists.newArrayList();
+
     private final Cache<Revision, Revision> revCache =
             new CacheLIRS<Revision, Revision>(REV_CACHE_SIZE);
 
@@ -74,13 +80,23 @@ class NodeDocumentSweeper {
         this.branches = branches;
     }
 
-    Revision sweep(NodeDocumentSweepListener listener) throws DocumentStoreException {
+    Revision sweep(NodeDocumentSweepListener listener)
+            throws DocumentStoreException {
         nextSweepHead = headRevision;
         for (NodeDocument doc : seeker.getCandidates(lastSweepHead.getTimestamp())) {
             UpdateOp op = sweepOne(doc);
             if (op != null) {
                 listener.sweepUpdate(op);
+                paths.add(doc.getPath());
+                if (paths.size() >= INVALIDATE_ENTRY_SIZE) {
+                    listener.invalidate(paths);
+                    paths.clear();
+                }
             }
+        }
+        if (!paths.isEmpty()) {
+            listener.invalidate(paths);
+            paths.clear();
         }
         return nextSweepHead;
     }

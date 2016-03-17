@@ -34,6 +34,8 @@ import org.apache.jackrabbit.oak.commons.sort.StringSort;
 import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
 import org.junit.Test;
 
+import static java.util.Collections.singleton;
+import static java.util.Collections.singletonList;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.JOURNAL;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -143,20 +145,62 @@ public class JournalEntryTest {
         Revision r2 = new Revision(2, 0, 1);
         Revision r3 = new Revision(3, 0, 1);
         UpdateOp op = entry.asUpdateOp(r2);
-        assertTrue(store.create(JOURNAL, Collections.singletonList(op)));
+        assertTrue(store.create(JOURNAL, singletonList(op)));
 
         StringSort sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r2, r3, store);
+        StringSort inv = JournalEntry.newSorter();
+        JournalEntry.fillExternalChanges(sort, inv, r2, r3, store);
         assertEquals(0, sort.getSize());
+        assertEquals(0, inv.getSize());
 
-        JournalEntry.fillExternalChanges(sort, r1, r2, store);
+        JournalEntry.fillExternalChanges(sort, inv, r1, r2, store);
         assertEquals(paths.size(), sort.getSize());
+        assertEquals(0, inv.getSize());
         sort.close();
 
         sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r1, r3, store);
+        JournalEntry.fillExternalChanges(sort, inv, r1, r3, store);
         assertEquals(paths.size(), sort.getSize());
+        assertEquals(0, inv.getSize());
         sort.close();
+        inv.close();
+    }
+
+    @Test
+    public void invalidateOnly() throws Exception {
+        DocumentStore store = new MemoryDocumentStore();
+        JournalEntry invalidateEntry = JOURNAL.newDocument(store);
+        Set<String> paths = Sets.newHashSet();
+        addRandomPaths(paths);
+        invalidateEntry.modified(paths);
+        Revision r1 = new Revision(1, 0, 1);
+        Revision r2 = new Revision(2, 0, 1);
+        Revision r3 = new Revision(3, 0, 1);
+        UpdateOp op = invalidateEntry.asUpdateOp(r1.asBranchRevision());
+        assertTrue(store.create(JOURNAL, singletonList(op)));
+
+        JournalEntry entry = JOURNAL.newDocument(store);
+        entry.invalidate(singleton(r1));
+        op = entry.asUpdateOp(r2);
+        assertTrue(store.create(JOURNAL, singletonList(op)));
+
+        StringSort sort = JournalEntry.newSorter();
+        StringSort inv = JournalEntry.newSorter();
+        JournalEntry.fillExternalChanges(sort, inv, r2, r3, store);
+        assertEquals(0, sort.getSize());
+        assertEquals(0, inv.getSize());
+
+        JournalEntry.fillExternalChanges(sort, inv, r1, r2, store);
+        assertEquals(0, sort.getSize());
+        assertEquals(paths.size(), inv.getSize());
+        inv.close();
+
+        inv = JournalEntry.newSorter();
+        JournalEntry.fillExternalChanges(sort, inv, r1, r3, store);
+        assertEquals(0, sort.getSize());
+        assertEquals(paths.size(), inv.getSize());
+        sort.close();
+        inv.close();
     }
 
     @Test
@@ -170,61 +214,51 @@ public class JournalEntryTest {
         entry.modified("/");
         entry.modified("/foo");
         UpdateOp op = entry.asUpdateOp(r2);
-        assertTrue(store.create(JOURNAL, Collections.singletonList(op)));
+        assertTrue(store.create(JOURNAL, singletonList(op)));
 
         entry = JOURNAL.newDocument(store);
         entry.modified("/");
         entry.modified("/bar");
         op = entry.asUpdateOp(r4);
-        assertTrue(store.create(JOURNAL, Collections.singletonList(op)));
+        assertTrue(store.create(JOURNAL, singletonList(op)));
 
-        StringSort sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r1, r1, store);
+        StringSort sort = externalChanges(r1, r1, store);
         assertEquals(0, sort.getSize());
         sort.close();
 
-        sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r1, r2, store);
+        sort = externalChanges(r1, r2, store);
         assertEquals(Sets.newHashSet("/", "/foo"), Sets.newHashSet(sort));
         sort.close();
 
-        sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r1, r3, store);
+        sort = externalChanges(r1, r3, store);
         assertEquals(Sets.newHashSet("/", "/foo", "/bar"), Sets.newHashSet(sort));
         sort.close();
 
-        sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r1, r4, store);
+        sort = externalChanges(r1, r4, store);
         assertEquals(Sets.newHashSet("/", "/foo", "/bar"), Sets.newHashSet(sort));
         sort.close();
 
-        sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r2, r2, store);
+        sort = externalChanges(r2, r2, store);
         assertEquals(0, sort.getSize());
         sort.close();
 
-        sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r2, r3, store);
+        sort = externalChanges(r2, r3, store);
         assertEquals(Sets.newHashSet("/", "/bar"), Sets.newHashSet(sort));
         sort.close();
 
-        sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r2, r4, store);
+        sort = externalChanges(r2, r4, store);
         assertEquals(Sets.newHashSet("/", "/bar"), Sets.newHashSet(sort));
         sort.close();
 
-        sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r3, r3, store);
+        sort = externalChanges(r3, r3, store);
         assertEquals(0, sort.getSize());
         sort.close();
 
-        sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r3, r4, store);
+        sort = externalChanges(r3, r4, store);
         assertEquals(Sets.newHashSet("/", "/bar"), Sets.newHashSet(sort));
         sort.close();
 
-        sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, r4, r4, store);
+        sort = externalChanges(r4, r4, store);
         assertEquals(0, sort.getSize());
         sort.close();
     }
@@ -249,8 +283,10 @@ public class JournalEntryTest {
         assertTrue(store.create(JOURNAL, Collections.singletonList(op)));
 
         StringSort sort = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, "/foo", r1, r2, store, null, null);
+        StringSort inv = JournalEntry.newSorter();
+        JournalEntry.fillExternalChanges(sort, inv, "/foo", r1, r2, store, null, null);
         assertEquals(4, sort.getSize());
+        assertEquals(0, inv.getSize());
         sort.close();
     }
 
@@ -261,7 +297,7 @@ public class JournalEntryTest {
         entry.modified("/foo");
         Revision r = Revision.newRevision(1);
         assertTrue(store.create(JOURNAL,
-                Collections.singletonList(entry.asUpdateOp(r))));
+                singletonList(entry.asUpdateOp(r))));
         entry = store.find(JOURNAL, JournalEntry.asId(r));
         assertEquals(r.getTimestamp(), entry.getRevisionTimestamp());
     }
@@ -431,5 +467,18 @@ public class JournalEntryTest {
             assertNull(nonLoaderDiff);
             assertTrue(loaderCalled.get());
         }
+    }
+
+    private static StringSort externalChanges(Revision from,
+                                              Revision to,
+                                              DocumentStore store)
+            throws IOException {
+        StringSort changes = JournalEntry.newSorter();
+        StringSort invalidate = JournalEntry.newSorter();
+        try {
+            JournalEntry.fillExternalChanges(changes, invalidate, from, to, store);
+        } finally {
+            invalidate.close();
+        } return changes;
     }
 }

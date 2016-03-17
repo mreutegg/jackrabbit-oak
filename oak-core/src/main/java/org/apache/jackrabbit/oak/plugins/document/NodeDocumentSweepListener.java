@@ -18,5 +18,7 @@ package org.apache.jackrabbit.oak.plugins.document;
 
 interface NodeDocumentSweepListener {
 
-    void sweepUpdate(UpdateOp op);
+    void sweepUpdate(UpdateOp op) throws DocumentStoreException;
+
+    void invalidate(Iterable<String> paths) throws DocumentStoreException;
 }
