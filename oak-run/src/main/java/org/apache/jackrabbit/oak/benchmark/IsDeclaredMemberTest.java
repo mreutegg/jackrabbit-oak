@@ -17,27 +17,21 @@
 package org.apache.jackrabbit.oak.benchmark;
 
 import javax.jcr.RepositoryException;
-import javax.jcr.Session;
-import javax.jcr.SimpleCredentials;
 
-public class LoginImpersonateTest extends AbstractLoginTest {
+import org.apache.jackrabbit.api.security.user.Authorizable;
+import org.apache.jackrabbit.api.security.user.Group;
 
-    private Session admin;
-    private SimpleCredentials creds;
+/**
+ * Same as {@link IsMemberTest} but the test run will check for the randomly selected
+ * user to be a declared member of the target group.
+ */
+public class IsDeclaredMemberTest extends IsMemberTest {
 
-    @Override
-    public void beforeSuite() throws Exception {
-        super.beforeSuite();
-
-        // will be close upon super.tearDown
-        admin = loginAdministrative();
-        creds = new SimpleCredentials("anonymous", "".toCharArray());
+    public IsDeclaredMemberTest(int numberOfUsers, boolean nestedGroups) {
+        super(numberOfUsers, nestedGroups);
     }
 
-    @Override
-    public void runTest() throws RepositoryException {
-        for (int i = 0; i < COUNT; i++) {
-            admin.impersonate(creds).logout();
-        }
+    protected boolean isMember(Group g, Authorizable member) throws RepositoryException {
+        return g.isDeclaredMember(member);
     }
 }

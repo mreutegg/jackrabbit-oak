@@ -16,28 +16,22 @@
  */
 package org.apache.jackrabbit.oak.benchmark;
 
-import javax.jcr.RepositoryException;
-import javax.jcr.Session;
-import javax.jcr.SimpleCredentials;
+import javax.annotation.Nonnull;
 
-public class LoginImpersonateTest extends AbstractLoginTest {
+import org.apache.jackrabbit.api.security.user.Group;
+import org.apache.jackrabbit.api.security.user.User;
 
-    private Session admin;
-    private SimpleCredentials creds;
+/**
+ * Same as {@link MemberBaseTest} but only reading the declared membership.
+ */
+public class MemberDeclaredMemberOf extends MemberBaseTest {
 
-    @Override
-    public void beforeSuite() throws Exception {
-        super.beforeSuite();
-
-        // will be close upon super.tearDown
-        admin = loginAdministrative();
-        creds = new SimpleCredentials("anonymous", "".toCharArray());
+    public MemberDeclaredMemberOf(int numberOfGroups, boolean nested, int numberOfMembers) {
+        super(numberOfGroups, nested, numberOfMembers);
     }
 
     @Override
-    public void runTest() throws RepositoryException {
-        for (int i = 0; i < COUNT; i++) {
-            admin.impersonate(creds).logout();
-        }
+    protected void testMembership(@Nonnull Group g, @Nonnull User member) throws Exception {
+        member.declaredMemberOf();
     }
 }
