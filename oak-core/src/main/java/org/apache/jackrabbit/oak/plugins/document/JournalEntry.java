@@ -55,7 +55,7 @@ public final class JournalEntry extends Document {
     /**
      * The revision format for external changes:
      * &lt;clusterId>-&lt;timestamp>-&lt;counter>. The string is prefixed with
-     * "b" if it denotes a branch revision.
+     * "b" if it denotes a branch revision or id of an invalidate-only entry.
      */
     private static final String REVISION_FORMAT = "%d-%0" +
             Long.toHexString(Long.MAX_VALUE).length() + "x-%0" +
@@ -64,6 +64,8 @@ public final class JournalEntry extends Document {
     private static final String CHANGES = "_c";
 
     private static final String BRANCH_COMMITS = "_bc";
+
+    private static final String INVALIDATE_ONLY = "_inv";
 
     public static final String MODIFIED = "_modified";
 
@@ -91,7 +93,7 @@ public final class JournalEntry extends Document {
         });
     }
 
-    static void applyTo(@Nonnull StringSort externalSort,
+    static void applyTo(@Nonnull Iterable<String> changedPaths,
                         @Nonnull DiffCache diffCache,
                         @Nonnull RevisionVector from,
                         @Nonnull RevisionVector to) throws IOException {
@@ -101,7 +103,7 @@ public final class JournalEntry extends Document {
 
         final DiffCache.Entry entry = checkNotNull(diffCache).newEntry(from, to, false);
 
-        final Iterator<String> it = externalSort.getIds();
+        final Iterator<String> it = changedPaths.iterator();
         if (!it.hasNext()) {
             // nothing at all? that's quite unusual..
 
@@ -170,14 +172,17 @@ public final class JournalEntry extends Document {
      * clusterId) from the journal and appends the paths therein to the provided
      * sorter.
      *
-     * @param sorter the StringSort to which all externally changed paths
+     * @param externalChanges the StringSort to which all externally changed paths
      *               between the provided revisions will be added
+     * @param invalidate the StringSort to which paths of documents will be
+     *                   added that must be invalidated if cached.
      * @param from   the lower bound of the revision range (exclusive).
      * @param to     the upper bound of the revision range (inclusive).
      * @param store  the document store to query.
      * @throws IOException
      */
-    static void fillExternalChanges(@Nonnull StringSort sorter,
+    static void fillExternalChanges(@Nonnull StringSort externalChanges,
+                                    @Nonnull StringSort invalidate,
                                     @Nonnull Revision from,
                                     @Nonnull Revision to,
                                     @Nonnull DocumentStore store)
@@ -207,7 +212,8 @@ public final class JournalEntry extends Document {
             List<JournalEntry> partialResult = store.query(JOURNAL, fromId, toId, READ_CHUNK_SIZE);
 
             for (JournalEntry d : partialResult) {
-                d.addTo(sorter);
+                d.addTo(externalChanges);
+                d.addInvalidateOnlyTo(invalidate);
             }
             if (partialResult.size() < READ_CHUNK_SIZE) {
                 break;
@@ -251,6 +257,20 @@ public final class JournalEntry extends Document {
         put(BRANCH_COMMITS, branchCommits);
     }
 
+    void invalidate(@Nonnull Iterable<Revision> revisions) {
+        String value = (String) get(INVALIDATE_ONLY);
+        if (value == null) {
+            value = "";
+        }
+        for (Revision r : revisions) {
+            if (value.length() > 0) {
+                value += ",";
+            }
+            value += asId(r.asBranchRevision());
+        }
+        put(INVALIDATE_ONLY, value);
+    }
+
     String getChanges(String path) {
         TreeNode node = getNode(path);
         if (node == null) {
@@ -263,7 +283,9 @@ public final class JournalEntry extends Document {
         String id = asId(revision);
         UpdateOp op = new UpdateOp(id, true);
         op.set(ID, id);
-        op.set(CHANGES, getChanges().serialize());
+        if (changes != null) {
+            op.set(CHANGES, getChanges().serialize());
+        }
         // OAK-3085 : introduce a timestamp property
         // for later being used by OAK-3001
         op.set(MODIFIED, revision.getTimestamp());
@@ -271,11 +293,32 @@ public final class JournalEntry extends Document {
         if (bc != null) {
             op.set(BRANCH_COMMITS, bc);
         }
+        String inv = (String) get(INVALIDATE_ONLY);
+        if (inv != null) {
+            op.set(INVALIDATE_ONLY, inv);
+        }
         return op;
     }
 
-    void addTo(final StringSort sort) throws IOException {
-        TreeNode n = getChanges();
+    //-----------------------------< internal >---------------------------------
+
+    private void addTo(final StringSort sort) throws IOException {
+        TraversingVisitor v = new TraversingVisitor() {
+            @Override
+            public void node(TreeNode node, String path) throws IOException {
+                sort.add(path);
+            }
+        };
+        if (hasChanges()) {
+            TreeNode n = getChanges();
+            n.accept(v, "/");
+        }
+        for (JournalEntry e : getBranchCommits()) {
+            e.getChanges().accept(v, "/");
+        }
+    }
+
+    private void addInvalidateOnlyTo(final StringSort sort) throws IOException {
         TraversingVisitor v = new TraversingVisitor() {
 
             @Override
@@ -283,8 +326,7 @@ public final class JournalEntry extends Document {
                 sort.add(path);
             }
         };
-        n.accept(v, "/");
-        for (JournalEntry e : getBranchCommits()) {
+        for (JournalEntry e : getInvalidateOnly()) {
             e.getChanges().accept(v, "/");
         }
     }
@@ -295,9 +337,24 @@ public final class JournalEntry extends Document {
      * @return the branch commits.
      */
     @Nonnull
-    Iterable<JournalEntry> getBranchCommits() {
+    private Iterable<JournalEntry> getBranchCommits() {
+        return getLinkedEntries(BRANCH_COMMITS);
+    }
+
+    /**
+     * Returns the invalidate-only entries that are related to this journal
+     * entry.
+     *
+     * @return the invalidate-only entries.
+     */
+    @Nonnull
+    private Iterable<JournalEntry> getInvalidateOnly() {
+        return getLinkedEntries(INVALIDATE_ONLY);
+    }
+
+    private Iterable<JournalEntry> getLinkedEntries(final String name) {
         final List<String> ids = Lists.newArrayList();
-        String bc = (String) get(BRANCH_COMMITS);
+        String bc = (String) get(name);
         if (bc != null) {
             for (String id : bc.split(",")) {
                 ids.add(id);
@@ -319,7 +376,7 @@ public final class JournalEntry extends Document {
                         JournalEntry d = store.find(JOURNAL, id);
                         if (d == null) {
                             throw new IllegalStateException(
-                                    "Missing external change for branch revision: " + id);
+                                    "Missing " + name + " entry for revision: " + id);
                         }
                         return d;
                     }
@@ -327,8 +384,6 @@ public final class JournalEntry extends Document {
             }
         };
     }
-
-    //-----------------------------< internal >---------------------------------
 
     private static String getChanges(TreeNode node) {
         JsopBuilder builder = new JsopBuilder();
@@ -359,6 +414,10 @@ public final class JournalEntry extends Document {
             }
         }
         return node;
+    }
+
+    private boolean hasChanges() {
+        return get(CHANGES) != null;
     }
 
     @Nonnull

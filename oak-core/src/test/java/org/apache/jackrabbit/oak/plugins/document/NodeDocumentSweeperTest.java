@@ -23,7 +23,6 @@ import com.google.common.collect.Lists;
 
 import org.apache.jackrabbit.oak.plugins.document.UpdateOp.Key;
 import org.apache.jackrabbit.oak.plugins.document.UpdateOp.Operation;
-import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.junit.Before;
@@ -196,6 +195,11 @@ public class NodeDocumentSweeperTest {
             @Override
             public void sweepUpdate(UpdateOp op) {
                 ops.add(op);
+            }
+
+            @Override
+            public void invalidate(Iterable<String> paths)
+                    throws DocumentStoreException {
             }
         });
     }
