@@ -24,7 +24,6 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import org.apache.jackrabbit.oak.commons.sort.StringSort;
-import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore.BackgroundReadStats;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.slf4j.Logger;
@@ -78,6 +77,13 @@ abstract class ExternalChange {
      */
     abstract void updateHead(@Nonnull Set<Revision> externalChanges,
                              @Nullable Iterable<String> changedPaths);
+
+    /**
+     * Called as the last operation when external changes are processed.
+     *
+     * @param sweepRevs the current sweep revisions on the root document.
+     */
+    abstract void updateSweepRevisions(@Nonnull RevisionVector sweepRevs);
 
     /**
      * Processes external changes if there are any.
@@ -161,6 +167,8 @@ abstract class ExternalChange {
             if (!externalChanges.isEmpty()) {
                 updateHead(externalChanges, externalSort);
             }
+
+            updateSweepRevisions(doc.getSweepRevisions());
         } finally {
             closeQuietly(externalSort);
             closeQuietly(invalidate);

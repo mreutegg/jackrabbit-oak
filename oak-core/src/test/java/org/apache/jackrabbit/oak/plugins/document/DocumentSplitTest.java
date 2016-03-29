@@ -935,6 +935,12 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
         public Clock getClock() {
             return rc.getClock();
         }
+
+        @Override
+        public String getCommitValue(@Nonnull Revision changeRevision,
+                                     @Nonnull NodeDocument doc) {
+            return rc.getCommitValue(changeRevision, doc);
+        }
     }
 
     private static NodeState merge(NodeStore store, NodeBuilder root)

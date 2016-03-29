@@ -79,12 +79,12 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.UncheckedExecutionException;
 
+import org.apache.jackrabbit.oak.cache.CacheLIRS;
 import org.apache.jackrabbit.oak.commons.jmx.AnnotatedStandardMBean;
 import org.apache.jackrabbit.oak.plugins.blob.BlobStoreBlob;
 import org.apache.jackrabbit.oak.plugins.blob.MarkSweepGarbageCollector;
 import org.apache.jackrabbit.oak.plugins.blob.ReferencedBlob;
 import org.apache.jackrabbit.oak.plugins.document.Branch.BranchCommit;
-import org.apache.jackrabbit.oak.plugins.document.cache.CacheInvalidationStats;
 import org.apache.jackrabbit.oak.plugins.document.persistentCache.PersistentCache;
 import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.DynamicBroadcastConfig;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
@@ -274,6 +274,13 @@ public final class DocumentNodeStore
     private Thread backgroundSweepThread;
 
     /**
+     * The sweep revision vector. Revisions older than this can safely be
+     * considered committed without looking up the commit value on the commit
+     * root document.
+     */
+    private RevisionVector sweepRevisions = new RevisionVector();
+
+    /**
      * Read/Write lock for background operations. Regular commits will acquire
      * a shared lock, while a background write acquires an exclusive lock.
      */
@@ -323,6 +330,12 @@ public final class DocumentNodeStore
      * The change log to keep track of commits for diff operations.
      */
     private final DiffCache diffCache;
+
+    /**
+     * A fixed size cache for commit values.
+     */
+    private final Cache<Revision, String> commitValueCache
+            = new CacheLIRS<Revision, String>(10000);
 
     /**
      * The blob store.
@@ -504,6 +517,8 @@ public final class DocumentNodeStore
                 store.findAndUpdate(NODES, op);
             }
         }
+
+        sweepRevisions = sweepRevisions.pmax(rootDoc.getSweepRevisions());
 
         // Renew the lease because it may have been stale
         renewClusterIdLease();
@@ -1679,6 +1694,23 @@ public final class DocumentNodeStore
         return clock;
     }
 
+    @Override
+    public String getCommitValue(@Nonnull Revision changeRevision,
+                                 @Nonnull NodeDocument doc) {
+        if (!sweepRevisions.isRevisionNewer(changeRevision)) {
+            return "c";
+        }
+        String value = commitValueCache.getIfPresent(changeRevision);
+        if (value != null) {
+            return value;
+        }
+        value = doc.resolveCommitValue(changeRevision);
+        if (Utils.isCommitted(value)) {
+            commitValueCache.put(changeRevision, value);
+        }
+        return value;
+    }
+
     //----------------------< background operations >---------------------------
 
     /** Used for testing only */
@@ -1922,32 +1954,12 @@ public final class DocumentNodeStore
                 }
                 stats.dispatchChanges = clock.getTime() - time;
             }
-        }.process();
-    }
 
-    static class BackgroundReadStats {
-        CacheInvalidationStats cacheStats;
-        long readHead;
-        long cacheInvalidationTime;
-        long populateDiffCache;
-        long lock;
-        long dispatchChanges;
-
-        @Override
-        public String toString() {
-            String cacheStatsMsg = "NOP";
-            if (cacheStats != null){
-                cacheStatsMsg = cacheStats.summaryReport();
+            @Override
+            void updateSweepRevisions(@Nonnull RevisionVector sweepRevs) {
+                sweepRevisions = sweepRevisions.pmax(sweepRevs);
             }
-            return  "ReadStats{" +
-                    "cacheStats:" + cacheStatsMsg +
-                    ", head:" + readHead +
-                    ", cache:" + cacheInvalidationTime +
-                    ", diff: " + populateDiffCache +
-                    ", lock:" + lock +
-                    ", dispatch:" + dispatchChanges +
-                    '}';
-        }
+        }.process();
     }
 
     private void cleanOrphanedBranches() {
@@ -2125,18 +2137,20 @@ public final class DocumentNodeStore
 
         checkOpen();
         Commit c = new Commit(this, newRevision(), base);
-        Revision rev = c.getRevision().asBranchRevision();
-        // remember branch commit
-        Branch b = getBranches().getBranch(base);
-        if (b == null) {
-            // baseRev is marker for new branch
-            getBranches().create(base.asTrunkRevision(), rev, branch);
-            LOG.debug("Branch created with base revision {}", base);
-            if (LOG.isTraceEnabled()) {
-                LOG.trace("Branch created", new Exception());
+        if (!isDisableBranches()) {
+            Revision rev = c.getRevision().asBranchRevision();
+            // remember branch commit
+            Branch b = getBranches().getBranch(base);
+            if (b == null) {
+                // baseRev is marker for new branch
+                getBranches().create(base.asTrunkRevision(), rev, branch);
+                LOG.debug("Branch created with base revision {}", base);
+                if (LOG.isTraceEnabled()) {
+                    LOG.trace("Branch created", new Exception());
+                }
+            } else {
+                b.addCommit(rev);
             }
-        } else {
-            b.addCommit(rev);
         }
         return c;
     }

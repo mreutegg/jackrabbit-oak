@@ -59,4 +59,10 @@ public class DummyRevisionContext implements RevisionContext {
     public Clock getClock() {
         return Clock.SIMPLE;
     }
+
+    @Override
+    public String getCommitValue(@Nonnull Revision changeRevision,
+                                 @Nonnull NodeDocument doc) {
+        return doc.resolveCommitValue(changeRevision);
+    }
 }
