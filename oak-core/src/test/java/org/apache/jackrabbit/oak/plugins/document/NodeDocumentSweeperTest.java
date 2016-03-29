@@ -25,6 +25,8 @@ import org.apache.jackrabbit.oak.plugins.document.UpdateOp.Key;
 import org.apache.jackrabbit.oak.plugins.document.UpdateOp.Operation;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.apache.jackrabbit.oak.stats.Clock;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -45,23 +47,32 @@ public class NodeDocumentSweeperTest {
     @Rule
     public DocumentMKBuilderProvider builderProvider = new DocumentMKBuilderProvider();
 
+    private Clock clock;
     private DocumentNodeStore ns;
     private DocumentMK mk;
     private DocumentStore store;
     private MissingLastRevSeeker seeker;
 
     @Before
-    public void before() {
+    public void before() throws Exception {
+        clock = new Clock.Virtual();
+        clock.waitUntil(System.currentTimeMillis());
         DocumentMK.Builder builder = builderProvider.newBuilder();
+        builder.clock(clock);
+        Revision.setClock(clock);
         mk = builder.open();
         ns = builder.getNodeStore();
         store = ns.getDocumentStore();
         seeker = builder.createMissingLastRevSeeker();
     }
 
+    @After
+    public void after() {
+        Revision.resetClockToDefault();
+    }
+
     @Test
     public void sweepUncommittedBeforeHead() throws Exception {
-        Revision sweepStart = ns.getHeadRevision().getRevision(ns.getClusterId());
         Revision uncommitted = ns.newRevision();
         NodeBuilder b = ns.getRoot().builder();
         b.child("test");
@@ -74,7 +85,7 @@ public class NodeDocumentSweeperTest {
         assertNotNull(store.findAndUpdate(NODES, op));
 
         List<UpdateOp> ops = Lists.newArrayList();
-        Revision nextSweepStart = sweep(sweepStart, ops);
+        Revision nextSweepStart = sweep(ops);
 
         assertEquals(ns.getHeadRevision().getRevision(ns.getClusterId()), nextSweepStart);
         assertEquals(1, ops.size());
@@ -91,7 +102,6 @@ public class NodeDocumentSweeperTest {
 
     @Test
     public void sweepUncommittedAfterHead() throws Exception {
-        Revision sweepStart = ns.getHeadRevision().getRevision(ns.getClusterId());
         NodeBuilder b = ns.getRoot().builder();
         b.child("test");
         merge(ns, b);
@@ -104,7 +114,7 @@ public class NodeDocumentSweeperTest {
         assertNotNull(store.findAndUpdate(NODES, op));
 
         List<UpdateOp> ops = Lists.newArrayList();
-        Revision nextSweepStart = sweep(sweepStart, ops);
+        Revision nextSweepStart = sweep(ops);
 
         assertEquals(ns.getHeadRevision().getRevision(ns.getClusterId()), nextSweepStart);
         assertEquals(0, ops.size());
@@ -113,7 +123,6 @@ public class NodeDocumentSweeperTest {
     @Test
     public void sweepUnmergedBranchCommit() throws Exception {
         int clusterId = ns.getClusterId();
-        Revision sweepStart = ns.getHeadRevision().getRevision(clusterId);
         NodeBuilder b = ns.getRoot().builder();
         b.child("test");
         merge(ns, b);
@@ -131,12 +140,12 @@ public class NodeDocumentSweeperTest {
         // restart node store. this will make branch eligible for GC
         ns.dispose();
         DocumentMK.Builder builder = builderProvider.newBuilder();
-        mk = builder.setDocumentStore(store).setClusterId(clusterId).open();
+        mk = builder.setDocumentStore(store).clock(clock).setClusterId(clusterId).open();
         ns = mk.getNodeStore();
         seeker = builder.createMissingLastRevSeeker();
 
         List<UpdateOp> ops = Lists.newArrayList();
-        Revision nextSweepStart = sweep(sweepStart, ops);
+        Revision nextSweepStart = sweep(ops);
 
         assertEquals(ns.getHeadRevision().getRevision(ns.getClusterId()), nextSweepStart);
         assertEquals(1, ops.size());
@@ -153,9 +162,6 @@ public class NodeDocumentSweeperTest {
 
     @Test
     public void sweepMergedBranch() throws Exception {
-        int clusterId = ns.getClusterId();
-        Revision sweepStart = ns.getHeadRevision().getRevision(clusterId);
-
         String branchRev = mk.branch(null);
         branchRev = mk.commit("/", "+\"foo\":{}", branchRev, null);
         branchRev = mk.commit("/", "+\"bar\":{}", branchRev, null);
@@ -163,7 +169,7 @@ public class NodeDocumentSweeperTest {
         mk.merge(branchRev, null);
 
         List<UpdateOp> ops = Lists.newArrayList();
-        Revision nextSweepStart = sweep(sweepStart, ops);
+        Revision nextSweepStart = sweep(ops);
 
         assertEquals(ns.getHeadRevision().getRevision(ns.getClusterId()), nextSweepStart);
 
@@ -187,10 +193,12 @@ public class NodeDocumentSweeperTest {
         assertTrue(root.hasChildNode("baz"));
     }
 
-    private Revision sweep(Revision start, final List<UpdateOp> ops) {
-        NodeDocumentSweeper sweeper = new NodeDocumentSweeper(
-                ns.getHeadRevision().getRevision(ns.getClusterId()),
-                start, seeker, ns.getBranches());
+    private Revision sweep(final List<UpdateOp> ops) throws Exception {
+        // sweeper only runs once every 5 seconds
+        // make sure it does run
+        clock.waitUntil(clock.getTime() + NodeDocument.MODIFIED_IN_SECS_RESOLUTION * 1000);
+        // now perform the sweep
+        NodeDocumentSweeper sweeper = new NodeDocumentSweeper(ns, seeker);
         return sweeper.sweep(new NodeDocumentSweepListener() {
             @Override
             public void sweepUpdate(UpdateOp op) {

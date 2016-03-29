@@ -56,6 +56,11 @@ class Branch {
     private final RevisionVector base;
 
     /**
+     * The branch commit listener.
+     */
+    private final BranchCommitListener listener;
+
+    /**
      * The branch reference.
      */
     private final BranchReference ref;
@@ -72,19 +77,23 @@ class Branch {
      * @param base the base commit.
      * @param queue a {@link BranchReference} to this branch will be appended to
      *              this queue when {@code guard} becomes weakly reachable.
+     * @param listener the branch commit listener.
      * @param guard controls the life time of this branch.
      * @throws IllegalArgumentException if base is a branch revision.
      */
     Branch(@Nonnull SortedSet<Revision> commits,
            @Nonnull RevisionVector base,
            @Nonnull ReferenceQueue<Object> queue,
+           @Nonnull BranchCommitListener listener,
            @Nullable Object guard) {
         checkArgument(!checkNotNull(base).isBranch(), "base is not a trunk revision: %s", base);
         this.base = base;
         this.commits = new ConcurrentSkipListMap<Revision, BranchCommit>(commits.comparator());
+        this.listener = listener;
         for (Revision r : commits) {
             this.commits.put(r.asBranchRevision(),
                     new BranchCommitImpl(base, r.asBranchRevision()));
+            listener.branchRevisionCreated(r);
         }
         if (guard != null) {
             this.ref = new BranchReference(queue, this, guard);
@@ -133,6 +142,7 @@ class Branch {
         Revision last = commits.lastKey();
         checkArgument(head.compareRevisionTime(last) > 0);
         commits.put(head, new RebaseCommit(base, head, commits));
+        listener.branchRevisionCreated(head);
     }
 
     /**
@@ -146,6 +156,7 @@ class Branch {
         Revision last = commits.lastKey();
         checkArgument(commits.comparator().compare(r, last) > 0);
         commits.put(r, new BranchCommitImpl(commits.get(last).getBase(), r));
+        listener.branchRevisionCreated(r);
     }
 
     /**

@@ -1874,6 +1874,11 @@ public final class DocumentNodeStore
         return Revision.newRevision(clusterId);
     }
 
+    @Nonnull
+    public Clock getClock() {
+        return clock;
+    }
+
     //----------------------< background operations >---------------------------
 
     /** Used for testing only */
@@ -2203,33 +2208,9 @@ public final class DocumentNodeStore
     }
 
     private void backgroundSweep() {
-        int cId = getClusterId();
-        Revision head = getHeadRevision().getRevision(cId);
-        if (head == null) {
-            LOG.warn("Head revision {} does not have an entry for " +
-                    "clusterId {}. Skipping background sweeping of " +
-                    "documents.", getHeadRevision(), cId);
-            return;
-        }
-        final DocumentStore store = getDocumentStore();
-        NodeDocument rootDoc = Utils.getRootDocument(store);
-        RevisionVector sweepRevs = rootDoc.getSweepRevisions();
-        Revision lastSweepRev = sweepRevs.getRevision(cId);
-        if (lastSweepRev == null) {
-            // sweep all
-            lastSweepRev = new Revision(0, 0, cId);
-        }
-        // only sweep documents when the _modified time changed
-        long lastSweepTick = getModifiedInSecs(lastSweepRev.getTimestamp());
-        long currentTick = getModifiedInSecs(clock.getTime());
-        if (lastSweepTick == currentTick) {
-            return;
-        }
-
         final List<Revision> journalRevs = Lists.newArrayList();
-        Revision newSweepRev = new NodeDocumentSweeper(
-                head, lastSweepRev, lastRevSeeker,
-                getBranches()).sweep(new NodeDocumentSweepListener() {
+        Revision newSweepRev = new NodeDocumentSweeper(this, lastRevSeeker)
+                .sweep(new NodeDocumentSweepListener() {
             @Override
             public void sweepUpdate(UpdateOp op) {
                 // TODO: perform batch update
@@ -2257,9 +2238,11 @@ public final class DocumentNodeStore
                 changes.invalidate(journalRevs);
             }
         }
-        UpdateOp op = new UpdateOp(Utils.getIdFromPath("/"), false);
-        setSweepRevision(op, newSweepRev);
-        store.findAndUpdate(NODES, op);
+        if (newSweepRev != null) {
+            UpdateOp op = new UpdateOp(Utils.getIdFromPath("/"), false);
+            setSweepRevision(op, newSweepRev);
+            store.findAndUpdate(NODES, op);
+        }
     }
 
     @Nonnull
@@ -2996,10 +2979,6 @@ public final class DocumentNodeStore
 
     public DiffCache getDiffCache() {
         return diffCache;
-    }
-
-    public Clock getClock() {
-        return clock;
     }
 
     public Checkpoints getCheckpoints() {
