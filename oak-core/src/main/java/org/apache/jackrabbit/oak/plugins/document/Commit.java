@@ -60,7 +60,6 @@ public class Commit {
     private static final Logger LOG = LoggerFactory.getLogger(Commit.class);
 
     protected final DocumentNodeStore nodeStore;
-    private final DocumentNodeStoreBranch branch;
     private final RevisionVector baseRevision;
     private final Revision revision;
     private final HashMap<String, UpdateOp> operations = new LinkedHashMap<String, UpdateOp>();
@@ -87,18 +86,14 @@ public class Commit {
      * @param revision the revision for this commit.
      * @param baseRevision the base revision for this commit or {@code null} if
      *                     there is none.
-     * @param branch the branch associated with this commit or {@code null} if
-     *               there is none.
      *                              
      */
     Commit(@Nonnull DocumentNodeStore nodeStore,
            @Nonnull Revision revision,
-           @Nullable RevisionVector baseRevision,
-           @Nullable DocumentNodeStoreBranch branch) {
+           @Nullable RevisionVector baseRevision) {
         this.nodeStore = checkNotNull(nodeStore);
         this.revision = checkNotNull(revision);
         this.baseRevision = baseRevision;
-        this.branch = branch;
     }
 
     UpdateOp getUpdateOperationForNode(String path) {
@@ -189,21 +184,6 @@ public class Commit {
         boolean isBranch = baseRev != null && baseRev.isBranch();
         Revision rev = getRevision();
         if (isBranch && !nodeStore.isDisableBranches()) {
-            rev = rev.asBranchRevision();
-            // remember branch commit
-            Branch b = nodeStore.getBranches().getBranch(baseRev);
-            if (b == null) {
-                // baseRev is marker for new branch
-                b = nodeStore.getBranches().create(
-                        baseRev.asTrunkRevision(), rev, branch);
-                LOG.debug("Branch created with base revision {} and " +
-                        "modifications on {}", baseRevision, operations.keySet());
-                if (LOG.isTraceEnabled()) {
-                    LOG.trace("Branch created", new Exception());
-                }
-            } else {
-                b.addCommit(rev);
-            }
             try {
                 // prepare commit
                 prepare(baseRev);

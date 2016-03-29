@@ -58,6 +58,12 @@ class UnmergedBranches {
             new ReferenceQueue<Object>();
 
     /**
+     * Currently registered listeners.
+     */
+    private final CompositeBranchCommitListener listeners =
+            new CompositeBranchCommitListener();
+
+    /**
      * Set to <code>true</code> once initialized.
      */
     private final AtomicBoolean initialized = new AtomicBoolean(false);
@@ -111,7 +117,7 @@ class UnmergedBranches {
                 "initial is not a branch revision: %s", initial);
         SortedSet<Revision> commits = new TreeSet<Revision>(StableRevisionComparator.INSTANCE);
         commits.add(initial);
-        Branch b = new Branch(commits, base, queue, guard);
+        Branch b = new Branch(commits, base, queue, listeners, guard);
         branches.add(b);
         return b;
     }
@@ -184,5 +190,26 @@ class UnmergedBranches {
             }
         }
         return null;
+    }
+
+    void addListener(BranchCommitListener listener) {
+        boolean success = false;
+        listeners.addListener(listener);
+        try {
+            for (Branch b : branches) {
+                for (Revision r : b.getCommits()) {
+                    listener.branchRevisionCreated(r);
+                }
+            }
+            success = true;
+        } finally {
+            if (!success) {
+                listeners.removeListener(listener);
+            }
+        }
+    }
+
+    void removeListener(BranchCommitListener listener) {
+        listeners.removeListener(listener);
     }
 }

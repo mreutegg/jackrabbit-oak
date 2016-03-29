@@ -45,6 +45,7 @@ public class OrderableNodesTest extends AbstractRepositoryTest {
 
     @Test
     public void orderableFolder() throws Exception {
+        Thread.sleep(100);
         // check ordering with node type without a residual properties definition
         new TestContentLoader().loadTestContent(getAdminSession());
         doTest("test:orderableFolder");

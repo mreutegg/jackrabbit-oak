@@ -18,6 +18,7 @@ package org.apache.jackrabbit.oak.plugins.document;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 
@@ -31,8 +32,10 @@ import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Sets.filter;
+import static com.google.common.collect.Sets.newConcurrentHashSet;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.getModifiedInSecs;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.isDeletedEntry;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.removeCommitRoot;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.removeRevision;
@@ -40,7 +43,7 @@ import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setDeleted
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setRevision;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.PROPERTY_OR_DELETED;
 
-final class NodeDocumentSweeper {
+final class NodeDocumentSweeper implements BranchCommitListener {
 
     private static final Logger LOG = LoggerFactory.getLogger(NodeDocumentSweeper.class);
 
@@ -50,38 +53,84 @@ final class NodeDocumentSweeper {
 
     private static final Revision NULL_REV = new Revision(0, 0, 0);
 
-    private final Revision headRevision;
-
-    private final Revision lastSweepHead;
-
-    private Revision nextSweepHead;
-
-    private final int clusterId;
+    private final RevisionContext context;
 
     private final MissingLastRevSeeker seeker;
+
+    private final int clusterId;
 
     private final UnmergedBranches branches;
 
     private final List<String> paths = Lists.newArrayList();
 
+    private Revision headRevision;
+
+    private Revision nextSweepHead;
+
     private final Cache<Revision, Revision> revCache =
             new CacheLIRS<Revision, Revision>(REV_CACHE_SIZE);
 
-    NodeDocumentSweeper(Revision headRevision,
-                        Revision lastSweepHead,
-                        MissingLastRevSeeker seeker,
-                        UnmergedBranches branches) {
-        checkArgument(headRevision.getClusterId() == lastSweepHead.getClusterId());
-        checkArgument(headRevision.compareRevisionTime(lastSweepHead) >= 0);
-        this.headRevision = headRevision;
-        this.lastSweepHead = lastSweepHead;
-        this.clusterId = headRevision.getClusterId();
-        this.seeker = seeker;
-        this.branches = branches;
+    private final Set<Revision> inProgressBranchCommits = newConcurrentHashSet();
+
+    NodeDocumentSweeper(RevisionContext context,
+                        MissingLastRevSeeker seeker) {
+        this.context = checkNotNull(context);
+        this.seeker = checkNotNull(seeker);
+        this.clusterId = context.getClusterId();
+        this.branches = context.getBranches();
     }
 
+    @CheckForNull
     Revision sweep(NodeDocumentSweepListener listener)
             throws DocumentStoreException {
+        paths.clear();
+        revCache.invalidateAll();
+        inProgressBranchCommits.clear();
+
+        branches.addListener(this);
+        try {
+            return performSweep(listener);
+        } finally {
+            branches.removeListener(this);
+        }
+    }
+
+    //---------------------< BranchCommitListener >-----------------------------
+
+    @Override
+    public void branchRevisionCreated(Revision branchCommitRevision) {
+        inProgressBranchCommits.add(branchCommitRevision.asTrunkRevision());
+    }
+
+    //----------------------------< internal >----------------------------------
+
+    @CheckForNull
+    private Revision performSweep(NodeDocumentSweepListener listener)
+            throws DocumentStoreException {
+        headRevision = context.getHeadRevision().getRevision(clusterId);
+        if (headRevision == null) {
+            LOG.warn("Head revision {} does not have an entry for " +
+                    "clusterId {}. Skipping background sweeping of " +
+                    "documents.", context.getHeadRevision(), clusterId);
+            return null;
+        }
+        NodeDocument rootDoc = seeker.getRoot();
+        RevisionVector sweepRevs = rootDoc.getSweepRevisions();
+        Revision lastSweepHead = sweepRevs.getRevision(clusterId);
+        if (lastSweepHead == null) {
+            // sweep all
+            lastSweepHead = new Revision(0, 0, clusterId);
+        }
+        // only sweep documents when the _modified time changed
+        long lastSweepTick = getModifiedInSecs(lastSweepHead.getTimestamp());
+        long currentTick = getModifiedInSecs(context.getClock().getTime());
+        if (lastSweepTick == currentTick) {
+            return null;
+        }
+
+        LOG.info("Starting document sweep. Head: {}, starting at {}",
+                headRevision, lastSweepHead);
+
         nextSweepHead = headRevision;
         for (NodeDocument doc : seeker.getCandidates(lastSweepHead.getTimestamp())) {
             UpdateOp op = sweepOne(doc);
@@ -98,10 +147,9 @@ final class NodeDocumentSweeper {
             listener.invalidate(paths);
             paths.clear();
         }
+        LOG.info("Document sweep finished");
         return nextSweepHead;
     }
-
-    //----------------------------< internal >----------------------------------
 
     private UpdateOp sweepOne(NodeDocument doc) throws DocumentStoreException {
         UpdateOp op = createUpdateOp(doc);
@@ -133,7 +181,13 @@ final class NodeDocumentSweeper {
         if (headRevision.compareRevisionTime(rev) <= 0) {
             return;
         }
-        if (branches.getBranchCommit(rev) == null) {
+        if (isInProgressBranchCommit(rev)) {
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Unmerged branch commit on {}, {} @ {}",
+                        op.getId(), property, rev);
+            }
+            pushBackNextSweepHead(rev);
+        } else {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Uncommitted change on {}, {} @ {}",
                         op.getId(), property, rev);
@@ -151,13 +205,11 @@ final class NodeDocumentSweeper {
                     && "false".equals(doc.getLocalDeleted().get(rev))) {
                 setDeletedOnce(op);
             }
-        } else {
-            if (LOG.isDebugEnabled()) {
-                LOG.debug("Unmerged branch commit on {}, {} @ {}",
-                        op.getId(), property, rev);
-            }
-            nextSweepHead = Utils.min(rev, nextSweepHead);
         }
+    }
+
+    private boolean isInProgressBranchCommit(Revision rev) {
+        return inProgressBranchCommits.contains(rev);
     }
 
     private void committed(String property,
@@ -174,17 +226,24 @@ final class NodeDocumentSweeper {
                                  Revision rev,
                                  Revision cRev,
                                  UpdateOp op) {
+        boolean newerThanHead = cRev.compareRevisionTime(headRevision) > 0;
         if (LOG.isDebugEnabled()) {
-            LOG.debug("Committed branch change on {}, {} @ {}/{}",
-                    op.getId(), property, rev, cRev);
+            String msg = newerThanHead ? " (newer than head)" : "";
+            LOG.debug("Committed branch change on {}, {} @ {}/{}{}",
+                    op.getId(), property, rev, cRev, msg);
         }
-        // rewrite the change
-        op.removeMapEntry(property, rev);
-        op.setMapEntry(property, cRev, doc.getLocalMap(property).get(rev));
-        if (doc.getLocalCommitRoot().containsKey(rev)) {
-            removeCommitRoot(op, rev);
+        // rewrite the change if commit rev is visible from head
+        // otherwise partial branch may be rewritten
+        if (!newerThanHead) {
+            op.removeMapEntry(property, rev);
+            op.setMapEntry(property, cRev, doc.getLocalMap(property).get(rev));
+            if (doc.getLocalCommitRoot().containsKey(rev)) {
+                removeCommitRoot(op, rev);
+            }
+            setRevision(op, cRev, "c");
+        } else {
+            pushBackNextSweepHead(rev);
         }
-        setRevision(op, cRev, "c");
     }
 
     private static UpdateOp createUpdateOp(NodeDocument doc) {
@@ -210,5 +269,9 @@ final class NodeDocumentSweeper {
         } catch (ExecutionException e) {
             throw DocumentStoreException.convert(e.getCause());
         }
+    }
+
+    private void pushBackNextSweepHead(Revision rev) {
+        nextSweepHead = Utils.min(rev, nextSweepHead);
     }
 }

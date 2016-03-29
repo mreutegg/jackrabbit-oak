@@ -16,46 +16,33 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
-import javax.annotation.Nonnull;
+import java.util.List;
 
-import org.apache.jackrabbit.oak.stats.Clock;
+import com.google.common.collect.Lists;
 
 /**
- * Provides revision related context.
+ * A branch commit listener, forwarding the calls to several other listeners.
  */
-public interface RevisionContext {
+class CompositeBranchCommitListener implements BranchCommitListener {
 
     /**
-     * @return the branches of the local DocumentMK instance, which are not yet
-     *         merged.
+     * Currently registered listeners.
      */
-    UnmergedBranches getBranches();
+    private final List<BranchCommitListener> listeners = Lists.newCopyOnWriteArrayList();
 
-    /**
-     * @return the pending modifications.
-     */
-    UnsavedModifications getPendingModifications();
+    @Override
+    public void branchRevisionCreated(Revision branchCommitRevision) {
+        for (BranchCommitListener listener : listeners) {
+            listener.branchRevisionCreated(branchCommitRevision);
+        }
+    }
 
-    /**
-     * @return the cluster id of the local DocumentMK instance.
-     */
-    int getClusterId();
+    void addListener(BranchCommitListener listener) {
+        listeners.add(listener);
+    }
 
-    /**
-     * @return the current head revision.
-     */
-    @Nonnull
-    RevisionVector getHeadRevision();
+    void removeListener(BranchCommitListener listener) {
+        listeners.remove(listener);
+    }
 
-    /**
-     * @return a new revision for the local document node store instance.
-     */
-    @Nonnull
-    Revision newRevision();
-
-    /**
-     * @return the clock in use when a new revision is created.
-     */
-    @Nonnull
-    Clock getClock();
 }
