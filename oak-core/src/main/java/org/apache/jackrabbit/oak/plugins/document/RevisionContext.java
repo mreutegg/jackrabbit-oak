@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
+import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 
 import org.apache.jackrabbit.oak.stats.Clock;
@@ -58,4 +59,16 @@ public interface RevisionContext {
      */
     @Nonnull
     Clock getClock();
+
+    /**
+     * Retrieves the commit value for a given change.
+     *
+     * @param changeRevision the revision a change was made.
+     * @param doc the document where the change was made.
+     * @return the commit value or {@code null} if the change is not
+     *          (yet) committed.
+     */
+    @CheckForNull
+    String getCommitValue(@Nonnull Revision changeRevision,
+                          @Nonnull NodeDocument doc);
 }

@@ -87,6 +87,13 @@ abstract class ExternalChange {
                              @Nullable Iterable<String> changedPaths);
 
     /**
+     * Called as the last operation when external changes are processed.
+     *
+     * @param sweepRevs the current sweep revisions on the root document.
+     */
+    abstract void updateSweepRevisions(@Nonnull RevisionVector sweepRevs);
+
+    /**
      * Processes external changes if there are any.
      *
      * @return statistics about the background read operation.
@@ -171,6 +178,8 @@ abstract class ExternalChange {
             if (!externalChanges.isEmpty()) {
                 updateHead(externalChanges, externalSort);
             }
+
+            updateSweepRevisions(doc.getSweepRevisions());
         } finally {
             closeQuietly(externalSort);
             closeQuietly(invalidate);

@@ -84,6 +84,7 @@ import com.google.common.util.concurrent.UncheckedExecutionException;
 
 import org.apache.jackrabbit.api.stats.TimeSeries;
 import org.apache.jackrabbit.oak.api.PropertyState;
+import org.apache.jackrabbit.oak.cache.CacheLIRS;
 import org.apache.jackrabbit.oak.commons.jmx.AnnotatedStandardMBean;
 import org.apache.jackrabbit.oak.core.SimpleCommitContext;
 import org.apache.jackrabbit.oak.plugins.blob.BlobStoreBlob;
@@ -336,6 +337,13 @@ public final class DocumentNodeStore
 
 
     /**
+     * The sweep revision vector. Revisions older than this can safely be
+     * considered committed without looking up the commit value on the commit
+     * root document.
+     */
+    private RevisionVector sweepRevisions = new RevisionVector();
+
+    /**
      * Read/Write lock for background operations. Regular commits will acquire
      * a shared lock, while a background write acquires an exclusive lock.
      */
@@ -377,6 +385,12 @@ public final class DocumentNodeStore
      * The change log to keep track of commits for diff operations.
      */
     private final DiffCache diffCache;
+
+    /**
+     * A fixed size cache for commit values.
+     */
+    private final Cache<Revision, String> commitValueCache
+            = new CacheLIRS<Revision, String>(10000);
 
     /**
      * The blob store.
@@ -601,6 +615,8 @@ public final class DocumentNodeStore
                 store.findAndUpdate(NODES, op);
             }
         }
+
+        sweepRevisions = sweepRevisions.pmax(rootDoc.getSweepRevisions());
 
         // Renew the lease because it may have been stale
         renewClusterIdLease();
@@ -1879,6 +1895,23 @@ public final class DocumentNodeStore
         return clock;
     }
 
+    @Override
+    public String getCommitValue(@Nonnull Revision changeRevision,
+                                 @Nonnull NodeDocument doc) {
+        if (!sweepRevisions.isRevisionNewer(changeRevision)) {
+            return "c";
+        }
+        String value = commitValueCache.getIfPresent(changeRevision);
+        if (value != null) {
+            return value;
+        }
+        value = doc.resolveCommitValue(changeRevision);
+        if (Utils.isCommitted(value)) {
+            commitValueCache.put(changeRevision, value);
+        }
+        return value;
+    }
+
     //----------------------< background operations >---------------------------
 
     /** Used for testing only */
@@ -2112,6 +2145,11 @@ public final class DocumentNodeStore
                     backgroundOperationLock.writeLock().unlock();
                 }
                 stats.dispatchChanges = clock.getTime() - time;
+            }
+
+            @Override
+            void updateSweepRevisions(@Nonnull RevisionVector sweepRevs) {
+                sweepRevisions = sweepRevisions.pmax(sweepRevs);
             }
         }.process();
     }
