@@ -31,6 +31,7 @@ import static org.apache.jackrabbit.oak.plugins.nodetype.NodeTypeConstants.NODE_
 import static org.apache.jackrabbit.oak.spi.security.privilege.PrivilegeConstants.JCR_ALL;
 import static org.apache.jackrabbit.oak.upgrade.nodestate.FilteringNodeState.ALL;
 import static org.apache.jackrabbit.oak.upgrade.nodestate.FilteringNodeState.NONE;
+import static org.apache.jackrabbit.oak.upgrade.nodestate.NodeStateCopier.copyProperties;
 
 import java.io.File;
 import java.io.IOException;
@@ -465,7 +466,8 @@ public class RepositoryUpgrade {
                     new RestrictionEditorProvider(),
                     new GroupEditorProvider(groupsPath),
                     // copy referenced version histories
-                    new VersionableEditor.Provider(sourceRoot, workspaceName, versionCopyConfiguration)
+                    new VersionableEditor.Provider(sourceRoot, workspaceName, versionCopyConfiguration),
+                    new SameNameSiblingsEditor.Provider()
             )));
 
             // security-related hooks
@@ -868,6 +870,10 @@ public class RepositoryUpgrade {
                 .exclude(excludes)
                 .merge(merges)
                 .copy(sourceRoot, targetRoot);
+
+        if (includePaths.contains("/")) {
+            copyProperties(sourceRoot, targetRoot);
+        }
 
         return workspaceName;
     }
