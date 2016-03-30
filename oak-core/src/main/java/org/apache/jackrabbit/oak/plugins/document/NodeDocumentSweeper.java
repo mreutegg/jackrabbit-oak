@@ -272,6 +272,9 @@ final class NodeDocumentSweeper implements BranchCommitListener {
     }
 
     private void pushBackNextSweepHead(Revision rev) {
+        // nextSweepHead must be less than rev
+        // therefore, decrement the revision timestamp by one
+        rev = new Revision(rev.getTimestamp() - 1, 0, rev.getClusterId());
         nextSweepHead = Utils.min(rev, nextSweepHead);
     }
 }

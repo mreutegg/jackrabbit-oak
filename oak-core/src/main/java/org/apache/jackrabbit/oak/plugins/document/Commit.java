@@ -190,7 +190,7 @@ public class Commit {
                 success = true;
             } finally {
                 if (!success) {
-                    b.removeCommit(rev);
+                    b.removeCommit(rev.asBranchRevision());
                     if (!b.hasCommits()) {
                         nodeStore.getBranches().remove(b);
                     }
