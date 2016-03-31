@@ -2014,7 +2014,7 @@ public final class DocumentNodeStore
             backgroundSplit();
             stats.split = clock.getTime() - time;
             time = clock.getTime();
-            backgroundSweep();
+            stats.num = backgroundSweep();
             stats.sweep = clock.getTime() - time;
             String msg = "Background sweep operation stats ({})";
             logBackgroundOperation(start, msg, stats);
@@ -2245,7 +2245,8 @@ public final class DocumentNodeStore
         }
     }
 
-    private void backgroundSweep() {
+    private int backgroundSweep() {
+        final int[] numUpdates = new int[]{0};
         final List<Revision> journalRevs = Lists.newArrayList();
         Revision newSweepRev = new NodeDocumentSweeper(this, lastRevSeeker)
                 .sweep(new NodeDocumentSweepListener() {
@@ -2253,6 +2254,7 @@ public final class DocumentNodeStore
             public void sweepUpdate(UpdateOp op) {
                 // TODO: perform batch update
                 store.findAndUpdate(NODES, op);
+                numUpdates[0]++;
                 LOG.debug("Background sweep updated {}", op.getId());
             }
 
@@ -2281,6 +2283,7 @@ public final class DocumentNodeStore
             setSweepRevision(op, newSweepRev);
             store.findAndUpdate(NODES, op);
         }
+        return numUpdates[0];
     }
 
     @Nonnull
