@@ -128,7 +128,7 @@ final class NodeDocumentSweeper implements BranchCommitListener {
             return null;
         }
 
-        LOG.info("Starting document sweep. Head: {}, starting at {}",
+        LOG.debug("Starting document sweep. Head: {}, starting at {}",
                 headRevision, lastSweepHead);
 
         nextSweepHead = headRevision;
@@ -147,7 +147,7 @@ final class NodeDocumentSweeper implements BranchCommitListener {
             listener.invalidate(paths);
             paths.clear();
         }
-        LOG.info("Document sweep finished");
+        LOG.debug("Document sweep finished");
         return nextSweepHead;
     }
 
