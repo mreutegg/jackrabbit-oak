@@ -240,15 +240,14 @@ public class VersionGarbageCollectorIT {
         assertEquals(1, previousDocTestFoo.size());
         assertEquals(1, previousDocTestFoo2.size());
 
-        assertEquals(SplitDocType.COMMIT_ROOT_ONLY, previousDocTestFoo.get(0).getSplitDocType());
+        assertEquals(SplitDocType.DEFAULT, previousDocTestFoo.get(0).getSplitDocType());
         assertEquals(SplitDocType.DEFAULT_LEAF, previousDocTestFoo2.get(0).getSplitDocType());
 
         clock.waitUntil(clock.getTime() + HOURS.toMillis(maxAge) + delta);
         VersionGCStats stats = gc.gc(maxAge, HOURS);
-        assertEquals(2, stats.splitDocGCCount);
+        assertEquals(1, stats.splitDocGCCount);
 
         //Previous doc should be removed
-        assertNull(getDoc(previousDocTestFoo.get(0).getPath()));
         assertNull(getDoc(previousDocTestFoo2.get(0).getPath()));
 
         //Following would not work for Mongo as the delete happened on the server side

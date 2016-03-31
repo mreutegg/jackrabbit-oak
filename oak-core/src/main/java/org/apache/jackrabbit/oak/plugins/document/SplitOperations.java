@@ -52,6 +52,7 @@ import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.isRevision
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.removePrevious;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setHasBinary;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setPrevious;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setRevision;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.PROPERTY_OR_DELETED;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getPreviousIdFor;
 
@@ -314,28 +315,62 @@ class SplitOperations {
             // enough changes to split off
             // move to another document
             main = new UpdateOp(id, false);
-            setPrevious(main, new Range(high, low, 0));
-            String oldPath = Utils.getPreviousPathFor(path, high, 0);
-            UpdateOp old = new UpdateOp(Utils.getIdFromPath(oldPath), true);
-            old.set(Document.ID, old.getId());
-            if (Utils.isLongPath(oldPath)) {
-                old.set(NodeDocument.PATH, oldPath);
-            }
+            // id of old UpdateOp is not yet known and depends on
+            // 'high' value still updated later in this method
+            // use a dummy id for now
+            UpdateOp old = new UpdateOp("dummy", true);
             for (String property : committedChanges.keySet()) {
+                boolean isRevisionsEntry = false;
+                boolean isCommitRootEntry = false;
+                if (isRevisionsEntry(property)) {
+                    isRevisionsEntry = true;
+                } else if (isCommitRootEntry(property)) {
+                    isCommitRootEntry = true;
+                }
                 NavigableMap<Revision, String> splitMap = committedChanges.get(property);
                 for (Map.Entry<Revision, String> entry : splitMap.entrySet()) {
                     Revision r = entry.getKey();
-                    if (isRevisionsEntry(property) || isCommitRootEntry(property)) {
+                    if (isRevisionsEntry || isCommitRootEntry) {
                         // only remove from main document if it is not
-                        // referenced anymore from from most recent changes
+                        // referenced anymore from most recent changes
                         if (!mostRecentRevs.contains(r)) {
                             main.removeMapEntry(property, r);
                         }
                     } else {
                         main.removeMapEntry(property, r);
                     }
-                    old.setMapEntry(property, r, entry.getValue());
+                    // rewrite change
+                    // 1) resolve to commit revision
+                    // 2) replace commitRoot with revisions entry
+                    Revision cRev = doc.getCommitRevision(r);
+                    if (cRev == null) {
+                        String msg = property + "." + r + " is not a " +
+                                "committed revision on " + doc.getId();
+                        throw new IllegalStateException(msg);
+                    }
+                    // commit revision may be newer than change revision
+                    trackHigh(cRev);
+                    if (isCommitRootEntry) {
+                        // rewrite into a revisions entry
+                        setRevision(old, cRev, "c");
+                    } else if (isRevisionsEntry) {
+                        // keep revision entry as is, changes on other
+                        // documents may still reference this commit
+                        old.setMapEntry(property, r, entry.getValue());
+                    } else {
+                        // rewrite property change
+                        old.setMapEntry(property, cRev, entry.getValue());
+                        setRevision(old, cRev, "c");
+                    }
                 }
+            }
+            setPrevious(main, new Range(high, low, 0));
+            String oldPath = Utils.getPreviousPathFor(path, high, 0);
+            // perform a shallow copy with the correct id
+            old = old.shallowCopy(Utils.getIdFromPath(oldPath));
+            old.set(Document.ID, old.getId());
+            if (Utils.isLongPath(oldPath)) {
+                old.set(NodeDocument.PATH, oldPath);
             }
             // check size of old document
             NodeDocument oldDoc = new NodeDocument(STORE);
