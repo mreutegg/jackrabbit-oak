@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.SortedSet;
 import java.util.TreeSet;
 
 import javax.annotation.Nonnull;
@@ -213,7 +214,7 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
         builder.setDocumentStore(ds).setBlobStore(bs).setAsyncDelay(0);
         DocumentMK mk1 = builder.setClusterId(1).open();
 
-        mk1.commit("/", "+\"test\":{\"prop1\":0}", null, null);
+        mk1.commit("/", "+\"test\":{}", null, null);
         // make sure the new node is visible to other DocumentMK instances
         mk1.backgroundWrite();
 
@@ -358,6 +359,7 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
         b1.child("test").child("foo").child("bar");
         ns.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
 
+        String id = Utils.getIdFromPath("/test/foo");
         //Commit on a node which has a child and where the commit root
         // is parent
         for (int i = 0; i < NodeDocument.NUM_REVS_THRESHOLD; i++) {
@@ -365,12 +367,15 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
             b1.child("test").child("foo").setProperty("prop",i);
             b1.child("test").setProperty("prop",i);
             ns.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+            NodeDocument doc = store.find(NODES, id);
+            assertEquals(i + 2, doc.getLocalCommitRoot().size());
         }
         ns.runBackgroundOperations();
         NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/test/foo"));
         List<NodeDocument> prevDocs = ImmutableList.copyOf(doc.getAllPreviousDocs());
         assertEquals(1, prevDocs.size());
-        assertEquals(SplitDocType.COMMIT_ROOT_ONLY, prevDocs.get(0).getSplitDocType());
+        // OAK-3716: document split rewrites commitRoot into revisions entries
+        assertEquals(SplitDocType.DEFAULT, prevDocs.get(0).getSplitDocType());
     }
 
     @Test
@@ -664,10 +669,12 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
         Revision r = valueMap.keySet().iterator().next();
         assertTrue(doc.getLocalCommitRoot().containsKey(r));
         // but also the previous document must contain the commitRoot entry
+        // or as of OAK-3716 a revisions entry
         List<NodeDocument> prevDocs = Lists.newArrayList(doc.getAllPreviousDocs());
         assertEquals(1, prevDocs.size());
         NodeDocument prev = prevDocs.get(0);
-        assertTrue(prev.getLocalCommitRoot().containsKey(r));
+        assertTrue(prev.getLocalCommitRoot().containsKey(r)
+                || prev.getLocalRevisions().containsKey(r));
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -920,6 +927,106 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
         List<NodeDocument> prevDocs = copyOf(foo.getAllPreviousDocs());
         // all but most recent value are moved to individual previous docs
         assertEquals(9, prevDocs.size());
+    }
+
+    public void rewriteBranchCommit() throws Exception {
+        mk.commit("/", "+\"test\":{}", null, null);
+        SortedSet<Revision> mergeRevs = Sets.newTreeSet(StableRevisionComparator.INSTANCE);
+        for (int i = 0; i < NUM_REVS_THRESHOLD + 1; i++) {
+            String b = mk.branch(null);
+            b = mk.commit("/test", "^\"prop\":" + i, b, null);
+            mergeRevs.add(Revision.fromString(mk.merge(b, null)));
+        }
+        // all but the most recent will be split
+        mergeRevs.remove(mergeRevs.last());
+        mk.runBackgroundOperations();
+
+        DocumentStore store = mk.getDocumentStore();
+        NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/test"));
+        assertNotNull(doc);
+        Map<Revision, Range> prevRanges = doc.getPreviousRanges();
+        assertEquals(1, prevRanges.size());
+        Range range = prevRanges.values().iterator().next();
+        assertEquals(mergeRevs.last(), range.high);
+        List<NodeDocument> prevs = ImmutableList.copyOf(doc.getAllPreviousDocs());
+        assertEquals(1, prevs.size());
+        // previous document must contain revisions entries
+        // for merged changes
+        NodeDocument prev = prevs.get(0);
+        assertEquals(SplitDocType.DEFAULT_LEAF, prev.getSplitDocType());
+        Set<Revision> propRevs = prev.getValueMap("prop").keySet();
+        assertEquals(NUM_REVS_THRESHOLD, propRevs.size());
+        assertTrue(mergeRevs.containsAll(propRevs));
+        Set<Revision> revisions = prev.getLocalRevisions().keySet();
+        assertEquals(NUM_REVS_THRESHOLD, revisions.size());
+        assertTrue(mergeRevs.containsAll(revisions));
+    }
+
+    @Test
+    public void rewriteBranchCommitOnRoot() throws Exception {
+        mk.commit("/", "+\"test\":{}", null, null);
+        SortedSet<Revision> mergeRevs = Sets.newTreeSet(StableRevisionComparator.INSTANCE);
+        for (int i = 0; i < NUM_REVS_THRESHOLD + 1; i++) {
+            String b = mk.branch(null);
+            b = mk.commit("/", "^\"prop\":" + i, b, null);
+            mergeRevs.add(Revision.fromString(mk.merge(b, null)));
+        }
+        // all but the most recent will be split
+        mergeRevs.remove(mergeRevs.last());
+        mk.runBackgroundOperations();
+
+        DocumentStore store = mk.getDocumentStore();
+        NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/"));
+        assertNotNull(doc);
+        Map<Revision, Range> prevRanges = doc.getPreviousRanges();
+        assertEquals(1, prevRanges.size());
+        Range range = prevRanges.values().iterator().next();
+        assertEquals(mergeRevs.last(), range.high);
+        List<NodeDocument> prevs = ImmutableList.copyOf(doc.getAllPreviousDocs());
+        assertEquals(1, prevs.size());
+        // previous document must contain revisions entries
+        // for merged changes
+        NodeDocument prev = prevs.get(0);
+        assertEquals(SplitDocType.DEFAULT, prev.getSplitDocType());
+        Set<Revision> propRevs = prev.getValueMap("prop").keySet();
+        assertEquals(NUM_REVS_THRESHOLD, propRevs.size());
+        assertTrue(mergeRevs.containsAll(propRevs));
+        Set<Revision> revisions = prev.getLocalRevisions().keySet();
+        // two revisions per property change (branch + merge commit)
+        // plus one for adding /test
+        assertEquals(NUM_REVS_THRESHOLD * 2 + 1, revisions.size());
+    }
+
+    @Test
+    public void rewriteCommitOnRoot() throws Exception {
+        mk.commit("/", "+\"test\":{}", null, null);
+        SortedSet<Revision> commitRevs = Sets.newTreeSet(StableRevisionComparator.INSTANCE);
+        for (int i = 0; i < NUM_REVS_THRESHOLD + 1; i++) {
+            commitRevs.add(Revision.fromString(mk.commit("/", "^\"prop\":" + i, null, null)));
+        }
+        // all but the most recent will be split
+        commitRevs.remove(commitRevs.last());
+        mk.runBackgroundOperations();
+
+        DocumentStore store = mk.getDocumentStore();
+        NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/"));
+        assertNotNull(doc);
+        Map<Revision, Range> prevRanges = doc.getPreviousRanges();
+        assertEquals(1, prevRanges.size());
+        Range range = prevRanges.values().iterator().next();
+        assertEquals(commitRevs.last(), range.high);
+        List<NodeDocument> prevs = ImmutableList.copyOf(doc.getAllPreviousDocs());
+        assertEquals(1, prevs.size());
+        // previous document must contain revisions entries
+        // for merged changes
+        NodeDocument prev = prevs.get(0);
+        assertEquals(SplitDocType.DEFAULT, prev.getSplitDocType());
+        Set<Revision> propRevs = prev.getValueMap("prop").keySet();
+        assertEquals(NUM_REVS_THRESHOLD, propRevs.size());
+        assertTrue(commitRevs.containsAll(propRevs));
+        Set<Revision> revisions = prev.getLocalRevisions().keySet();
+        // the property changes plus one for adding /test
+        assertEquals(NUM_REVS_THRESHOLD + 1, revisions.size());
     }
 
     private static class TestRevisionContext implements RevisionContext {
