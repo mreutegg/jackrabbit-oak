@@ -29,6 +29,7 @@ import org.apache.jackrabbit.oak.plugins.document.NodeDocument.SplitDocType;
 import org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.VersionGCStats;
 
 import com.google.common.base.Predicate;
+import com.google.common.collect.Iterables;
 
 public class VersionGCSupport {
 
@@ -48,28 +49,41 @@ public class VersionGCSupport {
     }
 
     public void deleteSplitDocuments(Set<SplitDocType> gcTypes,
+                                     RevisionVector sweepRevs,
                                      long oldestRevTimeStamp,
                                      VersionGCStats stats) {
-        stats.splitDocGCCount += createCleanUp(gcTypes, oldestRevTimeStamp, stats)
+        stats.splitDocGCCount += createCleanUp(gcTypes, sweepRevs, oldestRevTimeStamp, stats)
                 .disconnect()
                 .deleteSplitDocuments();
     }
 
     protected SplitDocumentCleanUp createCleanUp(Set<SplitDocType> gcTypes,
+                                                 RevisionVector sweepRevs,
                                                  long oldestRevTimeStamp,
                                                  VersionGCStats stats) {
         return new SplitDocumentCleanUp(store, stats,
-                identifyGarbage(gcTypes, oldestRevTimeStamp));
+                identifyGarbage(gcTypes, sweepRevs, oldestRevTimeStamp));
     }
 
     protected Iterable<NodeDocument> identifyGarbage(final Set<SplitDocType> gcTypes,
+                                                     final RevisionVector sweepRevs,
                                                      final long oldestRevTimeStamp) {
         return filter(getAllDocuments(store), new Predicate<NodeDocument>() {
             @Override
             public boolean apply(NodeDocument doc) {
                 return gcTypes.contains(doc.getSplitDocType())
-                        && doc.hasAllRevisionLessThan(oldestRevTimeStamp);
+                        && doc.hasAllRevisionLessThan(oldestRevTimeStamp)
+                        && !isDefaultSplitNewerThan(sweepRevs, doc);
             }
         });
+    }
+
+    protected static boolean isDefaultSplitNewerThan(RevisionVector sweepRevs,
+                                           NodeDocument doc) {
+        if (doc.getSplitDocType() != SplitDocType.DEFAULT) {
+            return false;
+        }
+        Revision r = Iterables.getFirst(doc.getAllChanges(), null);
+        return r != null && sweepRevs.isRevisionNewer(r);
     }
 }

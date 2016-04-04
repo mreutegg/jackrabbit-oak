@@ -58,7 +58,6 @@ import com.google.common.collect.Queues;
 import com.google.common.collect.Sets;
 
 import org.apache.jackrabbit.oak.api.CommitFailedException;
-import org.apache.jackrabbit.oak.commons.FixturesHelper;
 import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
@@ -236,20 +235,24 @@ public class VersionGarbageCollectorIT {
                 ImmutableList.copyOf(getDoc("/test/" + subNodeName).getAllPreviousDocs());
         List<NodeDocument> previousDocTestFoo2 =
                 ImmutableList.copyOf(getDoc("/test2/" + subNodeName).getAllPreviousDocs());
+        List<NodeDocument> previousDocRoot =
+                ImmutableList.copyOf(getDoc("/").getAllPreviousDocs());
 
         assertEquals(1, previousDocTestFoo.size());
         assertEquals(1, previousDocTestFoo2.size());
+        assertEquals(1, previousDocRoot.size());
 
         assertEquals(SplitDocType.COMMIT_ROOT_ONLY, previousDocTestFoo.get(0).getSplitDocType());
         assertEquals(SplitDocType.DEFAULT_LEAF, previousDocTestFoo2.get(0).getSplitDocType());
 
         clock.waitUntil(clock.getTime() + HOURS.toMillis(maxAge) + delta);
         VersionGCStats stats = gc.gc(maxAge, HOURS);
-        assertEquals(2, stats.splitDocGCCount);
+        assertEquals(3, stats.splitDocGCCount);
 
         //Previous doc should be removed
         assertNull(getDoc(previousDocTestFoo.get(0).getPath()));
         assertNull(getDoc(previousDocTestFoo2.get(0).getPath()));
+        assertNull(getDoc(previousDocRoot.get(0).getPath()));
 
         //Following would not work for Mongo as the delete happened on the server side
         //And entries from cache are not evicted
@@ -365,7 +368,8 @@ public class VersionGarbageCollectorIT {
         clock.waitUntil(clock.getTime() + HOURS.toMillis(maxAge) + delta);
 
         VersionGCStats stats = gc.gc(maxAge, HOURS);
-        assertEquals(2, stats.splitDocGCCount);
+        // one split doc each on: /foo, /bar and root document
+        assertEquals(3, stats.splitDocGCCount);
 
         NodeDocument doc = getDoc("/foo");
         assertNotNull(doc);
@@ -497,6 +501,46 @@ public class VersionGarbageCollectorIT {
         VersionGCStats stats = f.get();
         assertEquals(1, stats.deletedDocGCCount);
         assertEquals(2, stats.splitDocGCCount);
+    }
+
+    @Test
+    public void gcDefaultSplitDoc() throws Exception {
+        long maxAge = 1; //hrs
+        long delta = TimeUnit.MINUTES.toMillis(10);
+
+        NodeBuilder builder = store.getRoot().builder();
+        builder.child("foo").child("bar");
+        merge(store, builder);
+        String value = "";
+        for (int i = 0; i < NUM_REVS_THRESHOLD; i++) {
+            builder = store.getRoot().builder();
+            value = "v" + i;
+            builder.child("foo").setProperty("prop", value);
+            merge(store, builder);
+        }
+
+        // wait for next _modified tick to make sure sweep runs
+        clock.waitUntil(clock.getTime() + TimeUnit.SECONDS.toMillis(NodeDocument.MODIFIED_IN_SECS_RESOLUTION * 2));
+
+        store.runBackgroundOperations();
+
+        NodeDocument doc = getDoc("/foo");
+        assertNotNull(doc);
+        List<NodeDocument> prevDocs = ImmutableList.copyOf(doc.getAllPreviousDocs());
+        assertEquals(1, prevDocs.size());
+        assertEquals(SplitDocType.DEFAULT, prevDocs.get(0).getSplitDocType());
+
+        clock.waitUntil(clock.getTime() + HOURS.toMillis(maxAge) + delta);
+
+        VersionGCStats stats = gc.gc(maxAge, HOURS);
+        assertEquals(1, stats.splitDocGCCount);
+
+        doc = getDoc("/foo");
+        assertNotNull(doc);
+        prevDocs = ImmutableList.copyOf(doc.getAllPreviousDocs());
+        assertEquals(0, prevDocs.size());
+
+        assertEquals(value, store.getRoot().getChildNode("foo").getString("prop"));
     }
 
     private void createTestNode(String name) throws CommitFailedException {

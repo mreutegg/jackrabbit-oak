@@ -24,6 +24,7 @@ import java.util.Set;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
+import com.google.common.base.Predicate;
 import com.google.common.base.StandardSystemProperty;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
@@ -35,6 +36,7 @@ import com.mongodb.QueryBuilder;
 import com.mongodb.ReadPreference;
 import org.apache.jackrabbit.oak.plugins.document.Document;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
+import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
 import org.apache.jackrabbit.oak.plugins.document.SplitDocumentCleanUp;
 import org.apache.jackrabbit.oak.plugins.document.VersionGCSupport;
 import org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.VersionGCStats;
@@ -42,6 +44,7 @@ import org.apache.jackrabbit.oak.plugins.document.util.CloseableIterable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.google.common.collect.Iterables.filter;
 import static com.google.common.collect.Iterables.transform;
 import static com.mongodb.QueryBuilder.start;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
@@ -90,19 +93,25 @@ public class MongoVersionGCSupport extends VersionGCSupport {
 
     @Override
     protected SplitDocumentCleanUp createCleanUp(Set<SplitDocType> gcTypes,
+                                                 RevisionVector sweepRevs,
                                                  long oldestRevTimeStamp,
                                                  VersionGCStats stats) {
-        return new MongoSplitDocCleanUp(gcTypes, oldestRevTimeStamp, stats);
+        return new MongoSplitDocCleanUp(gcTypes, sweepRevs, oldestRevTimeStamp, stats);
     }
 
     @Override
     protected Iterable<NodeDocument> identifyGarbage(final Set<SplitDocType> gcTypes,
+                                                     final RevisionVector sweepRevs,
                                                      final long oldestRevTimeStamp) {
-        return transform(getNodeCollection().find(createQuery(gcTypes, oldestRevTimeStamp)),
-                new Function<DBObject, NodeDocument>() {
+        return filter(transform(getNodeCollection().find(createQuery(gcTypes, oldestRevTimeStamp)), new Function<DBObject, NodeDocument>() {
             @Override
             public NodeDocument apply(DBObject input) {
                 return store.convertFromDBObject(NODES, input);
+            }
+        }), new Predicate<NodeDocument>() {
+            @Override
+            public boolean apply(NodeDocument input) {
+                return !isDefaultSplitNewerThan(sweepRevs, input);
             }
         });
     }
@@ -155,10 +164,11 @@ public class MongoVersionGCSupport extends VersionGCSupport {
         protected final long oldestRevTimeStamp;
 
         protected MongoSplitDocCleanUp(Set<SplitDocType> gcTypes,
+                                       RevisionVector sweepRevs,
                                        long oldestRevTimeStamp,
                                        VersionGCStats stats) {
             super(MongoVersionGCSupport.this.store, stats,
-                    identifyGarbage(gcTypes, oldestRevTimeStamp));
+                    identifyGarbage(gcTypes, sweepRevs, oldestRevTimeStamp));
             this.gcTypes = gcTypes;
             this.oldestRevTimeStamp = oldestRevTimeStamp;
         }

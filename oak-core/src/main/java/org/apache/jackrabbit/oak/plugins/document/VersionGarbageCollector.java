@@ -52,8 +52,10 @@ import static java.util.Collections.singletonMap;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.MODIFIED_IN_SECS;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.SplitDocType.COMMIT_ROOT_ONLY;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.SplitDocType.DEFAULT;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.SplitDocType.DEFAULT_LEAF;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateOp.Condition.newEqualsCondition;
+import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getRootDocument;
 
 public class VersionGarbageCollector {
     //Kept less than MongoDocumentStore.IN_CLAUSE_BATCH_SIZE to avoid re-partitioning
@@ -71,7 +73,7 @@ public class VersionGarbageCollector {
      * Split document types which can be safely garbage collected
      */
     private static final Set<NodeDocument.SplitDocType> GC_TYPES = EnumSet.of(
-            DEFAULT_LEAF, COMMIT_ROOT_ONLY);
+            DEFAULT_LEAF, COMMIT_ROOT_ONLY, DEFAULT);
 
     VersionGarbageCollector(DocumentNodeStore nodeStore,
                             VersionGCSupport gcSupport) {
@@ -84,6 +86,7 @@ public class VersionGarbageCollector {
         long maxRevisionAgeInMillis = unit.toMillis(maxRevisionAge);
         Stopwatch sw = Stopwatch.createStarted();
         VersionGCStats stats = new VersionGCStats();
+        final RevisionVector sweepRevs = getRootDocument(ds).getSweepRevisions();
         final long oldestRevTimeStamp = nodeStore.getClock().getTime() - maxRevisionAgeInMillis;
         final RevisionVector headRevision = nodeStore.getHeadRevision();
 
@@ -103,7 +106,7 @@ public class VersionGarbageCollector {
         }
 
         collectDeletedDocuments(stats, headRevision, oldestRevTimeStamp);
-        collectSplitDocuments(stats, oldestRevTimeStamp);
+        collectSplitDocuments(stats, sweepRevs, oldestRevTimeStamp);
 
         sw.stop();
         log.info("Revision garbage collection finished in {}. {}", sw, stats);
@@ -114,9 +117,11 @@ public class VersionGarbageCollector {
         this.overflowToDiskThreshold = overflowToDiskThreshold;
     }
 
-    private void collectSplitDocuments(VersionGCStats stats, long oldestRevTimeStamp) {
+    private void collectSplitDocuments(VersionGCStats stats,
+                                       RevisionVector sweepRevs,
+                                       long oldestRevTimeStamp) {
         stats.collectAndDeleteSplitDocs.start();
-        versionStore.deleteSplitDocuments(GC_TYPES, oldestRevTimeStamp, stats);
+        versionStore.deleteSplitDocuments(GC_TYPES, sweepRevs, oldestRevTimeStamp, stats);
         stats.collectAndDeleteSplitDocs.stop();
     }
 
