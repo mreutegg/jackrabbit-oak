@@ -427,7 +427,10 @@ public class Commit {
     }
 
     private void checkSplitCandidate(@Nullable NodeDocument doc) {
-        if (doc != null && doc.getMemory() > SPLIT_CANDIDATE_THRESHOLD) {
+        if (doc == null) {
+            return;
+        }
+        if (doc.getMemory() > SPLIT_CANDIDATE_THRESHOLD || doc.hasBinary()) {
             nodeStore.addSplitCandidate(doc.getId());
         }
     }
