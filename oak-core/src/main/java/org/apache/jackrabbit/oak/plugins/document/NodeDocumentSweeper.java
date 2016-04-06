@@ -42,6 +42,8 @@ import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.removeRevi
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setDeletedOnce;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setRevision;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.PROPERTY_OR_DELETED;
+import static org.apache.jackrabbit.oak.plugins.document.util.Utils.isCommitted;
+import static org.apache.jackrabbit.oak.plugins.document.util.Utils.resolveCommitRevision;
 
 final class NodeDocumentSweeper implements BranchCommitListener {
 
@@ -258,8 +260,11 @@ final class NodeDocumentSweeper implements BranchCommitListener {
             Revision cRev = revCache.get(rev, new Callable<Revision>() {
                 @Override
                 public Revision call() throws Exception {
-                    Revision r = doc.getCommitRevision(rev);
-                    if (r == null) {
+                    String cv = context.getCommitValue(rev, doc);
+                    Revision r;
+                    if (isCommitted(cv)) {
+                        r = resolveCommitRevision(rev, cv);
+                    } else {
                         r = NULL_REV;
                     }
                     return r;

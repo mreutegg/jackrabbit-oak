@@ -24,6 +24,7 @@ import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.MODIFIED_I
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.NUM_REVS_THRESHOLD;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.PREV_SPLIT_FACTOR;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.getModifiedInSecs;
+import static org.apache.jackrabbit.oak.plugins.document.util.Utils.isCommitted;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -1169,7 +1170,7 @@ public class DocumentNodeStoreTest {
         String parentPath = "/:hidden/parent";
         NodeDocument parentDoc = docStore.find(Collection.NODES, Utils.getIdFromPath(parentPath));
         assertFalse("parent node of unseen children must not get deleted",
-                isDocDeleted(parentDoc));
+                isDocDeleted(parentDoc, store1));
 
         //Test 2 - parent shouldn't be removable if order of operation is:
         //# N1 and N2 know about /:hidden
@@ -1187,7 +1188,7 @@ public class DocumentNodeStoreTest {
 
         parentDoc = docStore.find(Collection.NODES, Utils.getIdFromPath(parentPath));
         assertFalse("parent node of unseen children must not get deleted",
-                isDocDeleted(parentDoc));
+                isDocDeleted(parentDoc, store1));
 
         store1.runBackgroundOperations();
         store2.runBackgroundOperations();
@@ -1221,7 +1222,7 @@ public class DocumentNodeStoreTest {
         parentPath = "/:hidden/parent1";
         parentDoc = docStore.find(Collection.NODES, Utils.getIdFromPath(parentPath));
         assertFalse("parent node of unseen children must not get deleted",
-                isDocDeleted(parentDoc));
+                isDocDeleted(parentDoc, store1));
 
         //Test 4 - parent shouldn't be removable if order of operation is:
         //# N1 and N2 know about /:hidden/parent1
@@ -1238,7 +1239,7 @@ public class DocumentNodeStoreTest {
 
         parentDoc = docStore.find(Collection.NODES, Utils.getIdFromPath(parentPath));
         assertFalse("parent node of unseen children must not get deleted",
-                isDocDeleted(parentDoc));
+                isDocDeleted(parentDoc, store1));
     }
 
     @Test
@@ -2759,14 +2760,14 @@ public class DocumentNodeStoreTest {
      * @param doc the document to be tested
      * @return latest committed value of _deleted map
      */
-    private boolean isDocDeleted(NodeDocument doc) {
+    private boolean isDocDeleted(NodeDocument doc, RevisionContext context) {
         boolean latestDeleted = false;
         SortedMap<Revision, String> localDeleted =
                 Maps.newTreeMap(StableRevisionComparator.REVERSE);
         localDeleted.putAll(doc.getLocalDeleted());
 
         for (Map.Entry<Revision, String> entry : localDeleted.entrySet()) {
-            if (doc.isCommitted(entry.getKey())) {
+            if (isCommitted(context.getCommitValue(entry.getKey(), doc))) {
                 latestDeleted = Boolean.parseBoolean(entry.getValue());
                 break;
             }

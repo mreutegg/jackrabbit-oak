@@ -57,6 +57,8 @@ import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setPreviou
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.setRevision;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.PROPERTY_OR_DELETED;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getPreviousIdFor;
+import static org.apache.jackrabbit.oak.plugins.document.util.Utils.isCommitted;
+import static org.apache.jackrabbit.oak.plugins.document.util.Utils.resolveCommitRevision;
 
 /**
  * Utility class to create document split operations.
@@ -236,7 +238,7 @@ class SplitOperations {
                     // only consider local changes
                     continue;
                 }
-                if (doc.isCommitted(entry.getKey())
+                if (isCommitted(context.getCommitValue(entry.getKey(), doc))
                         && !mostRecentRevs.contains(entry.getKey())) {
                     // this is a commit root for changes in other documents
                     revisions.put(entry.getKey(), entry.getValue());
@@ -259,7 +261,7 @@ class SplitOperations {
                     && !changes.contains(r)) {
                 // OAK-2528: _commitRoot entry without associated change
                 // consider all but most recent as garbage (OAK-3333, OAK-4050)
-                if (mostRecent && doc.isCommitted(r)) {
+                if (mostRecent && isCommitted(context.getCommitValue(r, doc))) {
                     mostRecent = false;
                 } else if (isGarbage(r)) {
                     addGarbage(r, COMMIT_ROOT);
@@ -360,12 +362,13 @@ class SplitOperations {
                     // rewrite change
                     // 1) resolve to commit revision
                     // 2) replace commitRoot with revisions entry
-                    Revision cRev = doc.getCommitRevision(r);
-                    if (cRev == null) {
+                    String cv = context.getCommitValue(r, doc);
+                    if (!isCommitted(cv)) {
                         String msg = property + "." + r + " is not a " +
                                 "committed revision on " + doc.getId();
                         throw new IllegalStateException(msg);
                     }
+                    Revision cRev = resolveCommitRevision(r, cv);
                     // commit revision may be newer than change revision
                     trackHigh(cRev);
                     if (isCommitRootEntry) {
@@ -454,7 +457,7 @@ class SplitOperations {
                     continue;
                 }
                 changes.add(rev);
-                if (doc.isCommitted(rev)) {
+                if (isCommitted(context.getCommitValue(rev, doc))) {
                     splitMap.put(rev, entry.getValue());
                 } else if (isGarbage(rev)) {
                     addGarbage(rev, property);

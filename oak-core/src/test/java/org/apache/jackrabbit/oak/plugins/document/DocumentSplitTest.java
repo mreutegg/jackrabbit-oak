@@ -61,6 +61,7 @@ import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.PREV_SPLIT
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.SplitDocType;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateOp.Operation.Type.REMOVE_MAP_ENTRY;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateOp.Operation.Type.SET_MAP_ENTRY;
+import static org.apache.jackrabbit.oak.plugins.document.util.Utils.isCommitted;
 import static org.apache.jackrabbit.oak.plugins.memory.BinaryPropertyState.binaryProperty;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -97,7 +98,7 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
         assertEquals(1, revs.size());
         for (Revision rev : revisions) {
             assertTrue(doc.containsRevision(rev));
-            assertTrue(doc.isCommitted(rev));
+            assertTrue(isCommitted(ns.getCommitValue(rev, doc)));
         }
         // check if document is still there
         assertNotNull(ns.getNode("/", RevisionVector.fromString(head)));
@@ -138,7 +139,7 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
         for (Revision rev : revisions) {
             assertTrue("document should contain revision (or have revision in commit root path):" + rev, doc.containsRevision(rev)
                     || doc.getCommitRootPath(rev) != null);
-            assertTrue(doc.isCommitted(rev));
+            assertTrue(isCommitted(ns.getCommitValue(rev, doc)));
         }
         DocumentNodeState node = ns.getNode("/foo", RevisionVector.fromString(head));
         // check status of node
@@ -151,6 +152,7 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
 
     @Test
     public void splitCommitRoot() throws Exception {
+        DocumentNodeStore ns = mk.getNodeStore();
         DocumentStore store = mk.getDocumentStore();
         mk.commit("/", "+\"foo\":{}+\"bar\":{}", null, null);
         NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/foo"));
@@ -171,12 +173,13 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
         // the second _commitRoot entry for the most recent prop change
         assertEquals(2, commits.size());
         for (Revision rev : commitRoots) {
-            assertTrue(doc.isCommitted(rev));
+            assertTrue(isCommitted(ns.getCommitValue(rev, doc)));
         }
     }
 
     @Test
     public void splitPropertyRevisions() throws Exception {
+        DocumentNodeStore ns = mk.getNodeStore();
         DocumentStore store = mk.getDocumentStore();
         mk.commit("/", "+\"foo\":{}", null, null);
         NodeDocument doc = store.find(NODES, Utils.getIdFromPath("/foo"));
@@ -194,7 +197,7 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
         // one remaining in the local revisions map
         assertEquals(1, localRevs.size());
         for (Revision rev : revisions) {
-            assertTrue(doc.isCommitted(rev));
+            assertTrue(isCommitted(ns.getCommitValue(rev, doc)));
         }
         // all revisions in the prop map
         Map<Revision, String> valueMap = doc.getValueMap("prop");

@@ -32,7 +32,6 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import static com.google.common.base.Predicates.alwaysFalse;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -116,7 +115,7 @@ public class CollisionWithSplitTest extends AbstractMongoConnectionTest {
         // committed revision on ns2
         doc = ns2.getDocumentStore().find(NODES, id);
         assertTrue(doc.getLocalCommitRoot().containsKey(conflictRev));
-        Collision c = new Collision(doc, conflictRev, op, ourRev);
+        Collision c = new Collision(doc, conflictRev, op, ourRev, ns2);
         assertEquals("Collision must match our revision (" + ourRev + "). " +
                 "The conflict revision " + conflictRev + " is already committed.",
                 ourRev, c.mark(ns2.getDocumentStore()));
