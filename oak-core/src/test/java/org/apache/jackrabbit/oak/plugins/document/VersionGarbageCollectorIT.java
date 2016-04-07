@@ -36,7 +36,6 @@ import static java.util.concurrent.TimeUnit.HOURS;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture.DOCUMENT_NS;
 import static org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture.DOCUMENT_RDB;
-import static org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture.MEMORY_NS;
 import static org.apache.jackrabbit.oak.commons.FixturesHelper.getFixtures;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.NUM_REVS_THRESHOLD;
@@ -50,6 +49,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterators;
@@ -91,10 +91,6 @@ public class VersionGarbageCollectorIT {
     @Parameterized.Parameters(name="{0}")
     public static Collection<Object[]> fixtures() throws IOException {
         List<Object[]> fixtures = Lists.newArrayList();
-        if (getFixtures().contains(MEMORY_NS)) {
-            fixtures.add(new Object[] { new DocumentStoreFixture.MemoryFixture() });
-        }
-
         DocumentStoreFixture mongo = new DocumentStoreFixture.MongoFixture();
         if (getFixtures().contains(DOCUMENT_NS) && mongo.isAvailable()) {
             fixtures.add(new Object[] { mongo });
@@ -104,6 +100,11 @@ public class VersionGarbageCollectorIT {
         if (getFixtures().contains(DOCUMENT_RDB) && rdb.isAvailable()) {
             fixtures.add(new Object[] { rdb });
         }
+
+        // use memory fixture as fallback
+        if (fixtures.isEmpty()) {
+            fixtures.add(new Object[] { new DocumentStoreFixture.MemoryFixture() });
+        }
         return fixtures;
     }
 
@@ -111,6 +112,9 @@ public class VersionGarbageCollectorIT {
     public void setUp() throws InterruptedException {
         execService = Executors.newCachedThreadPool();
         clock = new Clock.Virtual();
+        //Baseline the clock
+        clock.waitUntil(System.currentTimeMillis());
+        Revision.setClock(clock);
         store = new DocumentMK.Builder()
                 .clock(clock)
                 .setLeaseCheck(false)
@@ -118,9 +122,6 @@ public class VersionGarbageCollectorIT {
                 .setAsyncDelay(0)
                 .getNodeStore();
         gc = store.getVersionGarbageCollector();
-
-        //Baseline the clock
-        clock.waitUntil(Revision.getCurrentTimestamp());
     }
 
     @After
@@ -229,6 +230,16 @@ public class VersionGarbageCollectorIT {
             b1.child("test2").child(subNodeName).setProperty("prop", i);
             store.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
         }
+        // wait for next _modified tick to make sure sweep runs
+        clock.waitUntil(clock.getTime() + TimeUnit.SECONDS.toMillis(NodeDocument.MODIFIED_IN_SECS_RESOLUTION * 2));
+        store.runBackgroundOperations();
+
+        // perform a change to make sure the sweep rev will be newer than
+        // the split revs, otherwise revision GC won't remove the split doc
+        NodeBuilder builder = store.getRoot().builder();
+        builder.child("qux");
+        merge(store, builder);
+        clock.waitUntil(clock.getTime() + TimeUnit.SECONDS.toMillis(NodeDocument.MODIFIED_IN_SECS_RESOLUTION * 2));
         store.runBackgroundOperations();
 
         List<NodeDocument> previousDocTestFoo =
@@ -362,6 +373,16 @@ public class VersionGarbageCollectorIT {
             store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
         }
 
+        // wait for next _modified tick to make sure sweep runs
+        clock.waitUntil(clock.getTime() + TimeUnit.SECONDS.toMillis(NodeDocument.MODIFIED_IN_SECS_RESOLUTION * 2));
+        store.runBackgroundOperations();
+
+        // perform a change to make sure the sweep rev will be newer than
+        // the split revs, otherwise revision GC won't remove the split doc
+        NodeBuilder builder = store.getRoot().builder();
+        builder.child("qux");
+        merge(store, builder);
+        clock.waitUntil(clock.getTime() + TimeUnit.SECONDS.toMillis(NodeDocument.MODIFIED_IN_SECS_RESOLUTION * 2));
         store.runBackgroundOperations();
 
         clock.waitUntil(clock.getTime() + HOURS.toMillis(maxAge) + delta);
@@ -520,7 +541,14 @@ public class VersionGarbageCollectorIT {
 
         // wait for next _modified tick to make sure sweep runs
         clock.waitUntil(clock.getTime() + TimeUnit.SECONDS.toMillis(NodeDocument.MODIFIED_IN_SECS_RESOLUTION * 2));
+        store.runBackgroundOperations();
 
+        // perform a change to make sure the sweep rev will be newer than
+        // the split revs, otherwise revision GC won't remove the split doc
+        builder = store.getRoot().builder();
+        builder.child("qux");
+        merge(store, builder);
+        clock.waitUntil(clock.getTime() + TimeUnit.SECONDS.toMillis(NodeDocument.MODIFIED_IN_SECS_RESOLUTION * 2));
         store.runBackgroundOperations();
 
         NodeDocument doc = getDoc("/foo");
@@ -539,6 +567,65 @@ public class VersionGarbageCollectorIT {
         prevDocs = ImmutableList.copyOf(doc.getAllPreviousDocs());
         assertEquals(0, prevDocs.size());
 
+        assertEquals(value, store.getRoot().getChildNode("foo").getString("prop"));
+    }
+
+    @Test
+    public void gcWithOldSweepRev() throws Exception {
+        long maxAge = 1; //hrs
+        long delta = TimeUnit.MINUTES.toMillis(10);
+
+        NodeBuilder builder = store.getRoot().builder();
+        builder.child("foo").child("bar");
+        merge(store, builder);
+        String value = "";
+        for (int i = 0; i < NUM_REVS_THRESHOLD; i++) {
+            builder = store.getRoot().builder();
+            value = "v" + i;
+            builder.child("foo").setProperty("prop", value);
+            merge(store, builder);
+        }
+
+        // split /foo
+        RevisionVector head = store.getHeadRevision();
+        NodeDocument doc = getDoc("/foo");
+        assertNotNull(doc);
+        List<UpdateOp> ops = ImmutableList.copyOf(
+                doc.split(store, head, Predicates.<String>alwaysFalse()));
+        assertEquals(2, ops.size());
+        store.getDocumentStore().createOrUpdate(NODES, ops);
+
+        // now /foo must have previous docs
+        doc = getDoc("/foo");
+        List<NodeDocument> prevDocs = ImmutableList.copyOf(doc.getAllPreviousDocs());
+        assertEquals(1, prevDocs.size());
+        assertEquals(SplitDocType.DEFAULT, prevDocs.get(0).getSplitDocType());
+
+        clock.waitUntil(clock.getTime() + HOURS.toMillis(maxAge) + delta);
+
+        // revision gc must not collect previous doc because sweep did not run
+        VersionGCStats stats = gc.gc(maxAge, HOURS);
+        assertEquals(0, stats.splitDocGCCount);
+
+        // write something to make sure sweep rev is after the split revs
+        // otherwise GC won't collect the split doc
+        builder = store.getRoot().builder();
+        builder.child("qux");
+        merge(store, builder);
+
+        // run full background operations with sweep
+        clock.waitUntil(clock.getTime() + TimeUnit.SECONDS.toMillis(NodeDocument.MODIFIED_IN_SECS_RESOLUTION * 2));
+        store.runBackgroundOperations();
+
+        // now sweep rev must be updated and revision GC can collect prev doc
+        stats = gc.gc(maxAge, HOURS);
+        assertEquals(1, stats.splitDocGCCount);
+
+        doc = getDoc("/foo");
+        assertNotNull(doc);
+        prevDocs = ImmutableList.copyOf(doc.getAllPreviousDocs());
+        assertEquals(0, prevDocs.size());
+        // check value
         assertEquals(value, store.getRoot().getChildNode("foo").getString("prop"));
     }
 

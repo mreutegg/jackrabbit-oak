@@ -1811,7 +1811,7 @@ public final class DocumentNodeStore
         }
     }
 
-    void internalRunBackgroundSweepOperations() {
+    private void internalRunBackgroundSweepOperations() {
         synchronized (backgroundSweepMonitor) {
             BackgroundWriteStats stats = new BackgroundWriteStats();
             long start = clock.getTime();

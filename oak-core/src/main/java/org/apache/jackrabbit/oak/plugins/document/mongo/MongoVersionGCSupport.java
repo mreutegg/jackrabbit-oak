@@ -21,34 +21,44 @@ package org.apache.jackrabbit.oak.plugins.document.mongo;
 
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
+
+import javax.annotation.Nonnull;
 
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
-import com.google.common.base.Predicate;
 import com.google.common.base.StandardSystemProperty;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBCollection;
 import com.mongodb.DBCursor;
 import com.mongodb.DBObject;
 import com.mongodb.QueryBuilder;
 import com.mongodb.ReadPreference;
-import org.apache.jackrabbit.oak.plugins.document.Document;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
+import org.apache.jackrabbit.oak.plugins.document.Revision;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
 import org.apache.jackrabbit.oak.plugins.document.SplitDocumentCleanUp;
 import org.apache.jackrabbit.oak.plugins.document.VersionGCSupport;
 import org.apache.jackrabbit.oak.plugins.document.VersionGarbageCollector.VersionGCStats;
 import org.apache.jackrabbit.oak.plugins.document.util.CloseableIterable;
+import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static com.google.common.collect.Iterables.filter;
 import static com.google.common.collect.Iterables.transform;
 import static com.mongodb.QueryBuilder.start;
+import static java.util.Collections.singletonList;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
+import static org.apache.jackrabbit.oak.plugins.document.Document.ID;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.PATH;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.SD_MAX_REV_TIME_IN_SECS;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.SD_TYPE;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.SplitDocType;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.SplitDocType.DEFAULT;
+import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.getModifiedInSecs;
 
 /**
  * Mongo specific version of VersionGCSupport which uses mongo queries
@@ -103,39 +113,65 @@ public class MongoVersionGCSupport extends VersionGCSupport {
     protected Iterable<NodeDocument> identifyGarbage(final Set<SplitDocType> gcTypes,
                                                      final RevisionVector sweepRevs,
                                                      final long oldestRevTimeStamp) {
-        return filter(transform(getNodeCollection().find(createQuery(gcTypes, oldestRevTimeStamp)), new Function<DBObject, NodeDocument>() {
+        DBObject query = createQuery(gcTypes, oldestRevTimeStamp, sweepRevs);
+        return transform(getNodeCollection().find(query), new Function<DBObject, NodeDocument>() {
             @Override
             public NodeDocument apply(DBObject input) {
                 return store.convertFromDBObject(NODES, input);
-            }
-        }), new Predicate<NodeDocument>() {
-            @Override
-            public boolean apply(NodeDocument input) {
-                return !isDefaultSplitNewerThan(sweepRevs, input);
             }
         });
     }
 
     private DBObject createQuery(Set<SplitDocType> gcTypes,
-                                 long oldestRevTimeStamp) {
+                                 long oldestRevTimeStamp,
+                                 RevisionVector sweepRevs) {
         //OR condition has to be first as we have a index for that
         //((type == DEFAULT_NO_CHILD || type == PROP_COMMIT_ONLY ..) && _sdMaxRevTime < oldestRevTimeStamp(in secs)
         QueryBuilder orClause = start();
-        for(SplitDocType type : gcTypes){
-            orClause.or(start(NodeDocument.SD_TYPE).is(type.typeCode()).get());
+        for (SplitDocType type : gcTypes) {
+            for (DBObject query : queriesForType(type, sweepRevs)) {
+                orClause.or(query);
+            }
         }
         return start()
                 .and(
                         orClause.get(),
-                        start(NodeDocument.SD_MAX_REV_TIME_IN_SECS)
-                                .lessThan(NodeDocument.getModifiedInSecs(oldestRevTimeStamp))
+                        start(SD_MAX_REV_TIME_IN_SECS)
+                                .lessThan(getModifiedInSecs(oldestRevTimeStamp))
                                 .get()
                 ).get();
     }
 
+    @Nonnull
+    private Iterable<DBObject> queriesForType(SplitDocType type, RevisionVector sweepRevs) {
+        if (type != DEFAULT) {
+            return singletonList(start(SD_TYPE).is(type.typeCode()).get());
+        }
+        // default split type is special because we can only remove those
+        // older than sweep rev
+        List<DBObject> queries = Lists.newArrayList();
+        for (Revision r : sweepRevs) {
+            String idSuffix = Utils.getPreviousIdFor("/", r, 0);
+            idSuffix = idSuffix.substring(idSuffix.lastIndexOf('-'));
+
+            // id/path constraint for previous documents
+            QueryBuilder idPathClause = start();
+            idPathClause.or(start(ID).regex(Pattern.compile(".*" + idSuffix)).get());
+            // previous documents with long paths do not have a '-' in the id
+            idPathClause.or(start(ID).regex(Pattern.compile("[^-]*"))
+                    .and(PATH).regex(Pattern.compile(".*" + idSuffix)).get());
+
+            queries.add(start(SD_TYPE).is(type.typeCode())
+                    .and(idPathClause.get())
+                    .and(SD_MAX_REV_TIME_IN_SECS).lessThan(getModifiedInSecs(r.getTimestamp()))
+                    .get());
+        }
+        return queries;
+    }
+
     private void logSplitDocIdsTobeDeleted(DBObject query) {
         // Fetch only the id
-        final BasicDBObject keys = new BasicDBObject(Document.ID, 1);
+        final BasicDBObject keys = new BasicDBObject(ID, 1);
         List<String> ids;
         DBCursor cursor = getNodeCollection().find(query, keys)
                 .setReadPreference(store.getConfiguredReadPreference(NODES));
@@ -143,7 +179,7 @@ public class MongoVersionGCSupport extends VersionGCSupport {
              ids = ImmutableList.copyOf(Iterables.transform(cursor, new Function<DBObject, String>() {
                  @Override
                  public String apply(DBObject input) {
-                     return (String) input.get(Document.ID);
+                     return (String) input.get(ID);
                  }
              }));
         } finally {
@@ -162,6 +198,7 @@ public class MongoVersionGCSupport extends VersionGCSupport {
 
         protected final Set<SplitDocType> gcTypes;
         protected final long oldestRevTimeStamp;
+        protected final RevisionVector sweepRevs;
 
         protected MongoSplitDocCleanUp(Set<SplitDocType> gcTypes,
                                        RevisionVector sweepRevs,
@@ -171,11 +208,12 @@ public class MongoVersionGCSupport extends VersionGCSupport {
                     identifyGarbage(gcTypes, sweepRevs, oldestRevTimeStamp));
             this.gcTypes = gcTypes;
             this.oldestRevTimeStamp = oldestRevTimeStamp;
+            this.sweepRevs = sweepRevs;
         }
 
         @Override
         protected int deleteSplitDocuments() {
-            DBObject query = createQuery(gcTypes, oldestRevTimeStamp);
+            DBObject query = createQuery(gcTypes, oldestRevTimeStamp, sweepRevs);
 
             if(LOG.isDebugEnabled()){
                 //if debug level logging is on then determine the id of documents to be deleted
