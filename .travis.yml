@@ -15,7 +15,7 @@
 
 sudo: false
 install:  true
-script:   mvn --batch-mode verify -PintegrationTesting -Dnsfixtures=DOCUMENT_NS -pl :oak-lucene -am
+script:   mvn --batch-mode verify -PintegrationTesting -Dnsfixtures=DOCUMENT_MEM -pl :oak-lucene -am
 language: java
 jdk:
   - oraclejdk7
