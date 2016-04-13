@@ -54,6 +54,7 @@ public class Console {
                 .withRequiredArg().ofType(Integer.class).defaultsTo(0);
         OptionSpec quiet = parser.accepts("quiet", "be less chatty");
         OptionSpec shell = parser.accepts("shell", "run the shell after executing files");
+        OptionSpec readOnly = parser.accepts("read-only", "connect to repository in read-only mode");
         OptionSpec help = parser.acceptsAll(asList("h", "?", "help"), "show help").forHelp();
 
         // RDB specific options
@@ -83,20 +84,25 @@ public class Console {
                 System.exit(1);
             }
             MongoConnection mongo = new MongoConnection(uri.getURI());
-            DocumentNodeStore store = new DocumentMK.Builder().
+
+            DocumentMK.Builder builder = new DocumentMK.Builder().
                     setMongoDB(mongo.getDB()).
-                    setClusterId(clusterId.value(options)).getNodeStore();
+                    setClusterId(clusterId.value(options));
+            if (options.has(readOnly)) {
+                builder.setReadOnlyMode();
+            }
+            DocumentNodeStore store = builder.getNodeStore();
             fixture = new MongoFixture(store);
         } else if (nonOptions.get(0).startsWith("jdbc")) {
             DataSource ds = RDBDataSourceFactory.forJdbcUrl(nonOptions.get(0), rdbjdbcuser.value(options),
                     rdbjdbcpasswd.value(options));
-            DocumentNodeStore store = new DocumentMK.Builder().
+            DocumentMK.Builder builder = new DocumentMK.Builder().
                     setRDBConnection(ds).
-                    setClusterId(clusterId.value(options)).getNodeStore();
+                    setClusterId(clusterId.value(options));
+            DocumentNodeStore store = builder.getNodeStore();
             fixture = new MongoFixture(store);
         } else {
-            fixture = new SegmentFixture(new FileStore(
-                    new File(nonOptions.get(0)), 256));
+            fixture = new SegmentFixture(FileStore.builder(new File(nonOptions.get(0))).withMaxFileSize(256).build());
         }
 
         List<String> scriptArgs = nonOptions.size() > 1 ?
@@ -150,7 +156,7 @@ public class Console {
 
         private SegmentFixture(SegmentStore segmentStore) {
             this.segmentStore = segmentStore;
-            this.nodeStore = new SegmentNodeStore(segmentStore);
+            this.nodeStore = SegmentNodeStore.builder(segmentStore).build();
         }
 
         @Override

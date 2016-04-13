@@ -120,7 +120,6 @@ public final class TokenLoginModule extends AbstractLoginModule {
     private TokenCredentials tokenCredentials;
     private TokenInfo tokenInfo;
     private String userId;
-    private Set<? extends Principal> principals;
 
     //--------------------------------------------------------< LoginModule >---
     @Override
@@ -138,7 +137,6 @@ public final class TokenLoginModule extends AbstractLoginModule {
                 tokenCredentials = tc;
                 tokenInfo = authentication.getTokenInfo();
                 userId = tokenInfo.getUserId();
-                principals = getPrincipals(userId);
 
                 log.debug("Login: adding login name to shared state.");
                 sharedState.put(SHARED_KEY_LOGIN_NAME, userId);
@@ -151,40 +149,43 @@ public final class TokenLoginModule extends AbstractLoginModule {
 
     @Override
     public boolean commit() throws LoginException {
-        if (tokenCredentials != null) {
-            updateSubject(tokenCredentials, getAuthInfo(tokenInfo), principals);
+        if (tokenCredentials != null && userId != null) {
+            Set<? extends Principal> principals = getPrincipals(userId);
+            updateSubject(tokenCredentials, getAuthInfo(tokenInfo, principals), principals);
             return true;
         }
-
-        if (tokenProvider != null && sharedState.containsKey(SHARED_KEY_CREDENTIALS)) {
-            Credentials shared = getSharedCredentials();
-            if (shared != null && tokenProvider.doCreateToken(shared)) {
-                Root r = getRoot();
-                if (r != null) {
-                    r.refresh(); // refresh root, in case the external login module created users
-                }
-                TokenInfo ti = tokenProvider.createToken(shared);
-                if (ti != null) {
-                    TokenCredentials tc = new TokenCredentials(ti.getToken());
-                    Map<String, String> attributes = ti.getPrivateAttributes();
-                    for (String name : attributes.keySet()) {
-                        tc.setAttribute(name, attributes.get(name));
+        try{
+            if (tokenProvider != null && sharedState.containsKey(SHARED_KEY_CREDENTIALS)) {
+                Credentials shared = getSharedCredentials();
+                if (shared != null && tokenProvider.doCreateToken(shared)) {
+                    Root r = getRoot();
+                    if (r != null) {
+                        r.refresh(); // refresh root, in case the external login module created users
                     }
-                    attributes = ti.getPublicAttributes();
-                    for (String name : attributes.keySet()) {
-                        tc.setAttribute(name, attributes.get(name));
+                    TokenInfo ti = tokenProvider.createToken(shared);
+                    if (ti != null) {
+                        TokenCredentials tc = new TokenCredentials(ti.getToken());
+                        Map<String, String> attributes = ti.getPrivateAttributes();
+                        for (String name : attributes.keySet()) {
+                            tc.setAttribute(name, attributes.get(name));
+                        }
+                        attributes = ti.getPublicAttributes();
+                        for (String name : attributes.keySet()) {
+                            tc.setAttribute(name, attributes.get(name));
+                        }
+                        sharedState.put(SHARED_KEY_ATTRIBUTES, attributes);
+                        updateSubject(tc, null, null);
+                    } else {
+                        // failed to create token -> fail commit()
+                        log.debug("TokenProvider failed to create a login token for user " + userId);
+                        throw new LoginException("Failed to create login token for user " + userId);
                     }
-                    sharedState.put(SHARED_KEY_ATTRIBUTES, attributes);
-                    updateSubject(tc, null, null);
-                } else {
-                    // failed to create token -> fail commit()
-                    log.debug("TokenProvider failed to create a login token for user " + userId);
-                    throw new LoginException("Failed to create login token for user " + userId);
                 }
             }
+        } finally {
+            // the login attempt on this module did not succeed: clear state
+            clearState();
         }
-        // the login attempt on this module did not succeed: clear state
-        clearState();
 
         return false;
     }
@@ -203,7 +204,6 @@ public final class TokenLoginModule extends AbstractLoginModule {
         tokenCredentials = null;
         tokenInfo = null;
         userId = null;
-        principals = null;
     }
 
     //------------------------------------------------------------< private >---
@@ -243,7 +243,7 @@ public final class TokenLoginModule extends AbstractLoginModule {
      * @return The {@code AuthInfo} resulting from the successful login.
      */
     @CheckForNull
-    private AuthInfo getAuthInfo(@Nullable TokenInfo tokenInfo) {
+    private AuthInfo getAuthInfo(@Nullable TokenInfo tokenInfo, @Nonnull Set<? extends Principal> principals) {
         if (tokenInfo != null) {
             Map<String, Object> attributes = new HashMap<String, Object>();
             Map<String, String> publicAttributes = tokenInfo.getPublicAttributes();

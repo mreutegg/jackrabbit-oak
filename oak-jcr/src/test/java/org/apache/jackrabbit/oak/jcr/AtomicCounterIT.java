@@ -35,14 +35,15 @@ import javax.jcr.Node;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 
-import org.apache.jackrabbit.oak.commons.FixturesHelper;
-import org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture;
-import org.junit.BeforeClass;
-import org.junit.Test;
-
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFutureTask;
+import org.apache.jackrabbit.oak.NodeStoreFixtures;
+import org.apache.jackrabbit.oak.commons.FixturesHelper;
+import org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture;
+import org.apache.jackrabbit.oak.fixture.NodeStoreFixture;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
 public class AtomicCounterIT extends AbstractRepositoryTest {
     private static final Set<Fixture> FIXTURES = FixturesHelper.getFixtures();
@@ -60,7 +61,7 @@ public class AtomicCounterIT extends AbstractRepositoryTest {
     public void concurrentSegmentIncrements() throws RepositoryException, InterruptedException, 
                                                      ExecutionException {
         // ensuring the run only on allowed fix
-        assumeTrue(NodeStoreFixture.SEGMENT_MK.equals(fixture));
+        assumeTrue(NodeStoreFixtures.SEGMENT_MK.equals(fixture));
         
         // setting-up
         Session session = getAdminSession();
@@ -116,5 +117,10 @@ public class AtomicCounterIT extends AbstractRepositoryTest {
         
         new Thread(task).start();
         return task;
+    }
+
+    @Override
+    protected Jcr initJcr(Jcr jcr) {
+        return super.initJcr(jcr).withAtomicCounter();
     }
 }

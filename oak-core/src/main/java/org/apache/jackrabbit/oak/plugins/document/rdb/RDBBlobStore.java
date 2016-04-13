@@ -16,6 +16,9 @@
  */
 package org.apache.jackrabbit.oak.plugins.document.rdb;
 
+import static org.apache.jackrabbit.oak.plugins.document.rdb.RDBJDBCTools.closeResultSet;
+import static org.apache.jackrabbit.oak.plugins.document.rdb.RDBJDBCTools.closeStatement;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.security.MessageDigest;
@@ -33,18 +36,21 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
-import javax.annotation.Nonnull;
 import javax.sql.DataSource;
 
 import org.apache.jackrabbit.oak.commons.StringUtils;
 import org.apache.jackrabbit.oak.plugins.blob.CachingBlobStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStoreException;
+import org.apache.jackrabbit.oak.plugins.document.rdb.RDBJDBCTools.PreparedStatementComponent;
 import org.apache.jackrabbit.oak.spi.blob.AbstractBlobStore;
+import org.apache.jackrabbit.oak.util.OakVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.Lists;
 
 public class RDBBlobStore extends CachingBlobStore implements Closeable {
 
@@ -84,7 +90,7 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                         stmt = null;
                         con.commit();
                     } catch (SQLException ex) {
-                        this.ch.closeStatement(stmt);
+                        closeStatement(stmt);
                         LOG.debug("attempting to drop: " + tname);
                     }
                 } catch (SQLException ex) {
@@ -100,23 +106,25 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                 }
             }
         }
-        this.ch = null;
+        try {
+            this.ch.close();
+        } catch (IOException ex) {
+            LOG.error("closing connection handler", ex);
+        }
     }
 
     @Override
-    protected void finalize() {
-        if (this.ch != null && this.callStack != null) {
+    protected void finalize() throws Throwable {
+        if (!this.ch.isClosed() && this.callStack != null) {
             LOG.debug("finalizing RDBDocumentStore that was not disposed", this.callStack);
         }
+        super.finalize();
     }
 
     private static final Logger LOG = LoggerFactory.getLogger(RDBBlobStore.class);
 
-    // blob size we need to support
-    private static final int MINBLOB = 2 * 1024 * 1024;
-
     // ID size we need to support; is 2 * (hex) size of digest length
-    private static final int IDSIZE;
+    protected static final int IDSIZE;
     static {
         try {
             MessageDigest md = MessageDigest.getInstance(AbstractBlobStore.HASH_ALGORITHM);
@@ -127,6 +135,7 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
         }
     }
 
+
     private Exception callStack;
 
     protected RDBConnectionHandler ch;
@@ -136,126 +145,6 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
     protected String tnMeta;
     private Set<String> tablesToBeDropped = new HashSet<String>();
 
-    private static void versionCheck(DatabaseMetaData md, int xmaj, int xmin, String description) throws SQLException {
-        int maj = md.getDatabaseMajorVersion();
-        int min = md.getDatabaseMinorVersion();
-        if (maj < xmaj || (maj == xmaj && min < xmin)) {
-            LOG.info("Unsupported " + description + " version: " + maj + "." + min + ", expected at least " + xmaj + "." + xmin);
-        }
-    }
-
-    /**
-     * Defines variation in the capabilities of different RDBs.
-     */
-    protected enum DB {
-        H2("H2") {
-            @Override
-            public void checkVersion(DatabaseMetaData md) throws SQLException {
-                versionCheck(md, 1, 4, description);
-            }
-        },
-
-        DB2("DB2") {
-            @Override
-            public void checkVersion(DatabaseMetaData md) throws SQLException {
-                versionCheck(md, 10, 5, description);
-            }
-
-            @Override
-            public String getDataTableCreationStatement(String tableName) {
-                return "create table " + tableName + " (ID varchar(" + IDSIZE + ") not null primary key, DATA blob(" + MINBLOB + "))";
-            }
-        },
-
-        MSSQL("Microsoft SQL Server") {
-            @Override
-            public void checkVersion(DatabaseMetaData md) throws SQLException {
-                versionCheck(md, 11, 0, description);
-            }
-
-            @Override
-            public String getDataTableCreationStatement(String tableName) {
-                return "create table " + tableName + " (ID varchar(" + IDSIZE + ") not null primary key, DATA varbinary(max))";
-            }
-        },
-
-        MYSQL("MySQL") {
-            @Override
-            public void checkVersion(DatabaseMetaData md) throws SQLException {
-                versionCheck(md, 5, 5, description);
-            }
-
-            @Override
-            public String getDataTableCreationStatement(String tableName) {
-                return "create table " + tableName + " (ID varchar(" + IDSIZE + ") not null primary key, DATA mediumblob)";
-            }
-        },
-
-        ORACLE("Oracle") {
-            @Override
-            public void checkVersion(DatabaseMetaData md) throws SQLException {
-                versionCheck(md, 12, 1, description);
-            }
-
-            @Override
-            public String getMetaTableCreationStatement(String tableName) {
-                return "create table " + tableName + " (ID varchar(" + IDSIZE + ") not null primary key, LVL number, LASTMOD number)";
-            }
-        },
-
-        POSTGRES("PostgreSQL") {
-            @Override
-            public void checkVersion(DatabaseMetaData md) throws SQLException {
-                versionCheck(md, 9, 3, description);
-            }
-
-            @Override
-            public String getDataTableCreationStatement(String tableName) {
-                return "create table " + tableName + " (ID varchar(" + IDSIZE + ") not null primary key, DATA bytea)";
-            }
-        },
-
-        DEFAULT("default") {
-        };
-
-        public void checkVersion(DatabaseMetaData md) throws SQLException {
-            LOG.info("Unknown database type: " + md.getDatabaseProductName());
-        }
-
-        public String getDataTableCreationStatement(String tableName) {
-            return "create table " + tableName + " (ID varchar(" + IDSIZE + ") not null primary key, DATA blob)";
-        }
-
-        public String getMetaTableCreationStatement(String tableName) {
-            return "create table " + tableName + " (ID varchar(" + IDSIZE + ") not null primary key, LVL int, LASTMOD bigint)";
-        }
-
-        protected String description;
-
-        private DB(String description) {
-            this.description = description;
-        }
-
-        @Override
-        public String toString() {
-            return this.description;
-        }
-
-        @Nonnull
-        public static DB getValue(String desc) {
-            for (DB db : DB.values()) {
-                if (db.description.equals(desc)) {
-                    return db;
-                } else if (db == DB2 && desc.startsWith("DB2/")) {
-                    return db;
-                }
-            }
-
-            LOG.error("DB type " + desc + " unknown, trying default settings");
-            DEFAULT.description = desc + " - using default settings";
-            return DEFAULT;
-        }
-    }
 
     private void initialize(DataSource ds, RDBOptions options) throws Exception {
 
@@ -264,9 +153,27 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
 
         this.ch = new RDBConnectionHandler(ds);
         Connection con = this.ch.getRWConnection();
+
+        int isolation = con.getTransactionIsolation();
+        String isolationDiags = RDBJDBCTools.isolationLevelToString(isolation);
+        if (isolation != Connection.TRANSACTION_READ_COMMITTED) {
+            LOG.info("Detected transaction isolation level " + isolationDiags + " is "
+                    + (isolation < Connection.TRANSACTION_READ_COMMITTED ? "lower" : "higher") + " than expected "
+                    + RDBJDBCTools.isolationLevelToString(Connection.TRANSACTION_READ_COMMITTED)
+                    + " - check datasource configuration");
+        }
+
         DatabaseMetaData md = con.getMetaData();
-        String dbDesc = md.getDatabaseProductName() + " " + md.getDatabaseProductVersion();
-        String driverDesc = md.getDriverName() + " " + md.getDriverVersion();
+        RDBBlobStoreDB db = RDBBlobStoreDB.getValue(md.getDatabaseProductName());
+        String versionDiags = db.checkVersion(md);
+        if (!versionDiags.isEmpty()) {
+            LOG.error(versionDiags);
+        }
+
+        String dbDesc = String.format("%s %s (%d.%d)", md.getDatabaseProductName(), md.getDatabaseProductVersion(),
+                md.getDatabaseMajorVersion(), md.getDatabaseMinorVersion()).replaceAll("[\r\n\t]", " ").trim();
+        String driverDesc = String.format("%s %s (%d.%d)", md.getDriverName(), md.getDriverVersion(), md.getDriverMajorVersion(),
+                md.getDriverMinorVersion()).replaceAll("[\r\n\t]", " ").trim();
         String dbUrl = md.getURL();
 
         List<String> tablesCreated = new ArrayList<String>();
@@ -286,12 +193,10 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                     con.commit();
                     tablesPresent.add(tableName);
                 } catch (SQLException ex) {
-                    this.ch.closeStatement(checkStatement);
+                    closeStatement(checkStatement);
  
                     // table does not appear to exist
                     con.rollback();
-
-                    DB db = DB.getValue(md.getDatabaseProductName());
 
                     createStatement = con.createStatement();
 
@@ -316,8 +221,8 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                 tablesToBeDropped.addAll(tablesCreated);
             }
 
-            LOG.info("RDBBlobStore instantiated for database " + dbDesc + ", using driver: " + driverDesc + ", connecting to: "
-                    + dbUrl);
+            LOG.info("RDBBlobStore (" + OakVersion.getVersion() + ") instantiated for database " + dbDesc + ", using driver: "
+                    + driverDesc + ", connecting to: " + dbUrl + ", transaction isolation level: " + isolationDiags);
             if (!tablesPresent.isEmpty()) {
                 LOG.info("Tables present upon startup: " + tablesPresent);
             }
@@ -328,7 +233,7 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
 
             this.callStack = LOG.isDebugEnabled() ? new Exception("call stack of RDBBlobStore creation") : null;
         } finally {
-            this.ch.closeStatement(createStatement);
+            closeStatement(createStatement);
             this.ch.closeConnection(con);
         }
     }
@@ -372,7 +277,11 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                     try {
                         prep.setString(1, id);
                         prep.setBytes(2, data);
-                        prep.execute();
+                        int rows = prep.executeUpdate();
+                        LOG.trace("insert-data id={} rows={}", id, rows);
+                        if (rows != 1) {
+                            throw new SQLException("Insert of id " + id + " into " + this.tnData + " failed with result " + rows);
+                        }
                     } finally {
                         prep.close();
                     }
@@ -414,7 +323,11 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                         prep.setString(1, id);
                         prep.setInt(2, level);
                         prep.setLong(3, now);
-                        prep.execute();
+                        int rows = prep.executeUpdate();
+                        LOG.trace("insert-meta id={} rows={}", id, rows);
+                        if (rows != 1) {
+                            throw new SQLException("Insert of id " + id + " into " + this.tnMeta + " failed with result " + rows);
+                        }
                     } finally {
                         prep.close();
                     }
@@ -462,7 +375,7 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
 
         if (data == null) {
             Connection con = this.ch.getROConnection();
-
+            long start = System.nanoTime();
             try {
                 PreparedStatement prep = con.prepareStatement("select DATA from " + this.tnData + " where ID = ?");
                 try {
@@ -475,6 +388,8 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                 } finally {
                     prep.close();
                 }
+
+                getStatsCollector().downloaded(id, System.nanoTime() - start, TimeUnit.NANOSECONDS, data.length);
                 cache.put(id, data);
             } finally {
                 con.commit();
@@ -522,7 +437,7 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
             prep.executeUpdate();
             prep.close();
         } finally {
-            this.ch.closeStatement(prep);
+            closeStatement(prep);
             con.commit();
             this.ch.closeConnection(con);
         }
@@ -560,9 +475,11 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
 
             for (String id : ids) {
                 prepDelMeta.setString(1, id);
-                prepDelMeta.execute();
+                int mrows = prepDelMeta.executeUpdate();
+                LOG.trace("delete-meta id={} rows={}", id, mrows);
                 prepDelData.setString(1, id);
-                prepDelData.execute();
+                int drows = prepDelData.executeUpdate();
+                LOG.trace("delete-data id={} rows={}", id, drows);
                 count++;
             }
             prepDelMeta.close();
@@ -572,70 +489,75 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
             minLastModified = 0;
             return count;
         } finally {
-            this.ch.closeResultSet(rs);
-            this.ch.closeStatement(prepCheck);
-            this.ch.closeStatement(prepDelMeta);
-            this.ch.closeStatement(prepDelData);
+            closeResultSet(rs);
+            closeStatement(prepCheck);
+            closeStatement(prepDelMeta);
+            closeStatement(prepDelData);
             con.commit();
             this.ch.closeConnection(con);
         }
     }
 
     @Override
-    public boolean deleteChunks(List<String> chunkIds, long maxLastModifiedTime) throws Exception {
+    public long countDeleteChunks(List<String> chunkIds, long maxLastModifiedTime) throws Exception {
+        long count = 0;
 
-        // sanity check
-        if (chunkIds.isEmpty()) {
-            // sanity check, nothing to do
-            return true;
-        }
+        for (List<String> chunk : Lists.partition(chunkIds, RDBJDBCTools.MAX_IN_CLAUSE)) {
+            Connection con = this.ch.getRWConnection();
+            PreparedStatement prepMeta = null;
+            PreparedStatement prepData = null;
 
-        Connection con = this.ch.getRWConnection();
-        PreparedStatement prepMeta = null;
-        PreparedStatement prepData = null;
+            try {
+                PreparedStatementComponent inClause = RDBJDBCTools.createInStatement("ID", chunk, false);
 
-        try {
-            StringBuilder inClause = new StringBuilder();
-            int batch = chunkIds.size();
-            for (int i = 0; i < batch; i++) {
-                inClause.append('?');
-                if (i != batch - 1) {
-                    inClause.append(',');
+                StringBuilder metaStatement = new StringBuilder("delete from " + this.tnMeta + " where ")
+                        .append(inClause.getStatementComponent());
+                StringBuilder dataStatement = new StringBuilder("delete from " + this.tnData + " where ")
+                        .append(inClause.getStatementComponent());
+
+                if (maxLastModifiedTime > 0) {
+                    // delete only if the last modified is OLDER than x
+                    metaStatement.append(" and LASTMOD <= ?");
+                    // delete if there is NO entry where the last modified of
+                    // the meta is YOUNGER than x
+                    dataStatement.append(" and not exists(select * from " + this.tnMeta + " where " + this.tnMeta + ".ID = "
+                            + this.tnData + ".ID and LASTMOD > ?)");
                 }
+
+                prepMeta = con.prepareStatement(metaStatement.toString());
+                prepData = con.prepareStatement(dataStatement.toString());
+
+                int mindex = 1, dindex = 1;
+                mindex = inClause.setParameters(prepMeta, mindex);
+                dindex = inClause.setParameters(prepData, dindex);
+
+                if (maxLastModifiedTime > 0) {
+                    prepMeta.setLong(mindex, maxLastModifiedTime);
+                    prepData.setLong(dindex, maxLastModifiedTime);
+                }
+
+                int deletedMeta = prepMeta.executeUpdate();
+                LOG.trace("delete-meta rows={}", deletedMeta);
+                int deletedData = prepData.executeUpdate();
+                LOG.trace("delete-data rows={}", deletedData);
+
+                if (deletedMeta != deletedData) {
+                    String message = String.format(
+                            "chunk deletion affected different numbers of DATA records (%s) and META records (%s)", deletedData,
+                            deletedMeta);
+                    LOG.info(message);
+                }
+
+                count += deletedMeta;
+            } finally {
+                closeStatement(prepMeta);
+                closeStatement(prepData);
+                con.commit();
+                this.ch.closeConnection(con);
             }
-
-            if (maxLastModifiedTime > 0) {
-                prepMeta = con.prepareStatement("delete from " + this.tnMeta + " where ID in (" + inClause.toString()
-                        + ") and LASTMOD <= ?");
-                prepMeta.setLong(batch + 1, maxLastModifiedTime);
-
-                prepData = con.prepareStatement("delete from " + this.tnData + " where ID in (" + inClause.toString()
-                        + ") and not exists(select * from " + this.tnMeta + " m where ID = m.ID and m.LASTMOD <= ?)");
-                prepData.setLong(batch + 1, maxLastModifiedTime);
-            } else {
-                prepMeta = con.prepareStatement("delete from " + this.tnMeta + " where ID in (" + inClause.toString() + ")");
-                prepData = con.prepareStatement("delete from " + this.tnData + " where ID in (" + inClause.toString() + ")");
-            }
-
-            for (int idx = 0; idx < batch; idx++) {
-                prepMeta.setString(idx + 1, chunkIds.get(idx));
-                prepData.setString(idx + 1, chunkIds.get(idx));
-            }
-
-            prepMeta.execute();
-            prepData.execute();
-            prepMeta.close();
-            prepMeta = null;
-            prepData.close();
-            prepData = null;
-        } finally {
-            this.ch.closeStatement(prepMeta);
-            this.ch.closeStatement(prepData);
-            con.commit();
-            this.ch.closeConnection(con);
         }
 
-        return true;
+        return count;
     }
 
     @Override
@@ -714,8 +636,8 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                     rs = null;
                     return !results.isEmpty();
                 } finally {
-                    this.ch.closeResultSet(rs);
-                    this.ch.closeStatement(prep);
+                    closeResultSet(rs);
+                    closeStatement(prep);
                     connection.commit();
                     this.ch.closeConnection(connection);
                 }

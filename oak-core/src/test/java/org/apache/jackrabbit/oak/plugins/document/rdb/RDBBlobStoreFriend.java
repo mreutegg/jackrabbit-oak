@@ -16,9 +16,13 @@
  */
 package org.apache.jackrabbit.oak.plugins.document.rdb;
 
+import static org.apache.jackrabbit.oak.plugins.document.rdb.RDBJDBCTools.closeStatement;
+
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.List;
 
 import org.apache.jackrabbit.oak.commons.StringUtils;
 
@@ -40,12 +44,30 @@ public class RDBBlobStoreFriend {
             prepDelMeta = con.prepareStatement("delete from " + ds.tnMeta + " where ID = ?");
             prepDelMeta.setString(1, id);
             prepDelMeta.execute();
-            prepDelMeta.close();
-            prepDelMeta = null;
         } finally {
-            ds.ch.closeStatement(prepDelMeta);
+            closeStatement(prepDelMeta);
             con.commit();
             ds.ch.closeConnection(con);
         }
+    }
+
+    public static boolean isDataEntryPresent(RDBBlobStore ds, byte[] digest) throws Exception {
+        String id = StringUtils.convertBytesToHex(digest);
+        Connection con = ds.ch.getROConnection();
+        PreparedStatement prep = null;
+        try {
+            prep = con.prepareStatement("select ID from " + ds.tnData + " where ID = ?");
+            prep.setString(1, id);
+            ResultSet rs = prep.executeQuery();
+            return rs.next();
+        } finally {
+            closeStatement(prep);
+            con.commit();
+            ds.ch.closeConnection(con);
+        }
+    }
+
+    public static void deleteChunks(RDBBlobStore ds, List<String> chunkIds, long maxLastModifiedTime) throws Exception {
+        ds.deleteChunks(chunkIds, maxLastModifiedTime);
     }
 }

@@ -108,12 +108,28 @@ class UserInitializer implements WorkspaceInitializer, UserConstants {
             NodeUtil index = rootTree.getOrAddChild(IndexConstants.INDEX_DEFINITIONS_NAME, JcrConstants.NT_UNSTRUCTURED);
 
             if (!index.hasChild("authorizableId")) {
-                IndexUtils.createIndexDefinition(index, "authorizableId", true, new String[]{REP_AUTHORIZABLE_ID}, null);
+                NodeUtil authorizableId = IndexUtils.createIndexDefinition(index, "authorizableId", true, 
+                        new String[]{REP_AUTHORIZABLE_ID}, 
+                        new String[]{NT_REP_AUTHORIZABLE});
+                authorizableId.setString("info", 
+                        "Oak index used by the user management " + 
+                        "to enforce uniqueness of rep:authorizableId property values.");
             }
             if (!index.hasChild("principalName")) {
-                IndexUtils.createIndexDefinition(index, "principalName", true,
+                NodeUtil principalName = IndexUtils.createIndexDefinition(index, "principalName", true,
                         new String[]{REP_PRINCIPAL_NAME},
                         new String[]{NT_REP_AUTHORIZABLE});
+                principalName.setString("info", 
+                        "Oak index used by the user management " +
+                        "to enforce uniqueness of rep:principalName property values, " +
+                        "and to quickly search a principal by name if it was constructed manually.");
+            }
+            if (!index.hasChild("repMembers")) {
+                NodeUtil members = IndexUtils.createIndexDefinition(index, "repMembers", false,
+                        new String[]{REP_MEMBERS},
+                        new String[]{NT_REP_MEMBER_REFERENCES});
+                members.setString("info",
+                        "Oak index used by the user management to lookup group membership.");
             }
 
             ConfigurationParameters params = userConfiguration.getParameters();
@@ -140,5 +156,4 @@ class UserInitializer implements WorkspaceInitializer, UserConstants {
         NodeState target = store.getRoot();
         target.compareAgainstBaseState(base, new ApplyDiff(builder));
     }
-
 }

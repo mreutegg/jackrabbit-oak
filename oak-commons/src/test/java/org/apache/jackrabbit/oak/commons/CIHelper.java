@@ -31,24 +31,6 @@ public final class CIHelper {
 
     /**
      * @return  {@code true} iff running on
-     * http://ci.apache.org/builders/oak-trunk-win7
-     */
-    public static boolean buildBotWin7Trunk() {
-        String build = getenv("BUILD_NAME");
-        return build != null && build.startsWith("buildbot-win7-oak-trunk");
-    }
-
-    /**
-     * @return  {@code true} iff running on
-     * http://ci.apache.org/builders/oak-trunk
-     */
-    public static boolean buildBotLinuxTrunk() {
-        String build = getenv("BUILD_NAME");
-        return build != null && build.startsWith("buildbot-linux-oak-trunk");
-    }
-
-    /**
-     * @return  {@code true} iff running on
      * https://travis-ci.org/
      */
     public static boolean travis() {
@@ -57,6 +39,7 @@ public final class CIHelper {
 
     /**
      * @return  {@code true} iff running on with {@code PROFILE=pedantic}
+     * @deprecated Travis builds do not use PROFILE anymore. Use {@link #travis()} instead.
      */
     public static boolean travisPedantic() {
         return equal(getenv("PROFILE"), "pedantic");
@@ -64,6 +47,7 @@ public final class CIHelper {
 
     /**
      * @return  {@code true} iff running on with {@code PROFILE=unittesting}
+     * @deprecated Travis builds do not use PROFILE anymore. Use {@link #travis()} instead.
      */
     public static boolean travisUnitTesting() {
         return equal(getenv("PROFILE"), "unittesting");
@@ -71,6 +55,7 @@ public final class CIHelper {
 
     /**
      * @return  {@code true} iff running on with {@code PROFILE=integrationTesting}
+     * @deprecated Travis builds do not use PROFILE anymore. Use {@link #travis()} instead.
      */
     public static boolean travisIntegrationTesting() {
         return equal(getenv("PROFILE"), "integrationTesting");

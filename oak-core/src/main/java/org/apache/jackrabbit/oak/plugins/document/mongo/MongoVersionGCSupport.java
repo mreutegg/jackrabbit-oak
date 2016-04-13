@@ -33,7 +33,6 @@ import com.mongodb.DBCursor;
 import com.mongodb.DBObject;
 import com.mongodb.QueryBuilder;
 import com.mongodb.ReadPreference;
-import com.mongodb.WriteResult;
 import org.apache.jackrabbit.oak.plugins.document.Document;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
 import org.apache.jackrabbit.oak.plugins.document.SplitDocumentCleanUp;
@@ -58,6 +57,11 @@ import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.SplitDocTy
 public class MongoVersionGCSupport extends VersionGCSupport {
     private static final Logger LOG = LoggerFactory.getLogger(MongoVersionGCSupport.class);
     private final MongoDocumentStore store;
+    /**
+     * Disables the index hint sent to MongoDB.
+     */
+    private final boolean disableIndexHint =
+            Boolean.getBoolean("oak.mongo.disableVersionGCIndexHint");
 
     public MongoVersionGCSupport(MongoDocumentStore store) {
         super(store);
@@ -72,6 +76,10 @@ public class MongoVersionGCSupport extends VersionGCSupport {
                                 .put(NodeDocument.MODIFIED_IN_SECS).lessThan(NodeDocument.getModifiedInSecs(lastModifiedTime))
                         .get();
         DBCursor cursor = getNodeCollection().find(query).setReadPreference(ReadPreference.secondaryPreferred());
+        if (!disableIndexHint) {
+            cursor.hint(new BasicDBObject(NodeDocument.DELETED_ONCE, 1));
+        }
+
         return CloseableIterable.wrap(transform(cursor, new Function<DBObject, NodeDocument>() {
             @Override
             public NodeDocument apply(DBObject input) {
@@ -165,12 +173,7 @@ public class MongoVersionGCSupport extends VersionGCSupport {
                 logSplitDocIdsTobeDeleted(query);
             }
 
-            WriteResult writeResult = getNodeCollection().remove(query);
-            if (writeResult.getError() != null) {
-                //TODO This might be temporary error or we fail fast and let next cycle try again
-                LOG.warn("Error occurred while deleting old split documents from Mongo {}", writeResult.getError());
-            }
-            return writeResult.getN();
+            return getNodeCollection().remove(query).getN();
         }
     }
 }

@@ -21,7 +21,7 @@
     <parent>
         <artifactId>oak-parent</artifactId>
         <groupId>org.apache.jackrabbit</groupId>
-        <version>1.4-SNAPSHOT</version>
+        <version>1.6-SNAPSHOT</version>
         <relativePath>../oak-parent/pom.xml</relativePath>
     </parent>
     <modelVersion>4.0.0</modelVersion>
@@ -41,7 +41,7 @@
                 <artifactId>maven-bundle-plugin</artifactId>
                 <configuration>
                     <instructions>
-                        <Export-Package>org.apache.jackrabbit.oak.blob.cloud.s3</Export-Package>
+                        <Export-Package>org.apache.jackrabbit.oak.blob.cloud.aws.s3</Export-Package>
                         <DynamicImport-Package>sun.io</DynamicImport-Package>
                     </instructions>
                 </configuration>
@@ -53,22 +53,6 @@
                         <include>**/cloud/**/TestAll.java</include>
                     </includes>
                 </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>test-jar</goal>
-                        </goals>
-                        <configuration>
-                            <excludes>
-                                <exclude>logback-test.xml</exclude>
-                            </excludes>
-                        </configuration>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
@@ -119,21 +103,8 @@
         <!-- Amazon AWS dependency -->
         <dependency>
             <groupId>com.amazonaws</groupId>
-            <artifactId>aws-java-sdk</artifactId>
-            <version>1.9.11</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>joda-time</groupId>
-                    <artifactId>joda-time</artifactId>
-                </exclusion>
-            </exclusions>
-
-        </dependency>
-        <dependency>
-            <groupId>joda-time</groupId>
-            <artifactId>joda-time</artifactId>
-            <version>2.2</version>
-            <optional>true</optional>
+            <artifactId>aws-java-sdk-s3</artifactId>
+            <version>1.10.27</version>
         </dependency>
 
         <dependency>

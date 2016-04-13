@@ -114,19 +114,18 @@ public class BrokenNetworkTest extends TestBase {
     }
 
     private void useProxy(boolean ssl, int skipPosition, int skipBytes, int flipPosition, boolean intermediateChange) throws Exception {
-        int proxyPort = Integer.valueOf(System.getProperty("standby.proxy.port", "4711"));
         NetworkErrorProxy p = new NetworkErrorProxy(proxyPort, LOCALHOST, port);
         p.skipBytes(skipPosition, skipBytes);
         p.flipByte(flipPosition);
         p.run();
 
-        NodeStore store = new SegmentNodeStore(storeS);
+        NodeStore store = SegmentNodeStore.builder(storeS).build();
         final StandbyServer server = new StandbyServer(port, storeS, ssl);
         server.start();
         addTestContent(store, "server");
         storeS.flush();  // this speeds up the test a little bit...
 
-        StandbyClient cl = new StandbyClient(LOCALHOST, proxyPort, storeC, ssl, 5000);
+        StandbyClient cl = newStandbyClient(storeC, proxyPort, ssl);
         cl.run();
 
         try {

@@ -64,8 +64,9 @@ authentication phases behave as follows:
 
 Oak 1.0 defines the following interfaces used to manage login tokens:
 
+- [TokenConfiguration]: Interface to obtain a `TokenProvider` instance (see section [configuration](#configuration) below).
 - [TokenProvider]: Interface to read and manage login tokens.
-- [TokenInfo]: Information associated with a given login token.
+- [TokenInfo]: Information associated with a given login token and token validity.
 
 In addition Oak comes with a default implementation of the provider interface
 that is able to aggregate multiple `TokenProvider`s:
@@ -101,6 +102,14 @@ will be removed if the authentication fails due to an expired token.
 
 The default `TokenProvider` implementation will automatically reset the expiration
 time of a given token upon successful authentication.
+
+This behavior can be disabled by setting the `tokenRefresh` configuration parameter
+to `false` (see `PARAM_TOKEN_REFRESH` below). In this case expiration time will
+not be reset and an attempt to do so using the API (e.g. calling `
+TokenInfo.resetExpiration(long loginTime)`) will return `false` indicating
+that the expiration time has not been reset. The token will consequently expire
+and the user will need to login again using the configured default login
+mechanism (e.g. using `SimpleCredentials`).
 
 #### Token Representation in the Repository
 
@@ -211,6 +220,7 @@ plugged at runtime.
 |-------------------------------------|---------|--------------------------|
 | PARAM_TOKEN_EXPIRATION              | long    | 2 * 3600 * 1000 (2 hours)|
 | PARAM_TOKEN_LENGTH                  | int     | 8                        |
+| PARAM_TOKEN_REFRESH                 | boolean | true                     |
 | | | |
 
 

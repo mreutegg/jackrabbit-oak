@@ -305,8 +305,8 @@ public final class ConfigurationParameters implements Map<String, Object> {
             throw new IllegalArgumentException("Cannot convert config entry " + str + " to " + clazz.getName(), e);
         }
     }
-    //-----------------------------------------------------------------------------------< Map interface delegation >---
 
+    //-------------------------------------------< Map interface delegation >---
     /**
      * {@inheritDoc}
      */
@@ -411,7 +411,8 @@ public final class ConfigurationParameters implements Map<String, Object> {
     }
 
     /**
-     * Helper class for configuration parameters that denote a "duration", such as a timeout or expiration time.
+     * Helper class for configuration parameters that denote a "duration", such
+     * as a timeout or expiration time.
      */
     public static final class Milliseconds {
 
@@ -449,6 +450,7 @@ public final class ConfigurationParameters implements Map<String, Object> {
 
         /**
          * Parses a value string into a duration. the String has the following format:
+         * {@code
          * <xmp>
          *     format:= (value [ unit ])+;
          *     value:= float value;
@@ -461,6 +463,7 @@ public final class ConfigurationParameters implements Map<String, Object> {
          *     "1s 50ms": 1050 milliseconds
          *     "1.5d":  1 1/2 days == 36 hours.
          * </xmp>
+         * }
          *
          * @param str the string to parse
          * @return the new Milliseconds object or null.

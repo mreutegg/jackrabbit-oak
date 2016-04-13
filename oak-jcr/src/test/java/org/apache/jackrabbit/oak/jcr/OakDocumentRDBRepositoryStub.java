@@ -16,10 +16,12 @@
  */
 package org.apache.jackrabbit.oak.jcr;
 
+import java.io.File;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Properties;
+import java.util.UUID;
 
 import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
@@ -28,6 +30,7 @@ import javax.jcr.Session;
 import org.apache.jackrabbit.oak.plugins.document.DocumentMK;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.rdb.RDBDataSourceFactory;
+import org.apache.jackrabbit.oak.plugins.document.rdb.RDBOptions;
 import org.apache.jackrabbit.oak.query.QueryEngineSettings;
 
 /**
@@ -35,13 +38,16 @@ import org.apache.jackrabbit.oak.query.QueryEngineSettings;
  */
 public class OakDocumentRDBRepositoryStub extends OakRepositoryStub {
 
-    protected static final String URL = System.getProperty("rdb.jdbc-url", ""); // such as: jdbc:h2:mem:oaknodes
+    protected static final String URL = System.getProperty("rdb.jdbc-url", "jdbc:h2:file:./{fname}oaktest;DB_CLOSE_ON_EXIT=FALSE");
 
     protected static final String USERNAME = System.getProperty("rdb.jdbc-user", "sa");
 
     protected static final String PASSWD = System.getProperty("rdb.jdbc-passwd", "");
 
     private final Repository repository;
+
+    private static final String fname = (new File("target")).isDirectory() ? "target/" : "";
+    private static final String jdbcUrl = URL.replace("{fname}", fname);
 
     /**
      * Constructor as required by the JCR TCK.
@@ -55,9 +61,18 @@ public class OakDocumentRDBRepositoryStub extends OakRepositoryStub {
         super(settings);
 
         Session session = null;
+        final DocumentNodeStore m;
         try {
-            this.repository = createRepository(URL, USERNAME, PASSWD);
-
+            String prefix = "T" + UUID.randomUUID().toString().replace("-",  "");
+            RDBOptions options = new RDBOptions().tablePrefix(prefix).dropTablesOnClose(true);
+            m = new DocumentMK.Builder().
+                    memoryCacheSize(64 * 1024 * 1024).
+                    setPersistentCache("target/persistentCache,time").
+                    setRDBConnection(RDBDataSourceFactory.forJdbcUrl(jdbcUrl, USERNAME, PASSWD), options).
+                    getNodeStore();
+            QueryEngineSettings qs = new QueryEngineSettings();
+            qs.setFullTextComparisonWithoutIndex(true);
+            this.repository = new Jcr(m).with(qs).createRepository();
             session = getRepository().login(superuser);
             TestContentLoader loader = new TestContentLoader();
             loader.loadTestContent(session);
@@ -68,24 +83,17 @@ public class OakDocumentRDBRepositoryStub extends OakRepositoryStub {
                 session.logout();
             }
         }
-        // Runtime.getRuntime().addShutdownHook(new Thread(new ShutdownHook(connection)));
-    }
-
-    protected Repository createRepository(String url, String username, String password) {
-        DocumentNodeStore m = new DocumentMK.Builder().
-                setClusterId(1).
-                memoryCacheSize(64 * 1024 * 1024).
-                setPersistentCache("target/persistentCache,time").
-                setRDBConnection(RDBDataSourceFactory.forJdbcUrl(url, username, password)).
-                getNodeStore();
-        QueryEngineSettings qs = new QueryEngineSettings();
-        qs.setFullTextComparisonWithoutIndex(true);
-        return new Jcr(m).with(qs).createRepository();
+        Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+            @Override
+            public void run() {
+                m.dispose();
+            }
+        }));
     }
 
     public static boolean isAvailable() {
         try {
-            Connection c = DriverManager.getConnection(URL, USERNAME, PASSWD);
+            Connection c = DriverManager.getConnection(OakDocumentRDBRepositoryStub.jdbcUrl, USERNAME, PASSWD);
             c.close();
             return true;
         }

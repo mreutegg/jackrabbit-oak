@@ -22,7 +22,6 @@ import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Sets.newHashSet;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
-import static org.apache.jackrabbit.oak.commons.PathUtils.isAncestor;
 import static org.apache.jackrabbit.oak.plugins.observation.filter.GlobbingPathFilter.STAR;
 import static org.apache.jackrabbit.oak.plugins.observation.filter.GlobbingPathFilter.STAR_STAR;
 
@@ -336,8 +335,12 @@ public class ObservationManagerImpl implements JackrabbitObservationManager {
 
     private static void stop(ChangeProcessor processor) {
         if (!processor.stopAndWait(STOP_TIME_OUT, MILLISECONDS)) {
-            LOG.warn(OBSERVATION, "Timed out waiting for change processor to stop after " +
-                    STOP_TIME_OUT + " milliseconds. Falling back to asynchronous stop.");
+            LOG.warn(
+                    OBSERVATION,
+                    "Timed out waiting for change processor to stop after "
+                            + STOP_TIME_OUT
+                            + " milliseconds. Falling back to asynchronous stop on "
+                            + processor);
             processor.stop();
         }
     }

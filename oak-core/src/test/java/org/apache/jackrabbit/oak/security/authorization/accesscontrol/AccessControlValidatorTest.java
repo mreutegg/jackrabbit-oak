@@ -25,15 +25,23 @@ import org.apache.jackrabbit.api.security.JackrabbitAccessControlList;
 import org.apache.jackrabbit.api.security.authorization.PrivilegeManager;
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.Tree;
+import org.apache.jackrabbit.oak.plugins.memory.MemoryNodeStore;
+import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
+import org.apache.jackrabbit.oak.spi.commit.Validator;
 import org.apache.jackrabbit.oak.spi.security.authorization.accesscontrol.AbstractAccessControlTest;
 import org.apache.jackrabbit.oak.spi.security.authorization.accesscontrol.AccessControlConstants;
 import org.apache.jackrabbit.oak.spi.security.privilege.PrivilegeConstants;
+import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
+import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.jackrabbit.oak.util.NodeUtil;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import static org.junit.Assert.assertEquals;
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -103,7 +111,8 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
         } catch (CommitFailedException e) {
             // success
             assertTrue(e.isAccessControlViolation());
-            assertEquals("OakAccessControl0004: Invalid policy node: Order of children is not stable.", e.getMessage());
+            assertThat(e.getMessage(), containsString("OakAccessControl0004")); // Order of children is not stable
+            assertThat(e.getMessage(), containsString("/testRoot/rep:policy"));
         }
     }
 
@@ -118,6 +127,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
         } catch (CommitFailedException e) {
             // success
             assertTrue(e.isAccessControlViolation());
+            assertThat(e.getMessage(), containsString("/testRoot"));
         }
     }
 
@@ -132,6 +142,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
         } catch (CommitFailedException e) {
             // success
             assertTrue(e.isAccessControlViolation());
+            assertThat(e.getMessage(), containsString("/testRoot"));
         } finally {
             policy.getTree().remove();
         }
@@ -151,6 +162,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
             } catch (CommitFailedException e) {
                 // success
                 assertTrue(e.isConstraintViolation());
+                assertThat(e.getMessage(), containsString("/testRoot/rep:policy"));
             } finally {
                 policy.getTree().remove();
             }
@@ -171,6 +183,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
             } catch (CommitFailedException e) {
                 // success
                 assertTrue(e.isConstraintViolation());
+                assertThat(e.getMessage(), containsString("/testRoot/rep:policy"));
             } finally {
                 policy.getTree().remove();
             }
@@ -191,6 +204,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
             } catch (CommitFailedException e) {
                 // success
                 assertTrue(e.isConstraintViolation());
+                assertThat(e.getMessage(), containsString("/testRoot/rep:policy/validAce"));
             } finally {
                 entry.getTree().remove();
             }
@@ -211,6 +225,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
             } catch (CommitFailedException e) {
                 // success
                 assertTrue(e.isConstraintViolation());
+                assertThat(e.getMessage(), containsString("/testRoot/rep:policy"));
             } finally {
                 entry.getTree().remove();
             }
@@ -230,6 +245,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
             } catch (CommitFailedException e) {
                 // success
                 assertTrue(e.isAccessControlViolation());
+                assertThat(e.getMessage(), containsString("/testRoot"));
             } finally {
                 // revert pending changes that cannot be saved.
                 policy.getTree().remove();
@@ -251,6 +267,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
             } catch (CommitFailedException e) {
                 // success
                 assertTrue(e.isAccessControlViolation());
+                assertThat(e.getMessage(), containsString("/testRoot/isolatedACE"));
             } finally {
                 // revert pending changes that cannot be saved.
                 ace.getTree().remove();
@@ -268,6 +285,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
         } catch (CommitFailedException e) {
             // success
             assertTrue(e.isAccessControlViolation());
+            assertThat(e.getMessage(), containsString("/testRoot"));
         } finally {
             // revert pending changes that cannot be saved.
             restriction.getTree().remove();
@@ -286,6 +304,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
         } catch (CommitFailedException e) {
             // success
             assertTrue(e.isAccessControlViolation());
+            assertThat(e.getMessage(), containsString("/testRoot/rep:policy"));
         }
     }
 
@@ -302,6 +321,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
         } catch (CommitFailedException e) {
             // success
             assertTrue(e.isAccessControlViolation());
+            assertThat(e.getMessage(), containsString("/testRoot/rep:policy"));
         }
     }
 
@@ -315,6 +335,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
         } catch (CommitFailedException e) {
             // success
             assertTrue(e.isAccessControlViolation());
+            assertThat(e.getMessage(), containsString("/testRoot/rep:policy"));
         }
     }
 
@@ -328,6 +349,7 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
         } catch (CommitFailedException e) {
             // success
             assertTrue(e.isAccessControlViolation());
+            assertThat(e.getMessage(), containsString("/testRoot/rep:policy"));
         }
     }
 
@@ -342,13 +364,77 @@ public class AccessControlValidatorTest extends AbstractAccessControlTest implem
         NodeUtil policy = new NodeUtil(root.getTree(testPath + "/rep:policy"));
         NodeUtil ace = policy.addChild("duplicateAce", NT_REP_GRANT_ACE);
         ace.setString(REP_PRINCIPAL_NAME, testPrincipal.getName());
-        ace.setStrings(AccessControlConstants.REP_PRIVILEGES, PrivilegeConstants.JCR_ADD_CHILD_NODES);
+        ace.setNames(AccessControlConstants.REP_PRIVILEGES, PrivilegeConstants.JCR_ADD_CHILD_NODES);
 
         try {
             root.commit();
             fail("Creating duplicate ACE must be detected");
         } catch (CommitFailedException e) {
             assertTrue(e.isAccessControlViolation());
+            assertThat(e.getMessage(), containsString("/testRoot/rep:policy/duplicateAce"));
         }
+    }
+
+    @Test
+    public void hiddenNodeAdded() throws CommitFailedException {
+        AccessControlValidatorProvider provider = new AccessControlValidatorProvider(getSecurityProvider());
+        MemoryNodeStore store = new MemoryNodeStore();
+        NodeState root = store.getRoot();
+        NodeBuilder builder = root.builder();
+        NodeBuilder test = builder.child("test");
+        NodeBuilder hidden = test.child(":hidden");
+
+        Validator validator = provider.getRootValidator(
+                root, builder.getNodeState(), CommitInfo.EMPTY);
+        Validator childValidator = validator.childNodeAdded(
+                "test", test.getNodeState());
+        assertNotNull(childValidator);
+
+        Validator hiddenValidator = childValidator.childNodeAdded(":hidden", hidden.getNodeState());
+        assertNull(hiddenValidator);
+    }
+
+    @Test
+    public void hiddenNodeChanged() throws CommitFailedException {
+        AccessControlValidatorProvider provider = new AccessControlValidatorProvider(getSecurityProvider());
+        MemoryNodeStore store = new MemoryNodeStore();
+        NodeBuilder builder = store.getRoot().builder();
+        builder.child("test").child(":hidden");
+        NodeState root = builder.getNodeState();
+
+        NodeBuilder test = root.builder().child("test");
+        NodeBuilder hidden = test.child(":hidden");
+        hidden.child("added");
+
+        Validator validator = provider.getRootValidator(
+                root, builder.getNodeState(), CommitInfo.EMPTY);
+        Validator childValidator = validator.childNodeChanged(
+                "test", root.getChildNode("test"), test.getNodeState());
+        assertNotNull(childValidator);
+
+        Validator hiddenValidator = childValidator.childNodeChanged(":hidden", root.getChildNode("test").getChildNode(":hidden"), hidden.getNodeState());
+        assertNull(hiddenValidator);
+    }
+
+    @Test
+    public void hiddenNodeDeleted() throws CommitFailedException {
+        AccessControlValidatorProvider provider = new AccessControlValidatorProvider(getSecurityProvider());
+        MemoryNodeStore store = new MemoryNodeStore();
+        NodeBuilder builder = store.getRoot().builder();
+        builder.child("test").child(":hidden");
+        NodeState root = builder.getNodeState();
+
+        builder = root.builder();
+        NodeBuilder test = builder.child("test");
+        test.child(":hidden").remove();
+
+        Validator validator = provider.getRootValidator(
+                root, builder.getNodeState(), CommitInfo.EMPTY);
+        Validator childValidator = validator.childNodeChanged("test", root.getChildNode("test"), test.getNodeState());
+        assertNotNull(childValidator);
+
+        Validator hiddenValidator = childValidator.childNodeDeleted(
+                ":hidden", root.getChildNode("test").getChildNode(":hidden"));
+        assertNull(hiddenValidator);
     }
 }

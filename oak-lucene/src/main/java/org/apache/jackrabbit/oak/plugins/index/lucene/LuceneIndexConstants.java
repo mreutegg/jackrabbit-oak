@@ -16,7 +16,9 @@
  */
 package org.apache.jackrabbit.oak.plugins.index.lucene;
 
+import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.analysis.util.AbstractAnalysisFactory;
 import org.apache.lucene.util.Version;
 
@@ -25,6 +27,8 @@ public interface LuceneIndexConstants {
     String TYPE_LUCENE = "lucene";
 
     String INDEX_DATA_CHILD_NAME = ":data";
+
+    String TRASH_CHILD_NAME = ":trash";
 
     Version VERSION = Version.LUCENE_47;
 
@@ -79,6 +83,11 @@ public interface LuceneIndexConstants {
      * be performed with same property then it must be part of include list also
      */
     String ORDERED_PROP_NAMES = "orderedProps";
+
+    /**
+     * Actively the data store files after this many hours.
+     */
+    String ACTIVE_DELETE = "activeDelete";
 
     /**
      * Size in bytes used for splitting the index files when storing them in NodeStore
@@ -235,6 +244,11 @@ public interface LuceneIndexConstants {
     String PROP_USE_IN_SUGGEST = "useInSuggest";
 
     /**
+     * subnode holding configuration for suggestions
+     */
+    String SUGGESTION_CONFIG = "suggestion";
+
+    /**
      * update frequency of the suggester in minutes
      */
     String SUGGEST_UPDATE_FREQUENCY_MINUTES = "suggestUpdateFrequencyMinutes";
@@ -257,6 +271,18 @@ public interface LuceneIndexConstants {
     String PROP_NOT_NULL_CHECK_ENABLED = "notNullCheckEnabled";
 
     /**
+     * IndexRule level config to indicate that Node name should also be index
+     * to support fn:name() queries
+     */
+    String INDEX_NODE_NAME = "indexNodeName";
+
+    /**
+     * Property definition name to indicate indexing node name
+     * Its value should match {@link FieldNames#NODE_NAME}
+     */
+    String PROPDEF_PROP_NODE_NAME = ":nodeName";
+
+    /**
      * Boolean property indicating that Lucene directory content
      * should be saved as part of NodeState itself as a multi value property
      * to allow faster reads (OAK-2809)
@@ -270,4 +296,32 @@ public interface LuceneIndexConstants {
      * existing index files
      */
     String INDEX_PATH = "indexPath";
+
+    /**
+     * Optional subnode holding configuration for facets.
+     */
+    String FACETS = "facets";
+
+    /**
+     * Optional property to set the suggest field to be analyzed and therefore allow more fine
+     * grained and flexible suggestions.
+     */
+    String SUGGEST_ANALYZED = "suggestAnalyzed";
+
+    /**
+     * Optional (index definition) property indicating whether facets should be ACL checked.
+     * Default is true
+     */
+    String PROP_SECURE_FACETS = "secure";
+
+    /**
+     * Optional (property definition) property indicating whether facets should be created
+     * for this property
+     */
+    String PROP_FACETS = "facets";
+
+    /**
+     * Boolean property indicate that property should not be included in aggregation
+     */
+    String PROP_EXCLUDE_FROM_AGGREGATE = "excludeFromAggregation";
 }

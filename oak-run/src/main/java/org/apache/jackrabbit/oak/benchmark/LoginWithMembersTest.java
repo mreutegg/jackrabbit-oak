@@ -16,7 +16,6 @@
  */
 package org.apache.jackrabbit.oak.benchmark;
 
-import javax.jcr.Credentials;
 import javax.jcr.Node;
 import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
@@ -39,15 +38,15 @@ public class LoginWithMembersTest extends AbstractLoginTest {
 
     private final int numberOfMembers;
 
-    public LoginWithMembersTest(boolean runWithToken, int noIterations, int numberOfMembers) {
-        super(USER, runWithToken, noIterations);
+    public LoginWithMembersTest(boolean runWithToken, int noIterations, int numberOfMembers, long expiration) {
+        super(USER, runWithToken, noIterations, expiration);
 
         this.numberOfMembers = numberOfMembers;
     }
 
     @Override
-    public void setUp(Repository repository, Credentials credentials) throws Exception {
-        super.setUp(repository, credentials);
+    public void beforeSuite() throws Exception {
+        super.beforeSuite();
 
         Session s = loginAdministrative();
         try {
@@ -62,28 +61,24 @@ public class LoginWithMembersTest extends AbstractLoginTest {
                 Group g = userManager.createGroup(new PrincipalImpl(GROUP + i), "test");
                 gr.addMember(g);
             }
-        } finally {
             s.save();
+        } finally {
             s.logout();
         }
     }
 
     @Override
-    public void tearDown() throws Exception {
+    public void afterSuite() throws Exception {
+        Session s = loginAdministrative();
         try {
-            Session s = loginAdministrative();
-
             Authorizable authorizable = ((JackrabbitSession) s).getUserManager().getAuthorizable(GROUP);
             if (authorizable != null) {
                 Node n = s.getNode(Text.getRelativeParent(authorizable.getPath(), 1));
                 n.remove();
             }
-
             s.save();
-            s.logout();
-
         } finally {
-            super.tearDown();
+            s.logout();
         }
     }
 

@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.oak.plugins.segment.standby.store;
 
+import static com.google.common.collect.Sets.newHashSet;
 import static org.apache.jackrabbit.oak.commons.IOUtils.humanReadableByteCount;
 
 import java.io.ByteArrayOutputStream;
@@ -88,8 +89,13 @@ public class StandbyStore implements SegmentStore {
         long maxWeight = 0;
         long maxKeys = 0;
 
+        Set<SegmentId> visited = newHashSet();
+
         while (!ids.isEmpty()) {
             SegmentId id = ids.remove();
+
+            visited.add(id);
+
             if (!persisted.contains(id) && !delegate.containsSegment(id)) {
                 Segment s;
                 boolean logRefs = true;
@@ -114,7 +120,7 @@ public class StandbyStore implements SegmentStore {
                         }
                         for (SegmentId nr : refs) {
                             // skip already persisted or self-ref
-                            if (persisted.contains(nr) || id.equals(nr)) {
+                            if (persisted.contains(nr) || id.equals(nr) || visited.contains(nr)) {
                                 continue;
                             }
                             hasPendingRefs = true;
@@ -205,7 +211,7 @@ public class StandbyStore implements SegmentStore {
     }
 
     @Override
-    public void writeSegment(SegmentId id, byte[] bytes, int offset, int length) {
+    public void writeSegment(SegmentId id, byte[] bytes, int offset, int length) throws IOException {
         delegate.writeSegment(id, bytes, offset, length);
     }
 
@@ -231,11 +237,7 @@ public class StandbyStore implements SegmentStore {
 
     public long size() {
         if (delegate instanceof FileStore) {
-            try {
-                return ((FileStore) delegate).size();
-            } catch (IOException e) {
-                log.error("Error getting delegate size", e);
-            }
+            return ((FileStore) delegate).size();
         }
         return -1;
     }
@@ -243,7 +245,8 @@ public class StandbyStore implements SegmentStore {
     public void cleanup() {
         if (delegate instanceof FileStore) {
             try {
-                ((FileStore) delegate).cleanup();
+                delegate.getTracker().getWriter().dropCache();
+                ((FileStore) delegate).flush(true);
             } catch (IOException e) {
                 log.error("Error running cleanup", e);
             }

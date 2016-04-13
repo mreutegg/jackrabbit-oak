@@ -32,11 +32,14 @@ import org.apache.jackrabbit.oak.commons.json.JsopReader;
 import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
 import org.apache.jackrabbit.oak.plugins.document.util.RevisionsKey;
 import org.apache.jackrabbit.oak.plugins.document.util.StringValue;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A diff cache, which is pro-actively filled after a commit.
  */
-public class LocalDiffCache implements DiffCache {
+public class LocalDiffCache extends DiffCache {
+    private static final Logger LOG = LoggerFactory.getLogger(LocalDiffCache.class);
 
     /**
      * Limit is arbitrary for now i.e. 16 MB. Same as in MongoDiffCache
@@ -54,8 +57,8 @@ public class LocalDiffCache implements DiffCache {
     }
 
     @Override
-    public String getChanges(@Nonnull Revision from,
-                             @Nonnull Revision to,
+    public String getChanges(@Nonnull RevisionVector from,
+                             @Nonnull RevisionVector to,
                              @Nonnull String path,
                              @Nullable Loader loader) {
         RevisionsKey key = new RevisionsKey(from, to);
@@ -72,8 +75,9 @@ public class LocalDiffCache implements DiffCache {
 
     @Nonnull
     @Override
-    public Entry newEntry(final @Nonnull Revision from,
-                          final @Nonnull Revision to) {
+    public Entry newEntry(final @Nonnull RevisionVector from,
+                          final @Nonnull RevisionVector to,
+                          boolean local /*ignored*/) {
         return new Entry() {
             private final Map<String, String> changesPerPath = Maps.newHashMap();
             private int size;
@@ -93,6 +97,7 @@ public class LocalDiffCache implements DiffCache {
                 }
                 diffCache.put(new RevisionsKey(from, to),
                         new Diff(changesPerPath, size));
+                LOG.debug("Adding cache entry from {} to {}", from, to);
                 return true;
             }
 

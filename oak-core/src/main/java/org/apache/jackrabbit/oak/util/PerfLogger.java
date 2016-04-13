@@ -16,6 +16,8 @@
  */
 package org.apache.jackrabbit.oak.util;
 
+import java.util.concurrent.TimeUnit;
+
 import org.slf4j.Logger;
 
 /**
@@ -88,7 +90,7 @@ public final class PerfLogger {
         if (traceMsgOrNull != null && delegate.isTraceEnabled()) {
             delegate.trace(traceMsgOrNull);
         }
-        return System.currentTimeMillis();
+        return System.nanoTime();
     }
 
     /**
@@ -109,7 +111,7 @@ public final class PerfLogger {
      */
     public final void end(long start, long logAtDebugIfSlowerThanMs,
             String logMessagePrefix, Object arg1) {
-        if (!delegate.isDebugEnabled()) {
+        if (start < 0) {
             return;
         }
         end(start, logAtDebugIfSlowerThanMs, logMessagePrefix,
@@ -135,7 +137,7 @@ public final class PerfLogger {
      */
     public final void end(long start, long logAtDebugIfSlowerThanMs,
             String logMessagePrefix, Object arg1, Object arg2) {
-        if (!delegate.isDebugEnabled()) {
+        if (start < 0) {
             return;
         }
         end(start, logAtDebugIfSlowerThanMs, logMessagePrefix, new Object[] {
@@ -157,32 +159,25 @@ public final class PerfLogger {
      */
     public void end(long start, long logAtDebugIfSlowerThanMs,
             String logMessagePrefix, Object... arguments) {
-        if (!delegate.isDebugEnabled()) {
-            // if log level is not at least DEBUG, then return fast, no-op
+        if (start < 0) {
+            // if start is negative, we assume that start() returned -1 because the log level is above DEBUG
             return;
         }
 
-        if (start == -1) {
-            // start was never set
-            // -> then log at trace as we have no diff available
-            delegate.trace(logMessagePrefix + " [start not set]",
+        final long diff = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+        if (delegate.isTraceEnabled()) {
+            // if log level is TRACE, then always log - and do that on TRACE
+            // then:
+            delegate.trace(logMessagePrefix + " [took " + diff + "ms]",
                     (Object[]) arguments);
-        } else {
-            final long diff = System.currentTimeMillis() - start;
-            if (delegate.isTraceEnabled()) {
-                // if log level is TRACE, then always log - and do that on TRACE
-                // then:
-                delegate.trace(logMessagePrefix + " [took " + diff + "ms]",
-                        (Object[]) arguments);
-            } else if ((logAtDebugIfSlowerThanMs < 0)
-                    || (diff > logAtDebugIfSlowerThanMs)) {
-                // otherwise (log level is DEBUG) only log if
-                // logDebugIfSlowerThanMs is set to -1 (or negative)
-                // OR the measured diff is larger than logDebugIfSlowerThanMs -
-                // and then do that on DEBUG:
-                delegate.debug(logMessagePrefix + " [took " + diff + "ms]",
-                        (Object[]) arguments);
-            }
+        } else if ((logAtDebugIfSlowerThanMs < 0)
+                || (diff > logAtDebugIfSlowerThanMs)) {
+            // otherwise (log level is DEBUG) only log if
+            // logDebugIfSlowerThanMs is set to -1 (or negative)
+            // OR the measured diff is larger than logDebugIfSlowerThanMs -
+            // and then do that on DEBUG:
+            delegate.debug(logMessagePrefix + " [took " + diff + "ms]",
+                    (Object[]) arguments);
         }
     }
 

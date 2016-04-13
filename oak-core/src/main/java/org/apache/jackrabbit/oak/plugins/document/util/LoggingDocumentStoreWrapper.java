@@ -225,6 +225,23 @@ public class LoggingDocumentStoreWrapper implements DocumentStore {
     }
 
     @Override
+    public <T extends Document> List<T> createOrUpdate(final Collection<T> collection,
+                                                       final List<UpdateOp> updateOps) {
+        try {
+            logMethod("createOrUpdate", collection, updateOps);
+            return logResult(new Callable<List<T>>() {
+                @Override
+                public List<T> call() throws Exception {
+                    return store.createOrUpdate(collection, updateOps);
+                }
+            });
+        } catch (Exception e) {
+            logException(e);
+            throw convert(e);
+        }
+    }
+
+    @Override
     public <T extends Document> T findAndUpdate(final Collection<T> collection,
                                                 final UpdateOp update) {
         try {
@@ -246,6 +263,17 @@ public class LoggingDocumentStoreWrapper implements DocumentStore {
         try {
             logMethod("invalidateCache");
             return store.invalidateCache();
+        } catch (Exception e) {
+            logException(e);
+            throw convert(e);
+        }
+    }
+    
+    @Override
+    public CacheInvalidationStats invalidateCache(Iterable<String> keys) {
+        try {
+            logMethod("invalidateCache", keys);
+            return store.invalidateCache(keys);
         } catch (Exception e) {
             logException(e);
             throw convert(e);
@@ -303,12 +331,12 @@ public class LoggingDocumentStoreWrapper implements DocumentStore {
     }
 
     @Override
-    public CacheStats getCacheStats() {
+    public Iterable<CacheStats> getCacheStats() {
         try {
             logMethod("getCacheStats");
-            return logResult(new Callable<CacheStats>() {
+            return logResult(new Callable<Iterable<CacheStats>>() {
                 @Override
-                public CacheStats call() throws Exception {
+                public Iterable<CacheStats> call() throws Exception {
                     return store.getCacheStats();
                 }
             });
@@ -321,6 +349,14 @@ public class LoggingDocumentStoreWrapper implements DocumentStore {
     @Override
     public Map<String, String> getMetadata() {
         return store.getMetadata();
+    }
+
+    @Override
+    public long determineServerTimeDifferenceMillis() {
+        logMethod("determineServerTimeDifferenceMillis", "start");
+        long result = store.determineServerTimeDifferenceMillis();
+        logMethod("determineServerTimeDifferenceMillis", "end", result);
+        return result;
     }
 
     private void logMethod(String methodName, Object... args) {

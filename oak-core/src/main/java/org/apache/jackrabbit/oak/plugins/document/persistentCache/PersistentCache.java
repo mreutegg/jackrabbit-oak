@@ -17,28 +17,40 @@
 package org.apache.jackrabbit.oak.plugins.document.persistentCache;
 
 import java.io.File;
-import java.util.ArrayList;
+import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeSet;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
+import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.DynamicBroadcastConfig;
+import org.apache.jackrabbit.oak.plugins.document.persistentCache.async.CacheActionDispatcher;
+import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.Broadcaster;
+import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.InMemoryBroadcaster;
+import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.TCPBroadcaster;
+import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.UDPBroadcaster;
 import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
+import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.h2.mvstore.FileStore;
 import org.h2.mvstore.MVMap;
 import org.h2.mvstore.MVMap.Builder;
 import org.h2.mvstore.MVStore;
 import org.h2.mvstore.MVStoreTool;
+import org.h2.mvstore.WriteBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Function;
 import com.google.common.cache.Cache;
 
 /**
  * A persistent cache for the document store.
  */
-public class PersistentCache {
+public class PersistentCache implements Broadcaster.Listener {
     
     static final Logger LOG = LoggerFactory.getLogger(PersistentCache.class);
    
@@ -50,12 +62,13 @@ public class PersistentCache {
     private boolean cacheChildren = true;
     private boolean cacheDiff = true;
     private boolean cacheLocalDiff = true;
+    private boolean cachePrevDocs = true;
     private boolean cacheDocs;
     private boolean cacheDocChildren;
     private boolean compactOnClose;
     private boolean compress = true;
-    private ArrayList<GenerationCache> caches = 
-            new ArrayList<GenerationCache>();
+    private HashMap<CacheType, GenerationCache> caches = 
+            new HashMap<CacheType, GenerationCache>();
     
     private final String directory;
     private MapFactory writeStore;
@@ -67,16 +80,33 @@ public class PersistentCache {
     private int autoCompact = 50;
     private boolean appendOnly;
     private boolean manualCommit;
+    private Broadcaster broadcaster;
+    private ThreadLocal<WriteBuffer> writeBuffer = new ThreadLocal<WriteBuffer>();
+    private final byte[] broadcastId;
+    private DynamicBroadcastConfig broadcastConfig;
+    private CacheActionDispatcher writeDispatcher;
+    private Thread writeDispatcherThread;
+    
+    {
+        ByteBuffer bb = ByteBuffer.wrap(new byte[16]);
+        UUID uuid = UUID.randomUUID();
+        bb.putLong(uuid.getMostSignificantBits());
+        bb.putLong(uuid.getLeastSignificantBits());
+        broadcastId = bb.array();
+    }
     
     private int exceptionCount;
 
     public PersistentCache(String url) {
-        LOG.info("start version 1");
+        LOG.info("start, url={}", url);
         String[] parts = url.split(",");
         String dir = parts[0];
+        String broadcast = "disabled";
         for (String p : parts) {
             if (p.equals("+docs")) {
                 cacheDocs = true;
+            } else if (p.equals("-prevDocs")) {
+                cachePrevDocs = false;
             } else if (p.equals("+docChildren")) {
                 cacheDocChildren = true;
             } else if (p.equals("-nodes")) {
@@ -108,6 +138,8 @@ public class PersistentCache {
                 appendOnly = true;
             } else if (p.equals("manualCommit")) {
                 manualCommit = true;
+            } else if (p.startsWith("broadcast=")) {
+                broadcast = p.split("=")[1];               
             }
         }
         this.directory = dir;
@@ -163,6 +195,32 @@ public class PersistentCache {
             readStore = createMapFactory(readGeneration, true);
         }
         writeStore = createMapFactory(writeGeneration, false);
+        initBroadcast(broadcast);
+
+        writeDispatcher = new CacheActionDispatcher();
+        writeDispatcherThread = new Thread(writeDispatcher, "Oak CacheWriteQueue");
+        writeDispatcherThread.setDaemon(true);
+        writeDispatcherThread.start();
+    }
+    
+    private void initBroadcast(String broadcast) {
+        if (broadcast == null) {
+            return;
+        }
+        if (broadcast.equals("disabled")) {
+            return;
+        } else if (broadcast.equals("inMemory")) {
+            broadcaster = InMemoryBroadcaster.INSTANCE;
+        } else if (broadcast.startsWith("udp:")) {
+            String config = broadcast.substring("udp:".length(), broadcast.length());
+            broadcaster = new UDPBroadcaster(config);
+        } else if (broadcast.startsWith("tcp:")) {
+            String config = broadcast.substring("tcp:".length(), broadcast.length());
+            broadcaster = new TCPBroadcaster(config);
+        } else {
+            throw new IllegalArgumentException("Unknown broadcaster type " + broadcast);
+        }
+        broadcaster.addListener(this);
     }
     
     private String getFileName(int generation) {
@@ -289,16 +347,32 @@ public class PersistentCache {
     }
     
     public void close() {
+        writeDispatcher.stop();
+        try {
+            writeDispatcherThread.join();
+        } catch (InterruptedException e) {
+            LOG.error("Can't join the {}", writeDispatcherThread.getName(), e);
+        }
+
         if (writeStore != null) {
             writeStore.closeStore();
         }
         if (readStore != null) {
             readStore.closeStore();
         }
+        if (broadcaster != null) {
+            broadcaster.removeListener(this);
+            broadcaster.close();
+            broadcaster = null;
+        }
+        writeBuffer.remove();
     }
     
     public synchronized GarbageCollectableBlobStore wrapBlobStore(
             GarbageCollectableBlobStore base) {
+        if (maxBinaryEntry == 0) {
+            return base;
+        }
         BlobCache c = new BlobCache(this, base);
         initGenerationCache(c);
         return c;
@@ -308,6 +382,14 @@ public class PersistentCache {
             DocumentNodeStore docNodeStore, 
             DocumentStore docStore,
             Cache<K, V> base, CacheType type) {
+       return wrap(docNodeStore, docStore, base, type, StatisticsProvider.NOOP);
+    }
+
+    public synchronized <K, V> Cache<K, V> wrap(
+            DocumentNodeStore docNodeStore,
+            DocumentStore docStore,
+            Cache<K, V> base, CacheType type,
+            StatisticsProvider statisticsProvider) {
         boolean wrap;
         switch (type) {
         case NODE:
@@ -328,12 +410,17 @@ public class PersistentCache {
         case DOCUMENT:
             wrap = cacheDocs;
             break;
-        default:  
+        case PREV_DOCUMENT:
+            wrap = cachePrevDocs;
+            break;
+        default:
             wrap = false;
             break;
         }
         if (wrap) {
-            NodeCache<K, V> c = new NodeCache<K, V>(this, base, docNodeStore, docStore, type);
+            NodeCache<K, V> c = new NodeCache<K, V>(this, 
+                    base, docNodeStore, docStore,
+                    type, writeDispatcher, statisticsProvider);
             initGenerationCache(c);
             return c;
         }
@@ -341,7 +428,7 @@ public class PersistentCache {
     }
     
     private void initGenerationCache(GenerationCache c) {
-        caches.add(c);
+        caches.put(c.getType(), c);
         if (readGeneration >= 0) {
             c.addGeneration(readGeneration, true);
         }
@@ -379,7 +466,7 @@ public class PersistentCache {
             MapFactory w = createMapFactory(writeGeneration + 1, false);
             writeStore = w;
             writeGeneration++;
-            for (GenerationCache c : caches) {
+            for (GenerationCache c : caches.values()) {
                 c.addGeneration(writeGeneration, false);
                 if (oldReadGeneration >= 0) {
                     c.removeGeneration(oldReadGeneration);
@@ -415,11 +502,80 @@ public class PersistentCache {
     public int getExceptionCount() {
         return exceptionCount;
     }
+    
+    void broadcast(CacheType type, Function<WriteBuffer, Void> writer) {
+        Broadcaster b = broadcaster;
+        if (b == null) {
+            return;
+        }
+        WriteBuffer buff = writeBuffer.get();
+        if (buff == null) {
+            buff = new WriteBuffer();
+            writeBuffer.set(buff);
+        }
+        buff.clear();
+        // space for the length
+        buff.putInt(0);
+        buff.put(broadcastId);
+        buff.put((byte) type.ordinal());
+        writer.apply(buff);
+        ByteBuffer byteBuff = buff.getBuffer();
+        int length = byteBuff.position();
+        byteBuff.limit(length);
+        // write length
+        byteBuff.putInt(0, length);
+        byteBuff.position(0);
+        b.send(byteBuff);
+    }
+    
+    @Override
+    public void receive(ByteBuffer buff) {
+        int end = buff.position() + buff.getInt();
+        byte[] id = new byte[broadcastId.length];
+        buff.get(id);
+        if (!Arrays.equals(id, broadcastId)) {
+            // process only messages from other senders
+            receiveMessage(buff);
+        }
+        buff.position(end);
+    }
+    
+    public static PersistentCacheStats getPersistentCacheStats(Cache cache) {
+        if (cache instanceof NodeCache) {
+            return ((NodeCache) cache).getPersistentCacheStats();
+        }
+        else {
+            return null;
+        }
+    }
 
+    private void receiveMessage(ByteBuffer buff) {
+        CacheType type = CacheType.VALUES[buff.get()];
+        GenerationCache cache = caches.get(type);
+        if (cache == null) {
+            return;
+        }
+        cache.receive(buff);
+    }
+    
+    public DynamicBroadcastConfig getBroadcastConfig() {
+        return broadcastConfig;
+    }
+
+    public void setBroadcastConfig(DynamicBroadcastConfig broadcastConfig) {
+        this.broadcastConfig = broadcastConfig;
+        if (broadcaster != null) {
+            broadcaster.setBroadcastConfig(broadcastConfig);
+        }
+    }
 
     interface GenerationCache {
 
         void addGeneration(int writeGeneration, boolean b);
+
+        CacheType getType();
+        
+        void receive(ByteBuffer buff);
 
         void removeGeneration(int oldReadGeneration);
         

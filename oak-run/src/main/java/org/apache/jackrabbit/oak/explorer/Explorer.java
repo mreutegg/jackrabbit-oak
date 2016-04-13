@@ -18,6 +18,8 @@
  */
 package org.apache.jackrabbit.oak.explorer;
 
+import static org.apache.jackrabbit.oak.plugins.segment.FileStoreHelper.readRevisions;
+
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -41,10 +43,7 @@ import javax.swing.JTextArea;
 import javax.swing.UIManager;
 import javax.swing.UIManager.LookAndFeelInfo;
 
-import org.apache.jackrabbit.oak.plugins.segment.file.FileStore.ReadOnlyStore;
-import org.apache.jackrabbit.oak.plugins.segment.file.JournalReader;
-
-import com.google.common.collect.Lists;
+import org.apache.commons.io.IOUtils;
 
 /**
  * NodeStore explorer
@@ -66,15 +65,18 @@ public class Explorer {
             System.exit(1);
         }
 
-        final String path = args[0];
-        final ReadOnlyStore store = new ReadOnlyStore(new File(path));
+        final File path = new File(args[0]);
         final boolean skipSizeCheck = args.length == 2
                 && skip.equalsIgnoreCase(args[1]);
 
         javax.swing.SwingUtilities.invokeLater(new Runnable() {
             public void run() {
                 initLF();
-                createAndShowGUI(path, store, skipSizeCheck);
+                try {
+                    createAndShowGUI(path, skipSizeCheck);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             }
         });
     }
@@ -93,24 +95,26 @@ public class Explorer {
         }
     }
 
-    private void createAndShowGUI(final String path, final ReadOnlyStore store, boolean skipSizeCheck) {
-        final JFrame frame = new JFrame("Explore " + path + " @head");
-        frame.addWindowListener(new java.awt.event.WindowAdapter() {
-            @Override
-            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
-                store.close();
-                System.exit(0);
-            }
-        });
-
-        JPanel content = new JPanel(new GridBagLayout());
+    private void createAndShowGUI(final File path, boolean skipSizeCheck)
+            throws IOException {
 
         JTextArea log = new JTextArea(5, 20);
         log.setMargin(new Insets(5, 5, 5, 5));
         log.setLineWrap(true);
         log.setEditable(false);
 
-        final NodeStoreTree treePanel = new NodeStoreTree(store, log, skipSizeCheck);
+        final NodeStoreTree treePanel = new NodeStoreTree(path, log, skipSizeCheck);
+
+        final JFrame frame = new JFrame("Explore " + path + " @head");
+        frame.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                IOUtils.closeQuietly(treePanel);
+                System.exit(0);
+            }
+        });
+
+        JPanel content = new JPanel(new GridBagLayout());
 
         GridBagConstraints c = new GridBagConstraints();
         c.fill = GridBagConstraints.BOTH;
@@ -126,38 +130,25 @@ public class Explorer {
         JMenuBar menuBar = new JMenuBar();
         menuBar.setMargin(new Insets(2, 2, 2, 2));
 
+        JMenuItem menuReopen = new JMenuItem("Reopen");
+        menuReopen.setMnemonic(KeyEvent.VK_R);
+        menuReopen.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent ev) {
+                try {
+                    treePanel.reopen();
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        });
+
         JMenuItem menuCompaction = new JMenuItem("Time Machine");
         menuCompaction.setMnemonic(KeyEvent.VK_T);
         menuCompaction.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent ev) {
-                List<String> revs = new ArrayList<String>();
-
-                File journal = new File(path, "journal.log");
-                if (!journal.exists()) {
-                    return;
-                }
-
-                JournalReader journalReader = null;
-                try {
-                    journalReader = new JournalReader(journal);
-                    try {
-                        revs = Lists.newArrayList(journalReader.iterator());
-                    } finally {
-                        journalReader.close();
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                    return;
-                } finally {
-                    try {
-                        if (journalReader != null) {
-                            journalReader.close();
-                        }
-                    } catch (IOException e) {
-                    }
-                }
-
+                List<String> revs = readRevisions(path);
                 String s = (String) JOptionPane.showInputDialog(frame,
                         "Revert to a specified revision", "Time Machine",
                         JOptionPane.PLAIN_MESSAGE, null, revs.toArray(),
@@ -174,7 +165,7 @@ public class Explorer {
             @Override
             public void actionPerformed(ActionEvent ev) {
                 List<String> tarFiles = new ArrayList<String>();
-                for (File f : new File(path).listFiles()) {
+                for (File f : path.listFiles()) {
                     if (f.getName().endsWith(".tar")) {
                         tarFiles.add(f.getName());
                     }
@@ -191,16 +182,16 @@ public class Explorer {
             }
         });
 
-        JMenuItem menuSCR = new JMenuItem("Segment Content Refs");
+        JMenuItem menuSCR = new JMenuItem("Segment Refs");
         menuSCR.setMnemonic(KeyEvent.VK_R);
         menuSCR.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent ev) {
                 String s = (String) JOptionPane.showInputDialog(frame,
-                        "Segment Content Ref\nUsage: <segmentId>",
-                        "Segment Content Ref", JOptionPane.PLAIN_MESSAGE);
+                        "Segment References\nUsage: <segmentId>",
+                        "Segment References", JOptionPane.PLAIN_MESSAGE);
                 if (s != null) {
-                    treePanel.printDependenciesToSegment(s);
+                    treePanel.printSegmentReferences(s);
                     return;
                 }
             }
@@ -221,6 +212,17 @@ public class Explorer {
             }
         });
 
+        JMenuItem menuPCM = new JMenuItem("Persisted Compaction Maps");
+        menuPCM.setMnemonic(KeyEvent.VK_P);
+        menuPCM.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent ev) {
+                treePanel.printPCMInfo();
+            }
+        });
+
+        menuBar.add(menuReopen);
+        menuBar.add(new JSeparator(JSeparator.VERTICAL));
         menuBar.add(menuCompaction);
         menuBar.add(new JSeparator(JSeparator.VERTICAL));
         menuBar.add(menuRefs);
@@ -228,6 +230,8 @@ public class Explorer {
         menuBar.add(menuSCR);
         menuBar.add(new JSeparator(JSeparator.VERTICAL));
         menuBar.add(menuDiff);
+        menuBar.add(new JSeparator(JSeparator.VERTICAL));
+        menuBar.add(menuPCM);
         menuBar.add(new JSeparator(JSeparator.VERTICAL));
 
         frame.setJMenuBar(menuBar);

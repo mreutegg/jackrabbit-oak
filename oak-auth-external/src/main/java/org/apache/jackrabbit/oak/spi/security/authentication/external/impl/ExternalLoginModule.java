@@ -17,14 +17,13 @@
 package org.apache.jackrabbit.oak.spi.security.authentication.external.impl;
 
 import java.security.Principal;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import javax.jcr.Credentials;
-import javax.jcr.SimpleCredentials;
 import javax.security.auth.Subject;
 import javax.security.auth.callback.CallbackHandler;
 import javax.security.auth.login.LoginException;
@@ -41,11 +40,13 @@ import org.apache.jackrabbit.oak.spi.security.authentication.AbstractLoginModule
 import org.apache.jackrabbit.oak.spi.security.authentication.AuthInfoImpl;
 import org.apache.jackrabbit.oak.spi.security.authentication.ImpersonationCredentials;
 import org.apache.jackrabbit.oak.spi.security.authentication.PreAuthenticatedLogin;
+import org.apache.jackrabbit.oak.spi.security.authentication.credentials.SimpleCredentialsSupport;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityException;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityProvider;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityProviderManager;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalIdentityRef;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.ExternalUser;
+import org.apache.jackrabbit.oak.spi.security.authentication.credentials.CredentialsSupport;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.SyncContext;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.SyncException;
 import org.apache.jackrabbit.oak.spi.security.authentication.external.SyncHandler;
@@ -57,13 +58,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * ExternalLoginModule implements a LoginModule that uses and external identity provider for login.
+ * {@code ExternalLoginModule} implements a {@code LoginModule} that uses an
+ * {@link ExternalIdentityProvider} for authentication.
  */
 public class ExternalLoginModule extends AbstractLoginModule {
 
     private static final Logger log = LoggerFactory.getLogger(ExternalLoginModule.class);
 
-    // todo: make configurable
     private static final int MAX_SYNC_ATTEMPTS = 50;
 
     /**
@@ -75,6 +76,12 @@ public class ExternalLoginModule extends AbstractLoginModule {
      * Name of the parameter that configures the name of the synchronization handler.
      */
     public static final String PARAM_SYNC_HANDLER_NAME = "sync.handlerName";
+
+    private ExternalIdentityProviderManager idpManager;
+
+    private SyncManager syncManager;
+
+    private CredentialsSupport credentialsSupport = SimpleCredentialsSupport.getInstance();
 
     /**
      * internal configuration when invoked from a factory rather than jaas
@@ -118,8 +125,8 @@ public class ExternalLoginModule extends AbstractLoginModule {
 
     //--------------------------------------------------------< LoginModule >---
     @Override
-    public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> ss, Map<String, ?> opts) {
-        super.initialize(subject, callbackHandler, ss, opts);
+    public void initialize(Subject subject, CallbackHandler callbackHandler, Map<String, ?> sharedState, Map<String, ?> opts) {
+        super.initialize(subject, callbackHandler, sharedState, opts);
 
         // merge options with osgi options if needed
         if (osgiConfig != null) {
@@ -136,11 +143,13 @@ public class ExternalLoginModule extends AbstractLoginModule {
         if (idpName.isEmpty()) {
             log.error("External login module needs IPD name. Will not be used for login.");
         } else {
-            ExternalIdentityProviderManager idpMgr = WhiteboardUtils.getService(whiteboard, ExternalIdentityProviderManager.class);
-            if (idpMgr == null) {
+            if (idpManager == null) {
+                idpManager = WhiteboardUtils.getService(whiteboard, ExternalIdentityProviderManager.class);
+            }
+            if (idpManager == null) {
                 log.error("External login module needs IDPManager. Will not be used for login.");
             } else {
-                idp = idpMgr.getProvider(idpName);
+                idp = idpManager.getProvider(idpName);
                 if (idp == null) {
                     log.error("No IDP found with name {}. Will not be used for login.", idpName);
                 }
@@ -151,15 +160,23 @@ public class ExternalLoginModule extends AbstractLoginModule {
         if (syncHandlerName.isEmpty()) {
             log.error("External login module needs SyncHandler name. Will not be used for login.");
         } else {
-            SyncManager syncMgr = WhiteboardUtils.getService(whiteboard, SyncManager.class);
-            if (syncMgr == null) {
+            if (syncManager == null) {
+                syncManager = WhiteboardUtils.getService(whiteboard, SyncManager.class);
+            }
+            if (syncManager == null) {
                 log.error("External login module needs SyncManager. Will not be used for login.");
             } else {
-                syncHandler = syncMgr.getSyncHandler(syncHandlerName);
+                syncHandler = syncManager.getSyncHandler(syncHandlerName);
                 if (syncHandler == null) {
                     log.error("No SyncHandler found with name {}. Will not be used for login.", syncHandlerName);
                 }
             }
+        }
+
+        if (idp instanceof CredentialsSupport) {
+            credentialsSupport = (CredentialsSupport) idp;
+        } else {
+            log.debug("No 'SupportedCredentials' configured. Using default implementation supporting 'SimpleCredentials'.");
         }
     }
 
@@ -171,18 +188,16 @@ public class ExternalLoginModule extends AbstractLoginModule {
         credentials = getCredentials();
 
         // check if we have a pre authenticated login from a previous login module
-        final String userId;
         final PreAuthenticatedLogin preAuthLogin = getSharedPreAuthLogin();
-        if (preAuthLogin != null) {
-            userId = preAuthLogin.getUserId();
-        } else {
-            userId = credentials instanceof SimpleCredentials ? ((SimpleCredentials) credentials).getUserID() : null;
-        }
+        final String userId = getUserId(preAuthLogin, credentials);
+
         if (userId == null && credentials == null) {
-            log.debug("No credentials found for external login module. ignoring.");
+            log.debug("No credentials|userId found for external login module. ignoring.");
             return false;
         }
 
+        // remember identification for log-output
+        Object logId = (userId != null) ? userId : credentials;
         try {
             SyncedIdentity sId = null;
             UserManager userMgr = getUserManager();
@@ -205,6 +220,10 @@ public class ExternalLoginModule extends AbstractLoginModule {
             }
 
             if (preAuthLogin != null) {
+                if (sId != null && !syncHandler.requiresSync(sId)) {
+                    log.debug("pre-authenticated external user {} does not require syncing.", sId);
+                    return false;
+                }
                 externalUser = idp.getUser(preAuthLogin.getUserId());
             } else {
                 externalUser = idp.authenticate(credentials);
@@ -226,11 +245,7 @@ public class ExternalLoginModule extends AbstractLoginModule {
                 return true;
             } else {
                 if (log.isDebugEnabled()) {
-                    if (userId != null) {
-                        log.debug("IDP {} returned null for simple creds of {}", idp.getName(), userId);
-                    } else {
-                        log.debug("IDP {} returned null for {}", idp.getName(), credentials);
-                    }
+                    log.debug("IDP {} returned null for {}", idp.getName(), logId);
                 }
 
                 if (sId != null) {
@@ -241,16 +256,13 @@ public class ExternalLoginModule extends AbstractLoginModule {
                 return false;
             }
         } catch (ExternalIdentityException e) {
-            log.error("Error while authenticating '{}' with {}",
-                    userId == null ? credentials : userId, idp.getName(), e);
+            log.error("Error while authenticating '{}' with {}", logId, idp.getName(), e);
             return false;
         } catch (LoginException e) {
-            log.debug("IDP {} throws login exception for '{}': {}",
-                    idp.getName(), userId == null ? credentials : userId, e.getMessage());
+            log.debug("IDP {} throws login exception for '{}': {}", idp.getName(), logId, e.getMessage());
             throw e;
         } catch (Exception e) {
-            log.debug("SyncHandler {} throws sync exception for '{}'",
-                    syncHandler.getName(), userId == null ? credentials : userId, e);
+            log.debug("SyncHandler {} throws sync exception for '{}'", syncHandler.getName(), logId, e);
             LoginException le = new LoginException("Error while syncing user.");
             le.initCause(e);
             throw le;
@@ -286,6 +298,19 @@ public class ExternalLoginModule extends AbstractLoginModule {
         clearState();
         // do we need to remove the user again, in case we created it during login() ?
         return true;
+    }
+
+    //------------------------------------------------------------< private >---
+
+    @CheckForNull
+    private String getUserId(@CheckForNull PreAuthenticatedLogin preAuthLogin, @CheckForNull Credentials credentials) {
+        if (preAuthLogin != null) {
+            return preAuthLogin.getUserId();
+        } else if (credentials != null){
+            return credentialsSupport.getUserId(credentials);
+        } else {
+            return null;
+        }
     }
 
     /**
@@ -374,14 +399,11 @@ public class ExternalLoginModule extends AbstractLoginModule {
         Map<String, Object> attributes = new HashMap<String, Object>();
         Object shared = sharedState.get(SHARED_KEY_ATTRIBUTES);
         if (shared instanceof Map) {
-            for (Object key : ((Map) shared).keySet()) {
-                attributes.put(key.toString(), ((Map) shared).get(key));
+            for (Map.Entry entry : ((Map<?,?>) shared).entrySet()) {
+                attributes.put(entry.getKey().toString(), entry.getValue());
             }
-        } else if (creds instanceof SimpleCredentials) {
-            SimpleCredentials sc = (SimpleCredentials) creds;
-            for (String attrName : sc.getAttributeNames()) {
-                attributes.put(attrName, sc.getAttribute(attrName));
-            }
+        } else if (creds != null) {
+            attributes.putAll(credentialsSupport.getAttributes(creds));
         }
         return new AuthInfoImpl(userId, attributes, principals);
     }
@@ -396,13 +418,22 @@ public class ExternalLoginModule extends AbstractLoginModule {
     }
 
     /**
-     * @return An immutable set containing only the {@link SimpleCredentials} class.
+     * @return the set of credentials classes as exposed by the configured
+     * {@link CredentialsSupport} implementation.
      */
     @Nonnull
     @Override
     protected Set<Class> getSupportedCredentials() {
-        // TODO: maybe delegate getSupportedCredentials to IDP
-        Class scClass = SimpleCredentials.class;
-        return Collections.singleton(scClass);
+        return credentialsSupport.getCredentialClasses();
+    }
+
+    //----------------------------------------------< public setters (JAAS) >---
+
+    public void setSyncManager(@Nonnull SyncManager syncManager) {
+        this.syncManager = syncManager;
+    }
+
+    public void setIdpManager(@Nonnull ExternalIdentityProviderManager idpManager) {
+        this.idpManager = idpManager;
     }
 }

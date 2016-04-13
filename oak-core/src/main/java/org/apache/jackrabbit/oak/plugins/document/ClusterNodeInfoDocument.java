@@ -39,8 +39,32 @@ public class ClusterNodeInfoDocument extends Document {
      */
     private static final String MAX_ID_VALUE = "a";
 
+    /**
+     * The timestamp when this document was created.
+     */
+    private final long created = Revision.getCurrentTimestamp();
+
+    /**
+     * @return the timestamp when this document was created.
+     */
+    public long getCreated() {
+        return created;
+    }
+
     public long getLeaseEndTime(){
         return checkNotNull((Long) get(ClusterNodeInfo.LEASE_END_KEY), "Lease End Time not set");
+    }
+
+    /**
+     * @return the time when this cluster node was started or {@code -1} if not
+     *          available.
+     */
+    public long getStartTime() {
+        Long startTime = (Long) get(ClusterNodeInfo.START_TIME_KEY);
+        if (startTime == null) {
+            startTime = -1L;
+        }
+        return startTime;
     }
 
     public boolean isActive(){
@@ -76,5 +100,12 @@ public class ClusterNodeInfoDocument extends Document {
 
     private RecoverLockState getRecoveryState(){
         return RecoverLockState.fromString((String) get(ClusterNodeInfo.REV_RECOVERY_LOCK));
+    }
+
+    /**
+     * the root-revision of the last background write (of unsaved modifications)
+     **/
+    public String getLastWrittenRootRev() {
+        return (String) get(ClusterNodeInfo.LAST_WRITTEN_ROOT_REV_KEY);
     }
 }

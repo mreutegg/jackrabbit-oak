@@ -22,7 +22,9 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Sets.newHashSet;
 import static com.google.common.collect.Sets.newLinkedHashSet;
+import static org.apache.jackrabbit.oak.query.ast.AstElementFactory.copyElementAndCheckReference;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -32,6 +34,8 @@ import org.apache.jackrabbit.oak.query.fulltext.FullTextAnd;
 import org.apache.jackrabbit.oak.query.fulltext.FullTextExpression;
 import org.apache.jackrabbit.oak.query.index.FilterImpl;
 
+import com.google.common.collect.Sets;
+
 /**
  * An AND condition.
  */
@@ -39,7 +43,7 @@ public class AndImpl extends ConstraintImpl {
 
     private final List<ConstraintImpl> constraints;
 
-    AndImpl(List<ConstraintImpl> constraints) {
+    public AndImpl(List<ConstraintImpl> constraints) {
         checkArgument(!constraints.isEmpty());
         this.constraints = constraints;
     }
@@ -81,6 +85,16 @@ public class AndImpl extends ConstraintImpl {
         } else {
             return this;
         }
+    }
+
+    @Override
+    ConstraintImpl not() {
+        // not (X and Y) == (not X) or (not Y)
+        List<ConstraintImpl> list = newArrayList();
+        for (ConstraintImpl constraint : constraints) {
+            list.add(new NotImpl(constraint));
+        }
+        return new OrImpl(list).simplify();
     }
 
     @Override
@@ -193,6 +207,65 @@ public class AndImpl extends ConstraintImpl {
     @Override
     public int hashCode() {
         return constraints.hashCode();
+    }
+
+    @Override
+    public AstElement copyOf() {
+        List<ConstraintImpl> clone = new ArrayList<ConstraintImpl>(constraints.size());
+        for (ConstraintImpl c : constraints) {
+            clone.add((ConstraintImpl) copyElementAndCheckReference(c));
+        }
+        return new AndImpl(clone);
+    }
+
+    @Override
+    public Set<ConstraintImpl> convertToUnion() {
+        Set<ConstraintImpl> union = Sets.newHashSet();
+        Set<ConstraintImpl> result = Sets.newHashSet();
+        Set<ConstraintImpl> nonUnion = Sets.newHashSet();
+        
+        for (ConstraintImpl c : constraints) {
+            Set<ConstraintImpl> converted = c.convertToUnion();
+            if (converted.isEmpty()) {
+                nonUnion.add(c);
+            } else {
+                union.addAll(converted);
+            }
+        }
+        if (!union.isEmpty() && nonUnion.size() == 1) {
+            // this is the simplest case where, for example, out of the two AND operands at least
+            // one is a non-union. For example WHERE (a OR b OR c) AND d
+            ConstraintImpl right = nonUnion.iterator().next();
+            for (ConstraintImpl c : union) {
+                result.add(new AndImpl(c, right));
+            }
+        } else {
+            // in this case prefer to be conservative and don't optimize. This could happen when for
+            // example: WHERE (a OR b) AND (c OR d).
+            // This should be translated into a AND c, a AND d, b AND c, b AND d.
+        }
+        
+        return result;
+    }
+    
+    @Override
+    public boolean requiresFullTextIndex() {
+        for (ConstraintImpl c : constraints) {
+            if (c.requiresFullTextIndex()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public boolean containsUnfilteredFullTextCondition() {
+        for (ConstraintImpl c : constraints) {
+            if (c.containsUnfilteredFullTextCondition()) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

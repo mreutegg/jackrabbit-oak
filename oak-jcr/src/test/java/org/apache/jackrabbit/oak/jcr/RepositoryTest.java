@@ -85,6 +85,7 @@ import org.apache.jackrabbit.commons.cnd.CndImporter;
 import org.apache.jackrabbit.commons.cnd.ParseException;
 import org.apache.jackrabbit.commons.jackrabbit.SimpleReferenceBinary;
 import org.apache.jackrabbit.core.data.RandomInputStream;
+import org.apache.jackrabbit.oak.fixture.NodeStoreFixture;
 import org.apache.jackrabbit.oak.jcr.repository.RepositoryImpl;
 import org.apache.jackrabbit.oak.plugins.nodetype.NodeTypeConstants;
 import org.apache.jackrabbit.spi.QValue;
@@ -143,6 +144,7 @@ public class RepositoryTest extends AbstractRepositoryTest {
         assertEquals(1, attributeNames.length);
         assertEquals(RepositoryImpl.REFRESH_INTERVAL, attributeNames[0]);
         assertEquals(42L, session.getAttribute(RepositoryImpl.REFRESH_INTERVAL));
+        session.logout();
     }
 
     @Test
@@ -2176,6 +2178,7 @@ public class RepositoryTest extends AbstractRepositoryTest {
         session.save();
 
         rootLogger().detachAppender(a);
+        a.stop();
 
         assertTrue(logMessages.size() >= 2);
         assertThat("Warn log message must contains a reference to the large array property path",

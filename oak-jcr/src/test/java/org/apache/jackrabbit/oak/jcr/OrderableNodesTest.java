@@ -18,9 +18,7 @@ package org.apache.jackrabbit.oak.jcr;
 
 import static junit.framework.Assert.assertEquals;
 import static junit.framework.Assert.assertFalse;
-import static org.apache.jackrabbit.oak.jcr.NodeStoreFixture.DOCUMENT_RDB;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assume.assumeTrue;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -31,6 +29,7 @@ import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 
 import org.apache.jackrabbit.commons.iterator.NodeIterable;
+import org.apache.jackrabbit.oak.fixture.NodeStoreFixture;
 import org.junit.Test;
 
 public class OrderableNodesTest extends AbstractRepositoryTest {
@@ -97,7 +96,6 @@ public class OrderableNodesTest extends AbstractRepositoryTest {
      */
     @Test
     public void testAddNode() throws Exception {
-        assumeTrue(fixture != DOCUMENT_RDB);  // FIXME this keeps failing on DOCUMENT_RDB. See OAK-2655
         new TestContentLoader().loadTestContent(getAdminSession());
 
         Session session = getAdminSession();

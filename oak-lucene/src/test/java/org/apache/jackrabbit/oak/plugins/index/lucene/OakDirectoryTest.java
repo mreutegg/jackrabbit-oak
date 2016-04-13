@@ -19,38 +19,58 @@
 
 package org.apache.jackrabbit.oak.plugins.index.lucene;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
 
+import org.apache.commons.io.IOUtils;
+import org.apache.commons.io.input.NullInputStream;
 import org.apache.jackrabbit.oak.api.Blob;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.plugins.memory.ArrayBasedBlob;
+import org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState;
 import org.apache.jackrabbit.oak.plugins.memory.PropertyStates;
+import org.apache.jackrabbit.oak.plugins.segment.Segment;
+import org.apache.jackrabbit.oak.plugins.segment.SegmentNodeStore;
+import org.apache.jackrabbit.oak.plugins.segment.file.FileStore;
+import org.apache.jackrabbit.oak.spi.blob.MemoryBlobStore;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.apache.jackrabbit.oak.spi.state.ReadOnlyBuilder;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
+import org.apache.lucene.store.InputStreamDataInput;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Sets.newHashSet;
+import static org.apache.commons.io.FileUtils.ONE_GB;
+import static org.apache.commons.io.FileUtils.ONE_MB;
 import static org.apache.jackrabbit.JcrConstants.JCR_DATA;
 import static org.apache.jackrabbit.oak.api.Type.BINARIES;
 import static org.apache.jackrabbit.oak.plugins.index.lucene.LuceneIndexConstants.INDEX_DATA_CHILD_NAME;
 import static org.apache.jackrabbit.oak.plugins.index.lucene.OakDirectory.PROP_BLOB_SIZE;
 import static org.apache.jackrabbit.oak.plugins.nodetype.write.InitialContent.INITIAL_CONTENT;
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public class OakDirectoryTest {
+    @Rule
+    public TemporaryFolder tempFolder = new TemporaryFolder();
+
     private Random rnd = new Random();
 
     private NodeState root = INITIAL_CONTENT;
@@ -147,7 +167,7 @@ public class OakDirectoryTest {
         assertEquals(blobSize, testNode.getProperty(PROP_BLOB_SIZE).getValue(Type.LONG).longValue());
 
         List<Blob> blobs = newArrayList(testNode.getProperty(JCR_DATA).getValue(BINARIES));
-        assertEquals(blobSize, blobs.get(0).length());
+        assertEquals(blobSize + OakDirectory.UNIQUE_KEY_SIZE, blobs.get(0).length());
 
         return data;
     }
@@ -162,7 +182,7 @@ public class OakDirectoryTest {
     }
 
     private Directory createDir(NodeBuilder builder, boolean readOnly){
-        return new OakDirectory(builder.child(INDEX_DATA_CHILD_NAME),
+        return new OakDirectory(builder,
                 new IndexDefinition(root, builder.getNodeState()), readOnly);
     }
 
@@ -290,6 +310,184 @@ public class OakDirectoryTest {
             fail("cannot use IndexInput once closed");
         } catch (AlreadyClosedException e) {
             // expected exception
+        }
+    }
+
+    @Test
+    public void largeFile() throws Exception{
+        FileStore store = FileStore.builder(tempFolder.getRoot())
+                .withMemoryMapping(false)
+                .withBlobStore(new BlackHoleBlobStore())
+                .build();
+        SegmentNodeStore nodeStore = SegmentNodeStore.builder(store).build();
+        IndexDefinition defn = new IndexDefinition(INITIAL_CONTENT, EmptyNodeState.EMPTY_NODE);
+        Directory directory = new OakDirectory(nodeStore.getRoot().builder(), defn, false);
+
+        long expectedSize = ONE_GB * 2 + ONE_MB;
+        String fileName = "test";
+        writeFile(directory, fileName, expectedSize);
+        assertEquals(expectedSize, directory.fileLength(fileName));
+
+        IndexInput input  = directory.openInput(fileName, IOContext.DEFAULT);
+        readInputToEnd(expectedSize, input);
+        store.close();
+    }
+
+    @Test
+    public void dirNameInExceptionMessage() throws Exception{
+        String indexPath = "/foo/bar";
+        builder.setProperty(LuceneIndexConstants.INDEX_PATH, indexPath);
+        Directory dir = createDir(builder, false);
+
+        try {
+            dir.openInput("foo.txt", IOContext.DEFAULT);
+            fail();
+        } catch (IOException e){
+            assertThat(e.getMessage(), containsString(indexPath));
+        }
+
+        int fileSize = createFile(dir, "test.txt");
+        IndexInput in = dir.openInput("test.txt", IOContext.DEFAULT);
+
+        try {
+            in.seek(fileSize + 1);
+            fail();
+        } catch (IOException e){
+            assertThat(e.getMessage(), containsString(indexPath));
+        }
+
+        IndexInput in2 = dir.openInput("test.txt", IOContext.DEFAULT);
+
+        try {
+            byte[] data = new byte[fileSize + 1];
+            in2.readBytes(data, 0, fileSize + 1);
+            fail();
+        } catch (IOException e){
+            assertThat(e.getMessage(), containsString(indexPath));
+        }
+    }
+
+    @Test
+    public void dirNameInException_Writes() throws Exception{
+        FailOnDemandBlobStore blobStore = new FailOnDemandBlobStore();
+        FileStore store = FileStore.builder(tempFolder.getRoot())
+                .withMemoryMapping(false)
+                .withBlobStore(blobStore)
+                .build();
+        SegmentNodeStore nodeStore = SegmentNodeStore.builder(store).build();
+
+        String indexPath = "/foo/bar";
+
+        int minFileSize = Segment.MEDIUM_LIMIT;
+        int blobSize = minFileSize + 1000;
+
+        builder = nodeStore.getRoot().builder();
+        builder.setProperty(LuceneIndexConstants.INDEX_PATH, indexPath);
+        builder.setProperty(LuceneIndexConstants.BLOB_SIZE, blobSize);
+        Directory dir = createDir(builder, false);
+
+        blobStore.startFailing();
+        IndexOutput o = dir.createOutput("test1.txt", IOContext.DEFAULT);
+        try{
+            o.writeBytes(randomBytes(blobSize + 10), blobSize + 10);
+            fail();
+        } catch (IOException e){
+            assertThat(e.getMessage(), containsString(indexPath));
+            assertThat(e.getMessage(), containsString("test1.txt"));
+        }
+
+        blobStore.reset();
+
+        IndexOutput o3 = dir.createOutput("test3.txt", IOContext.DEFAULT);
+        o3.writeBytes(randomBytes(minFileSize), minFileSize);
+
+        blobStore.startFailing();
+        try{
+            o3.flush();
+            fail();
+        } catch (IOException e){
+            assertThat(e.getMessage(), containsString(indexPath));
+            assertThat(e.getMessage(), containsString("test3.txt"));
+        }
+    }
+
+    @Test
+    public void readOnlyDirectory() throws Exception{
+        Directory dir = new OakDirectory(new ReadOnlyBuilder(builder.getNodeState()),
+                new IndexDefinition(root, builder.getNodeState()), true);
+        assertEquals(0, dir.listAll().length);
+    }
+
+    private static void readInputToEnd(long expectedSize, IndexInput input) throws IOException {
+        int COPY_BUFFER_SIZE = 16384;
+        byte[] copyBuffer = new byte[(int) ONE_MB];
+        long left = expectedSize;
+        while (left > 0) {
+            final int toCopy;
+            if (left > COPY_BUFFER_SIZE) {
+                toCopy = COPY_BUFFER_SIZE;
+            } else {
+                toCopy = (int) left;
+            }
+            input.readBytes(copyBuffer, 0, toCopy);
+            left -= toCopy;
+        }
+    }
+
+    private static void writeFile(Directory directory, String fileName,  long size) throws Exception{
+        IndexOutput o = directory.createOutput(fileName, IOContext.DEFAULT);
+        o.copyBytes(new InputStreamDataInput(new NullInputStream(size)), size);
+        o.close();
+    }
+
+    private static class BlackHoleBlobStore extends MemoryBlobStore {
+        private String blobId;
+        private byte[] data;
+        @Override
+        protected synchronized void storeBlock(byte[] digest, int level, byte[] data) {
+            //Eat up all the writes
+        }
+
+        @Override
+        public String writeBlob(InputStream in) throws IOException {
+            //Avoid expensive digest calculation as all content is 0 byte. So memorize
+            //the id if same content is passed
+            if (blobId == null) {
+                data = IOUtils.toByteArray(in);
+                blobId = super.writeBlob(new ByteArrayInputStream(data));
+                return blobId;
+            } else {
+                byte[] bytes = IOUtils.toByteArray(in);
+                if (Arrays.equals(data, bytes)) {
+                    return blobId;
+                }
+                return super.writeBlob(new ByteArrayInputStream(bytes));
+            }
+        }
+
+        @Override
+        protected byte[] readBlockFromBackend(BlockId id) {
+            return data;
+        }
+    }
+
+    private static class FailOnDemandBlobStore extends MemoryBlobStore {
+        private boolean fail;
+
+        @Override
+        public String writeBlob(InputStream in) throws IOException {
+            if (fail) {
+                throw new IOException("Failing on demand");
+            }
+            return super.writeBlob(in);
+        }
+
+        public void startFailing(){
+            fail = true;
+        }
+
+        public void reset(){
+            fail = false;
         }
     }
 }

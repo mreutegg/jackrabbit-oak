@@ -76,8 +76,8 @@ import org.apache.jackrabbit.api.observation.JackrabbitEventFilter;
 import org.apache.jackrabbit.api.observation.JackrabbitObservationManager;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.commons.PathUtils;
+import org.apache.jackrabbit.oak.fixture.NodeStoreFixture;
 import org.apache.jackrabbit.oak.jcr.AbstractRepositoryTest;
-import org.apache.jackrabbit.oak.jcr.NodeStoreFixture;
 import org.apache.jackrabbit.oak.plugins.observation.filter.FilterBuilder;
 import org.apache.jackrabbit.oak.plugins.observation.filter.Selectors;
 import org.junit.After;
@@ -131,7 +131,9 @@ public class ObservationTest extends AbstractRepositoryTest {
 
     @After
     public void tearDown() {
-        observingSession.logout();
+        if (observingSession != null) {
+            observingSession.logout();
+        }
     }
 
     @Test

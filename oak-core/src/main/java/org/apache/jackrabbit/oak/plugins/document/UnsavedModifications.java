@@ -134,11 +134,14 @@ class UnsavedModifications {
      * lock for a short period of time.
      *
      * @param store the document node store.
+     * @param snapshot callback when the snapshot of the pending changes is
+     *                 acquired.
      * @param lock the lock to acquire to get a consistent snapshot of the
      *             revisions to write back.
      * @return stats about the write operation.
      */
     public BackgroundWriteStats persist(@Nonnull DocumentNodeStore store,
+                                        @Nonnull Snapshot snapshot,
                                         @Nonnull Lock lock) {
         BackgroundWriteStats stats = new BackgroundWriteStats();
         if (map.size() == 0) {
@@ -150,12 +153,13 @@ class UnsavedModifications {
         Clock clock = store.getClock();
 
         long time = clock.getTime();
-                // get a copy of the map while holding the lock
+        // get a copy of the map while holding the lock
         lock.lock();
         stats.lock = clock.getTime() - time;
         time = clock.getTime();
         Map<String, Revision> pending;
         try {
+            snapshot.acquiring(getMostRecentRevision());
             pending = Maps.newTreeMap(PathComparator.INSTANCE);
             pending.putAll(map);
         } finally {
@@ -210,6 +214,17 @@ class UnsavedModifications {
                 lastRev = null;
             }
         }
+        Revision writtenRootRev = pending.get("/");
+        if (writtenRootRev != null) {
+            int cid = writtenRootRev.getClusterId();
+            if (store.getDocumentStore().find(org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES, String.valueOf(cid)) != null) {
+                UpdateOp update = new UpdateOp(String.valueOf(cid), false);
+                update.equals(Document.ID, null, String.valueOf(cid));
+                update.set(ClusterNodeInfo.LAST_WRITTEN_ROOT_REV_KEY, writtenRootRev.toString());
+                store.getDocumentStore().findAndUpdate(org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES, update);
+            }
+        }
+
         stats.write = clock.getTime() - time;
         return stats;
     }
@@ -217,5 +232,28 @@ class UnsavedModifications {
     @Override
     public String toString() {
         return map.toString();
+    }
+
+    private Revision getMostRecentRevision() {
+        // use revision of root document
+        Revision rev = map.get("/");
+        // otherwise find most recent
+        if (rev == null) {
+            for (Revision r : map.values()) {
+                rev = Utils.max(rev, r);
+            }
+        }
+        return rev;
+    }
+
+    public interface Snapshot {
+
+        Snapshot IGNORE = new Snapshot() {
+            @Override
+            public void acquiring(Revision mostRecent) {
+            }
+        };
+
+        void acquiring(Revision mostRecent);
     }
 }

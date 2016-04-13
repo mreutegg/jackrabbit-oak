@@ -16,17 +16,7 @@
  */
 package org.apache.jackrabbit.oak.plugins.index.lucene;
 
-import static org.apache.jackrabbit.JcrConstants.JCR_DATA;
-import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
-import static org.apache.jackrabbit.oak.commons.PathUtils.getName;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.FieldFactory.newDepthField;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.FieldFactory.newFulltextField;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.FieldFactory.newAncestorsField;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.FieldFactory.newPathField;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.FieldFactory.newPropertyField;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.TermFactory.newPathTerm;
-import static org.apache.jackrabbit.oak.plugins.index.lucene.util.ConfigUtil.getPrimaryTypeName;
-
+import javax.annotation.Nullable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,11 +24,8 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import javax.annotation.Nullable;
-
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-
 import com.google.common.collect.Sets;
 import com.google.common.io.CountingInputStream;
 import org.apache.jackrabbit.JcrConstants;
@@ -52,9 +39,13 @@ import org.apache.jackrabbit.oak.commons.io.LazyInputStream;
 import org.apache.jackrabbit.oak.plugins.index.IndexEditor;
 import org.apache.jackrabbit.oak.plugins.index.IndexUpdateCallback;
 import org.apache.jackrabbit.oak.plugins.index.PathFilter;
+import org.apache.jackrabbit.oak.plugins.index.fulltext.ExtractedText;
+import org.apache.jackrabbit.oak.plugins.index.fulltext.ExtractedText.ExtractionResult;
 import org.apache.jackrabbit.oak.plugins.index.lucene.Aggregate.Matcher;
 import org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState;
+import org.apache.jackrabbit.oak.plugins.memory.StringPropertyState;
 import org.apache.jackrabbit.oak.plugins.tree.TreeFactory;
+import org.apache.jackrabbit.oak.query.QueryImpl;
 import org.apache.jackrabbit.oak.spi.commit.Editor;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
@@ -67,6 +58,7 @@ import org.apache.lucene.document.LongField;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.StringField;
+import org.apache.lucene.facet.sortedset.SortedSetDocValuesFacetField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.util.BytesRef;
@@ -76,16 +68,24 @@ import org.apache.tika.sax.WriteOutContentHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static org.apache.jackrabbit.JcrConstants.JCR_DATA;
+import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
+import static org.apache.jackrabbit.oak.commons.PathUtils.getName;
+import static org.apache.jackrabbit.oak.plugins.index.lucene.FieldFactory.*;
+import static org.apache.jackrabbit.oak.plugins.index.lucene.TermFactory.newPathTerm;
+import static org.apache.jackrabbit.oak.plugins.index.lucene.util.ConfigUtil.getPrimaryTypeName;
+
 /**
  * {@link IndexEditor} implementation that is responsible for keeping the
  * {@link LuceneIndex} up to date
- * 
+ *
  * @see LuceneIndex
  */
 public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
 
     private static final Logger log =
             LoggerFactory.getLogger(LuceneIndexEditor.class);
+    static final String TEXT_EXTRACTION_ERROR = "TextExtractionError";
 
     private final LuceneIndexEditorContext context;
 
@@ -99,6 +99,8 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
     private String path;
 
     private boolean propertiesChanged = false;
+
+    private List<PropertyState> propertiesModified = Lists.newArrayList();
 
     private final NodeState root;
 
@@ -120,16 +122,19 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
     private final PathFilter.Result pathFilterResult;
 
     LuceneIndexEditor(NodeState root, NodeBuilder definition,
-        IndexUpdateCallback updateCallback,@Nullable IndexCopier indexCopier) throws CommitFailedException {
+                        IndexUpdateCallback updateCallback,
+                        @Nullable IndexCopier indexCopier,
+                        ExtractedTextCache extractedTextCache,
+                      IndexAugmentorFactory augmentorFactory) throws CommitFailedException {
         this.parent = null;
         this.name = null;
         this.path = "/";
         this.context = new LuceneIndexEditorContext(root, definition,
-                updateCallback, indexCopier);
+                updateCallback, indexCopier, extractedTextCache, augmentorFactory);
         this.root = root;
         this.isDeleted = false;
         this.matcherState = MatcherState.NONE;
-        this.pathFilterResult = context.getDefinition().getPathFilter().doFiler(getPath());
+        this.pathFilterResult = context.getDefinition().getPathFilter().filter(getPath());
     }
 
     private LuceneIndexEditor(LuceneIndexEditor parent, String name,
@@ -191,7 +196,7 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
             if (addOrUpdate(path, after, before.exists())) {
                 long indexed = context.incIndexedNodes();
                 if (indexed % 1000 == 0) {
-                    log.debug("{} => Indexed {} nodes...", context.getDefinition().getIndexName(), indexed);
+                    log.debug("[{}] => Indexed {} nodes...", getIndexName(), indexed);
                 }
             }
         }
@@ -208,7 +213,7 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
                         "Failed to close the Lucene index", e);
             }
             if (context.getIndexedNodes() > 0) {
-                log.debug("{} => Indexed {} nodes, done.", context.getDefinition().getIndexName(), context.getIndexedNodes());
+                log.debug("[{}] => Indexed {} nodes, done.", getIndexName(), context.getIndexedNodes());
             }
         }
     }
@@ -222,12 +227,14 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
     @Override
     public void propertyChanged(PropertyState before, PropertyState after) {
         markPropertyChanged(before.getName());
+        propertiesModified.add(before);
         checkAggregates(before.getName());
     }
 
     @Override
     public void propertyDeleted(PropertyState before) {
         markPropertyChanged(before.getName());
+        propertiesModified.add(before);
         checkAggregates(before.getName());
     }
 
@@ -286,8 +293,8 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
         try {
             Document d = makeDocument(path, state, isUpdate);
             if (d != null) {
-                if (log.isTraceEnabled()){
-                    log.trace("Indexed document for {} is {}", path, d);
+                if (log.isTraceEnabled()) {
+                    log.trace("[{}] Indexed document for {} is {}", getIndexName(), path, d);
                 }
                 context.indexUpdate();
                 context.getWriter().updateDocument(newPathTerm(path), d);
@@ -297,23 +304,29 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
             throw new CommitFailedException("Lucene", 3,
                     "Failed to index the node " + path, e);
         } catch (IllegalArgumentException ie) {
-            throw new CommitFailedException("Lucene", 3,
-                "Failed to index the node " + path, ie);
+            log.warn("Failed to index the node [{}]", path, ie);
         }
         return false;
     }
 
-    private Document makeDocument(String path, NodeState state, boolean isUpdate) throws CommitFailedException {
+    private Document makeDocument(String path, NodeState state, boolean isUpdate) throws IOException {
         if (!isIndexable()) {
             return null;
         }
 
+        boolean facet = false;
+
         List<Field> fields = new ArrayList<Field>();
         boolean dirty = false;
-        for (PropertyState property : state.getProperties()) {
+
+        //We 'intentionally' are indexing node names only on root state as we don't support indexing relative or
+        //regex for node name indexing
+        PropertyState nodenamePS =
+                new StringPropertyState(FieldNames.NODE_NAME, getName(path));
+        for (PropertyState property : Iterables.concat(state.getProperties(), Collections.singleton(nodenamePS))) {
             String pname = property.getName();
 
-            if (!isVisible(pname)) {
+            if (!isVisible(pname) && !FieldNames.NODE_NAME.equals(pname)) {
                 continue;
             }
 
@@ -328,28 +341,42 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
             }
 
             dirty |= indexProperty(path, fields, state, property, pname, pd);
+
+            facet |= pd.facet;
         }
 
         dirty |= indexAggregates(path, fields, state);
         dirty |= indexNullCheckEnabledProps(path, fields, state);
         dirty |= indexNotNullCheckEnabledProps(path, fields, state);
 
+        dirty |= augmentCustomFields(path, fields, state);
+
+        // Check if a node having a single property was modified/deleted
+        if (!dirty) {
+            dirty = indexIfSinglePropertyRemoved();
+        }
+
         if (isUpdate && !dirty) {
             // updated the state but had no relevant changes
             return null;
         }
 
+        String name = getName(path);
+        if (indexingRule.isNodeNameIndexed()){
+            addNodeNameField(fields, name);
+            dirty = true;
+        }
+
         //For property index no use making an empty document if
         //none of the properties are indexed
-        if(!indexingRule.isFulltextEnabled() && !dirty){
+        if(!indexingRule.indexesAllNodesOfMatchingType() && !dirty){
             return null;
         }
 
         Document document = new Document();
         document.add(newPathField(path));
-        String name = getName(path);
 
-        //TODO Possibly index nodeName without tokenization for node name based queries
+
         if (indexingRule.isFulltextEnabled()) {
             document.add(newFulltextField(name));
         }
@@ -362,7 +389,7 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
         // because of LUCENE-5833 we have to merge the suggest fields into a single one
         Field suggestField = null;
         for (Field f : fields) {
-            if (FieldNames.SUGGEST.endsWith(f.name())) {
+            if (FieldNames.SUGGEST.equals(f.name())) {
                 if (suggestField == null) {
                     suggestField = FieldFactory.newSuggestField(f.stringValue());
                 } else {
@@ -376,9 +403,56 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
             document.add(suggestField);
         }
 
+        if (facet) {
+            document = context.getFacetsConfig().build(document);
+        }
+
         //TODO Boost at document level
 
         return document;
+    }
+
+    private boolean addFacetFields(List<Field> fields, PropertyState property, String pname, PropertyDefinition pd) {
+        String facetFieldName = FieldNames.createFacetFieldName(pname);
+        context.getFacetsConfig().setIndexFieldName(pname, facetFieldName);
+        int tag = property.getType().tag();
+        int idxDefinedTag = pd.getType();
+        // Try converting type to the defined type in the index definition
+        if (tag != idxDefinedTag) {
+            log.debug("[{}] Facet property defined with type {} differs from property {} with type {} in "
+                            + "path {}",
+                    getIndexName(),
+                    Type.fromTag(idxDefinedTag, false), property.toString(),
+                    Type.fromTag(tag, false), getPath());
+            tag = idxDefinedTag;
+        }
+
+        boolean fieldAdded = false;
+        try {
+            if (tag == Type.STRINGS.tag() && property.isArray()) {
+                context.getFacetsConfig().setMultiValued(pname, true);
+                Iterable<String> values = property.getValue(Type.STRINGS);
+                for (String value : values) {
+                    if (value != null && value.length() > 0) {
+                        fields.add(new SortedSetDocValuesFacetField(pname, value));
+                    }
+                }
+                fieldAdded = true;
+            } else if (tag == Type.STRING.tag()) {
+                String value = property.getValue(Type.STRING);
+                if (value.length() > 0) {
+                    fields.add(new SortedSetDocValuesFacetField(pname, value));
+                    fieldAdded = true;
+                }
+            }
+
+        } catch (Throwable e) {
+            log.warn("[{}] Ignoring facet property. Could not convert property {} of type {} to type {} for path {}",
+                    getIndexName(), pname,
+                    Type.fromTag(property.getType().tag(), false),
+                    Type.fromTag(tag, false), getPath(), e);
+        }
+        return fieldAdded;
     }
 
     private boolean indexProperty(String path,
@@ -386,16 +460,16 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
                                   NodeState state,
                                   PropertyState property,
                                   String pname,
-                                  PropertyDefinition pd) throws CommitFailedException {
+                                  PropertyDefinition pd) {
         boolean includeTypeForFullText = indexingRule.includePropertyType(property.getType().tag());
+
+        boolean dirty = false;
         if (Type.BINARY.tag() == property.getType().tag()
                 && includeTypeForFullText) {
             fields.addAll(newBinary(property, state, null, path + "@" + pname));
-            return true;
-        }  else {
-            boolean dirty = false;
-
-            if (pd.propertyIndex && pd.includePropertyType(property.getType().tag())){
+            dirty = true;
+        } else {
+            if (pd.propertyIndex && pd.includePropertyType(property.getType().tag())) {
                 dirty |= addTypedFields(fields, property, pname);
             }
 
@@ -407,7 +481,7 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
                     }
 
                     if (pd.useInSuggest) {
-                        fields.add(newPropertyField(FieldNames.SUGGEST, value, true, true));
+                        fields.add(FieldFactory.newSuggestField(value));
                     }
 
                     if (pd.useInSpellcheck) {
@@ -416,14 +490,18 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
 
                     if (pd.nodeScopeIndex) {
                         Field field = newFulltextField(value);
-                        field.setBoost(pd.boost);
                         fields.add(field);
                     }
                     dirty = true;
                 }
             }
-            return dirty;
+            if (pd.facet) {
+                dirty |= addFacetFields(fields, property, pname, pd);
+            }
+
         }
+
+        return dirty;
     }
 
     private String constructAnalyzedPropertyName(String pname) {
@@ -433,7 +511,7 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
         return pname;
     }
 
-    private boolean addTypedFields(List<Field> fields, PropertyState property, String pname) throws CommitFailedException {
+    private boolean addTypedFields(List<Field> fields, PropertyState property, String pname) {
         int tag = property.getType().tag();
         boolean fieldAdded = false;
         for (int i = 0; i < property.count(); i++) {
@@ -460,52 +538,60 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
     private boolean addTypedOrderedFields(List<Field> fields,
                                           PropertyState property,
                                           String pname,
-                                          PropertyDefinition pd) throws CommitFailedException {
+                                          PropertyDefinition pd) {
+        // Ignore and warn if property multi-valued as not supported
+        if (property.getType().isArray()) {
+            log.warn(
+                    "[{}] Ignoring ordered property {} of type {} for path {} as multivalued ordered property not supported",
+                    getIndexName(), pname,
+                    Type.fromTag(property.getType().tag(), true), getPath());
+            return false;
+        }
+
         int tag = property.getType().tag();
         int idxDefinedTag = pd.getType();
         // Try converting type to the defined type in the index definition
         if (tag != idxDefinedTag) {
             log.debug(
-                "Ordered property defined with type {} differs from property {} with type {} in " +
-                    "path {}",
-                Type.fromTag(idxDefinedTag, false), property.toString(), Type.fromTag(tag, false),
-                getPath());
+                    "[{}] Ordered property defined with type {} differs from property {} with type {} in "
+                            + "path {}",
+                    getIndexName(),
+                    Type.fromTag(idxDefinedTag, false), property.toString(),
+                    Type.fromTag(tag, false), getPath());
             tag = idxDefinedTag;
         }
 
         String name = FieldNames.createDocValFieldName(pname);
         boolean fieldAdded = false;
-        for (int i = 0; i < property.count(); i++) {
-            Field f = null;
-            try {
-                if (tag == Type.LONG.tag()) {
-                    //TODO Distinguish fields which need to be used for search and for sort
-                    //If a field is only used for Sort then it can be stored with less precision
-                    f = new NumericDocValuesField(name, property.getValue(Type.LONG, i));
-                } else if (tag == Type.DATE.tag()) {
-                    String date = property.getValue(Type.DATE, i);
-                    f = new NumericDocValuesField(name, FieldFactory.dateToLong(date));
-                } else if (tag == Type.DOUBLE.tag()) {
-                    f = new DoubleDocValuesField(name, property.getValue(Type.DOUBLE, i));
-                } else if (tag == Type.BOOLEAN.tag()) {
-                    f = new SortedDocValuesField(name,
-                        new BytesRef(property.getValue(Type.BOOLEAN, i).toString()));
-                } else if (tag == Type.STRING.tag()) {
-                    f = new SortedDocValuesField(name,
-                        new BytesRef(property.getValue(Type.STRING, i)));
-                }
-
-                if (f != null) {
-                    fields.add(f);
-                    fieldAdded = true;
-                }
-            } catch (Exception e) {
-                log.warn(
-                    "Ignoring ordered property. Could not convert property {} of type {} to type " +
-                        "{} for path {}",
-                    pname, Type.fromTag(property.getType().tag(), false),
-                    Type.fromTag(tag, false), getPath(), e);
+        Field f = null;
+        try {
+            if (tag == Type.LONG.tag()) {
+                //TODO Distinguish fields which need to be used for search and for sort
+                //If a field is only used for Sort then it can be stored with less precision
+                f = new NumericDocValuesField(name, property.getValue(Type.LONG));
+            } else if (tag == Type.DATE.tag()) {
+                String date = property.getValue(Type.DATE);
+                f = new NumericDocValuesField(name, FieldFactory.dateToLong(date));
+            } else if (tag == Type.DOUBLE.tag()) {
+                f = new DoubleDocValuesField(name, property.getValue(Type.DOUBLE));
+            } else if (tag == Type.BOOLEAN.tag()) {
+                f = new SortedDocValuesField(name,
+                    new BytesRef(property.getValue(Type.BOOLEAN).toString()));
+            } else if (tag == Type.STRING.tag()) {
+                f = new SortedDocValuesField(name,
+                    new BytesRef(property.getValue(Type.STRING)));
             }
+
+            if (f != null) {
+                fields.add(f);
+                fieldAdded = true;
+            }
+        } catch (Exception e) {
+            log.warn(
+                    "[{}] Ignoring ordered property. Could not convert property {} of type {} to type {} for path {}",
+                    getIndexName(), pname,
+                    Type.fromTag(property.getType().tag(), false),
+                    Type.fromTag(tag, false), getPath(), e);
         }
         return fieldAdded;
     }
@@ -522,9 +608,10 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
         //jcr:mimeType is mandatory for a binary to be indexed
         String type = state.getString(JcrConstants.JCR_MIMETYPE);
 
-        if (type == null || !isSupportedMediaType(type)){
-            log.trace("Ignoring binary content for node {} due to unsupported " +
-                    "(or null) jcr:mimeType [{}]", nodePath, type);
+        if (type == null || !isSupportedMediaType(type)) {
+            log.trace(
+                    "[{}] Ignoring binary content for node {} due to unsupported (or null) jcr:mimeType [{}]",
+                    getIndexName(), path, type);
             return fields;
         }
 
@@ -537,14 +624,38 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
         }
 
         for (Blob v : property.getValue(Type.BINARIES)) {
-            if (nodePath != null){
-                fields.add(newFulltextField(nodePath, parseStringValue(v, metadata, path)));
-            } else {
-                fields.add(newFulltextField(parseStringValue(v, metadata, path)));
+            String value = parseStringValue(v, metadata, path, property.getName());
+            if (value == null){
+                continue;
             }
 
+            if (nodePath != null){
+                fields.add(newFulltextField(nodePath, value, true));
+            } else {
+                fields.add(newFulltextField(value, true));
+            }
         }
         return fields;
+    }
+
+    private boolean augmentCustomFields(final String path, final List<Field> fields,
+                                        final NodeState document) {
+        boolean dirty = false;
+
+        IndexAugmentorFactory augmentorFactory = context.getAugmentorFactory();
+        if (augmentorFactory != null) {
+            IndexDefinition defn = getDefinition();
+            Iterable<Field> augmentedFields = augmentorFactory
+                    .getIndexFieldProvider(indexingRule.getNodeTypeName())
+                    .getAugmentedFields(path, document, defn.getDefinitionNodeState());
+
+            for (Field field : augmentedFields) {
+                fields.add(field);
+                dirty = true;
+            }
+        }
+
+        return dirty;
     }
 
     //~-------------------------------------------------------< NullCheck Support >
@@ -569,6 +680,21 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
             }
         }
         return fieldAdded;
+    }
+
+    private boolean indexIfSinglePropertyRemoved() {
+        boolean dirty = false;
+        for (PropertyState ps : propertiesModified) {
+            PropertyDefinition pd = indexingRule.getConfig(ps.getName());
+            if (pd != null
+                    && pd.index
+                    && (pd.includePropertyType(ps.getType().tag())
+                            || indexingRule.includePropertyType(ps.getType().tag()))) {
+                dirty = true;
+                break;
+            }
+        }
+        return dirty;
     }
 
     /**
@@ -642,11 +768,11 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
     }
 
     private boolean indexAggregates(final String path, final List<Field> fields,
-                                    final NodeState state) throws CommitFailedException {
+                                    final NodeState state) {
         final AtomicBoolean dirtyFlag = new AtomicBoolean();
         indexingRule.getAggregate().collectAggregates(state, new Aggregate.ResultCollector() {
             @Override
-            public void onResult(Aggregate.NodeIncludeResult result) throws CommitFailedException {
+            public void onResult(Aggregate.NodeIncludeResult result) {
                 boolean dirty = indexAggregatedNode(path, fields, result);
                 if (dirty) {
                     dirtyFlag.set(true);
@@ -654,7 +780,7 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
             }
 
             @Override
-            public void onResult(Aggregate.PropertyIncludeResult result) throws CommitFailedException {
+            public void onResult(Aggregate.PropertyIncludeResult result) {
                 boolean dirty = false;
                 if (result.pd.ordered) {
                     dirty |= addTypedOrderedFields(fields, result.propertyState,
@@ -670,7 +796,6 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
         });
         return dirtyFlag.get();
     }
-
     /**
      * Create the fulltext field from the aggregated nodes. If result is for aggregate for a relative node
      * include then
@@ -678,10 +803,8 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
      * @param fields indexed fields
      * @param result aggregate result
      * @return true if a field was created for passed node result
-     * @throws CommitFailedException
      */
-    private boolean indexAggregatedNode(String path, List<Field> fields, Aggregate.NodeIncludeResult result)
-            throws CommitFailedException {
+    private boolean indexAggregatedNode(String path, List<Field> fields, Aggregate.NodeIncludeResult result) {
         //rule for node being aggregated might be null if such nodes
         //are not indexed on there own. In such cases we rely in current
         //rule for some checks
@@ -691,6 +814,7 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
 
         for (PropertyState property : result.nodeState.getProperties()){
             String pname = property.getName();
+            String propertyPath = PathUtils.concat(result.nodePath, pname);
 
             if (!isVisible(pname)) {
                 continue;
@@ -703,6 +827,16 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
                     continue;
                 }
             } else if (!indexingRule.includePropertyType(type)){
+                continue;
+            }
+
+            //Check if any explicit property defn is defined via relative path
+            // and is marked to exclude this property from being indexed. We exclude
+            //it from aggregation if
+            // 1. Its not to be indexed i.e. index=false
+            // 2. Its explicitly excluded from aggregation i.e. excludeFromAggregation=true
+            PropertyDefinition pdForRootNode = indexingRule.getConfig(propertyPath);
+            if (pdForRootNode != null && (!pdForRootNode.index || pdForRootNode.excludeFromAggregate)) {
                 continue;
             }
 
@@ -795,23 +929,31 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
     }
 
     private PathFilter.Result getPathFilterResult(String childNodeName) {
-        return context.getDefinition().getPathFilter().doFiler(concat(getPath(), childNodeName));
+        return context.getDefinition().getPathFilter().filter(concat(getPath(), childNodeName));
     }
 
     private boolean isSupportedMediaType(String type) {
         return context.isSupportedMediaType(type);
     }
 
-    private String parseStringValue(Blob v, Metadata metadata, String path) {
+    private String parseStringValue(Blob v, Metadata metadata, String path, String propertyName) {
+        String text = context.getExtractedTextCache().get(path, propertyName, v, context.isReindex());
+        if (text == null){
+            text = parseStringValue0(v, metadata, path);
+        }
+        return text;
+    }
+
+    private String parseStringValue0(Blob v, Metadata metadata, String path) {
         WriteOutContentHandler handler = new WriteOutContentHandler(context.getDefinition().getMaxExtractLength());
         long start = System.currentTimeMillis();
-        long size = 0;
+        long bytesRead = 0;
         try {
             CountingInputStream stream = new CountingInputStream(new LazyInputStream(new BlobByteSource(v)));
             try {
                 context.getParser().parse(stream, handler, metadata, new ParseContext());
             } finally {
-                size = stream.getCount();
+                bytesRead = stream.getCount();
                 stream.close();
             }
         } catch (LinkageError e) {
@@ -823,17 +965,43 @@ public class LuceneIndexEditor implements IndexEditor, Aggregate.AggregateRoot {
             // Capture and report any other full text extraction problems.
             // The special STOP exception is used for normal termination.
             if (!handler.isWriteLimitReached(t)) {
-                log.debug("Failed to extract text from a binary property: "
-                        + path
+                log.debug(
+                        "[{}] Failed to extract text from a binary property: {}."
                         + " This is a fairly common case, and nothing to"
                         + " worry about. The stack trace is included to"
-                        + " help improve the text extraction feature.", t);
-                return "TextExtractionError";
+                        + " help improve the text extraction feature.",
+                        getIndexName(), path, t);
+                context.getExtractedTextCache().put(v, ExtractedText.ERROR);
+                return TEXT_EXTRACTION_ERROR;
             }
         }
         String result = handler.toString();
-        context.recordTextExtractionStats(System.currentTimeMillis() - start, size);
+        if (bytesRead > 0) {
+            context.recordTextExtractionStats(System.currentTimeMillis() - start, bytesRead, result.length());
+        }
+        context.getExtractedTextCache().put(v,  new ExtractedText(ExtractionResult.SUCCESS, result));
         return result;
+    }
+
+    private String getIndexName() {
+        return context.getDefinition().getIndexName();
+    }
+
+
+    /**
+     * Extracts the local name of the current node ignoring any namespace prefix
+     *
+     * @param name node name
+     */
+    private static void addNodeNameField(List<Field> fields, String name) {
+        //TODO Need to check if it covers all cases
+        int colon = name.indexOf(':');
+        String value = colon < 0 ? name : name.substring(colon + 1);
+
+        //For now just add a single term. Later we can look into using different analyzer
+        //to analyze the node name and add multiple terms. Like add multiple terms for a
+        //cameCase file name to allow faster like search
+        fields.add(new StringField(FieldNames.NODE_NAME, value, Field.Store.NO));
     }
 
 }

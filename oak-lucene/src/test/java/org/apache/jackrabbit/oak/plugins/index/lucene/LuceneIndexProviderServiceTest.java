@@ -19,13 +19,20 @@
 
 package org.apache.jackrabbit.oak.plugins.index.lucene;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.commons.io.FileUtils;
+import org.apache.jackrabbit.oak.api.Blob;
+import org.apache.jackrabbit.oak.api.jmx.CacheStatsMBean;
 import org.apache.jackrabbit.oak.plugins.index.IndexEditorProvider;
+import org.apache.jackrabbit.oak.plugins.index.fulltext.ExtractedText;
+import org.apache.jackrabbit.oak.plugins.index.fulltext.PreExtractedTextProvider;
 import org.apache.jackrabbit.oak.spi.commit.BackgroundObserver;
 import org.apache.jackrabbit.oak.spi.commit.Observer;
 import org.apache.jackrabbit.oak.spi.query.QueryIndexProvider;
+import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.util.InfoStream;
 import org.apache.sling.testing.mock.osgi.MockOsgi;
 import org.apache.sling.testing.mock.osgi.junit.OsgiContext;
@@ -34,11 +41,17 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class LuceneIndexProviderServiceTest {
+    /*
+        The test case uses raw config name and not access it via
+         constants in LuceneIndexProviderService to ensure that change
+         in names are detected
+     */
 
     @Rule
     public final TemporaryFolder folder = new TemporaryFolder();
@@ -58,12 +71,19 @@ public class LuceneIndexProviderServiceTest {
 
         LuceneIndexEditorProvider editorProvider =
                 (LuceneIndexEditorProvider) context.getService(IndexEditorProvider.class);
-        assertNull(editorProvider.getIndexCopier());
+        assertNotNull(editorProvider.getIndexCopier());
+
+        IndexCopier indexCopier = service.getIndexCopier();
+        assertNotNull("IndexCopier should be initialized as CopyOnRead is enabled by default", indexCopier);
+        assertTrue(indexCopier.isPrefetchEnabled());
 
         assertNotNull("CopyOnRead should be enabled by default", context.getService(CopyOnReadStatsMBean.class));
+        assertNotNull(context.getService(CacheStatsMBean.class));
 
         assertTrue(context.getService(Observer.class) instanceof BackgroundObserver);
         assertEquals(InfoStream.NO_OUTPUT, InfoStream.getDefault());
+
+        assertEquals(1024, BooleanQuery.getMaxClauseCount());
 
         MockOsgi.deactivate(service);
     }
@@ -95,6 +115,18 @@ public class LuceneIndexProviderServiceTest {
     }
 
     @Test
+    public void enablePrefetchIndexFiles() throws Exception{
+        Map<String,Object> config = getDefaultConfig();
+        config.put("prefetchIndexFiles", true);
+        MockOsgi.activate(service, context.bundleContext(), config);
+
+        IndexCopier indexCopier = service.getIndexCopier();
+        assertTrue(indexCopier.isPrefetchEnabled());
+
+        MockOsgi.deactivate(service);
+    }
+
+    @Test
     public void debugLogging() throws Exception{
         Map<String,Object> config = getDefaultConfig();
         config.put("debug", true);
@@ -104,9 +136,77 @@ public class LuceneIndexProviderServiceTest {
         MockOsgi.deactivate(service);
     }
 
+    @Test
+    public void enableExtractedTextCaching() throws Exception{
+        Map<String,Object> config = getDefaultConfig();
+        config.put("extractedTextCacheSizeInMB", 11);
+        MockOsgi.activate(service, context.bundleContext(), config);
+
+        ExtractedTextCache textCache = service.getExtractedTextCache();
+        assertNotNull(textCache.getCacheStats());
+        assertNotNull(context.getService(CacheStatsMBean.class));
+
+        assertEquals(11 * FileUtils.ONE_MB, textCache.getCacheStats().getMaxTotalWeight());
+
+        MockOsgi.deactivate(service);
+
+        assertNull(context.getService(CacheStatsMBean.class));
+    }
+
+    @Test
+    public void preExtractedTextProvider() throws Exception{
+        MockOsgi.activate(service, context.bundleContext(), getDefaultConfig());
+        LuceneIndexEditorProvider editorProvider =
+                (LuceneIndexEditorProvider) context.getService(IndexEditorProvider.class);
+        assertNull(editorProvider.getExtractedTextCache().getExtractedTextProvider());
+        assertFalse(editorProvider.getExtractedTextCache().isAlwaysUsePreExtractedCache());
+
+        //Mock OSGi does not support components
+        //context.registerService(PreExtractedTextProvider.class, new DummyProvider());
+        service.bindExtractedTextProvider(new DummyProvider());
+
+        assertNotNull(editorProvider.getExtractedTextCache().getExtractedTextProvider());
+    }
+
+    @Test
+    public void preExtractedProviderBindBeforeActivate() throws Exception{
+        service.bindExtractedTextProvider(new DummyProvider());
+        MockOsgi.activate(service, context.bundleContext(), getDefaultConfig());
+        LuceneIndexEditorProvider editorProvider =
+                (LuceneIndexEditorProvider) context.getService(IndexEditorProvider.class);
+        assertNotNull(editorProvider.getExtractedTextCache().getExtractedTextProvider());
+    }
+
+    @Test
+    public void alwaysUsePreExtractedCache() throws Exception{
+        Map<String,Object> config = getDefaultConfig();
+        config.put("alwaysUsePreExtractedCache", "true");
+        MockOsgi.activate(service, context.bundleContext(), config);
+        LuceneIndexEditorProvider editorProvider =
+                (LuceneIndexEditorProvider) context.getService(IndexEditorProvider.class);
+        assertTrue(editorProvider.getExtractedTextCache().isAlwaysUsePreExtractedCache());
+    }
+
+    @Test
+    public void booleanQuerySize() throws Exception{
+        Map<String,Object> config = getDefaultConfig();
+        config.put("booleanClauseLimit", 4000);
+        MockOsgi.activate(service, context.bundleContext(), config);
+
+        assertEquals(4000, BooleanQuery.getMaxClauseCount());
+    }
+
     private Map<String,Object> getDefaultConfig(){
         Map<String,Object> config = new HashMap<String, Object>();
         config.put("localIndexDir", folder.getRoot().getAbsolutePath());
         return config;
+    }
+
+    private static class DummyProvider implements PreExtractedTextProvider {
+
+        @Override
+        public ExtractedText getText(String propertyPath, Blob blob) throws IOException {
+            return null;
+        }
     }
 }

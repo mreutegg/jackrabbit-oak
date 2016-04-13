@@ -22,16 +22,19 @@ import java.security.Principal;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-
+import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-
+import com.google.common.collect.ObjectArrays;
+import com.google.common.collect.Sets;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Tree;
+import org.apache.jackrabbit.oak.plugins.tree.TreeLocation;
 import org.apache.jackrabbit.oak.spi.commit.CommitHook;
 import org.apache.jackrabbit.oak.spi.commit.MoveTracker;
 import org.apache.jackrabbit.oak.spi.commit.ValidatorProvider;
@@ -40,7 +43,7 @@ import org.apache.jackrabbit.oak.spi.lifecycle.CompositeWorkspaceInitializer;
 import org.apache.jackrabbit.oak.spi.lifecycle.RepositoryInitializer;
 import org.apache.jackrabbit.oak.spi.lifecycle.WorkspaceInitializer;
 import org.apache.jackrabbit.oak.spi.xml.ProtectedItemImporter;
-import org.apache.jackrabbit.oak.plugins.tree.TreeLocation;
+import org.osgi.framework.Constants;
 
 /**
  * Abstract base implementation for {@link SecurityConfiguration}s that can
@@ -64,21 +67,40 @@ public abstract class CompositeConfiguration<T extends SecurityConfiguration> im
     private final List<T> configurations = new CopyOnWriteArrayList<T>();
 
     private final String name;
-    private final SecurityProvider securityProvider;
+    private final CompositeContext ctx = new CompositeContext();
+
+    private SecurityProvider securityProvider;
 
     private T defaultConfig;
+
+    public CompositeConfiguration(@Nonnull String name) {
+        this.name = name;
+    }
 
     public CompositeConfiguration(@Nonnull String name, @Nonnull SecurityProvider securityProvider) {
         this.name = name;
         this.securityProvider = securityProvider;
     }
 
+    @CheckForNull
+    public T getDefaultConfig() {
+        return defaultConfig;
+    }
+
     public void setDefaultConfig(@Nonnull T defaultConfig) {
         this.defaultConfig = defaultConfig;
+        ctx.defaultCtx = defaultConfig.getContext();
     }
 
     public void addConfiguration(@Nonnull T configuration) {
+        addConfiguration(configuration, ConfigurationParameters.EMPTY);
+    }
+
+    public void addConfiguration(@Nonnull T configuration, @Nonnull ConfigurationParameters params) {
         int ranking = configuration.getParameters().getConfigValue(PARAM_RANKING, NO_RANKING);
+        if (ranking == NO_RANKING) {
+            ranking = params.getConfigValue(Constants.SERVICE_RANKING, NO_RANKING);
+        }
         if (ranking == NO_RANKING || configurations.isEmpty()) {
             configurations.add(configuration);
         } else {
@@ -93,13 +115,16 @@ public abstract class CompositeConfiguration<T extends SecurityConfiguration> im
             }
             configurations.add(i, configuration);
         }
+        ctx.add(configuration);
     }
 
     public void removeConfiguration(@Nonnull T configuration) {
         configurations.remove(configuration);
+        ctx.refresh(configurations);
     }
 
-    protected List<T> getConfigurations() {
+    @Nonnull
+    public List<T> getConfigurations() {
         if (configurations.isEmpty() && defaultConfig != null) {
             return ImmutableList.of(defaultConfig);
         } else {
@@ -107,7 +132,15 @@ public abstract class CompositeConfiguration<T extends SecurityConfiguration> im
         }
     }
 
+    public void setSecurityProvider(@Nonnull SecurityProvider securityProvider) {
+        this.securityProvider = securityProvider;
+    }
+
+    @Nonnull
     protected SecurityProvider getSecurityProvider() {
+        if (securityProvider == null) {
+            throw new IllegalStateException("SecurityProvider missing => CompositeConfiguration is not ready.");
+        }
         return securityProvider;
     }
 
@@ -187,48 +220,117 @@ public abstract class CompositeConfiguration<T extends SecurityConfiguration> im
     @Nonnull
     @Override
     public Context getContext() {
-        final List<T> configs = getConfigurations();
-        return new Context() {
+        return ctx;
+    }
 
-            @Override
-            public boolean definesProperty(@Nonnull Tree parent, @Nonnull PropertyState property) {
-                for (SecurityConfiguration sc : configs) {
-                    if (sc.getContext().definesProperty(parent, property)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
+    private static final class CompositeContext implements Context {
 
-            @Override
-            public boolean definesContextRoot(@Nonnull Tree tree) {
-                for (SecurityConfiguration sc : configs) {
-                    if (sc.getContext().definesContextRoot(tree)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
+        @Nonnull
+        private Context defaultCtx = DEFAULT;
+        @Nullable
+        private Context[] delegatees = null;
 
-            @Override
-            public boolean definesTree(@Nonnull Tree tree) {
-                for (SecurityConfiguration sc : configs) {
-                    if (sc.getContext().definesTree(tree)) {
-                        return true;
-                    }
+        private void refresh(@Nonnull List<? extends SecurityConfiguration> configurations) {
+            Set<Context> s = Sets.newLinkedHashSetWithExpectedSize(configurations.size());
+            for (Context c : Iterables.transform(configurations, ContextFunction.INSTANCE)) {
+                if (DEFAULT != c) {
+                    s.add(c);
                 }
-                return false;
             }
+            delegatees = (s.isEmpty()) ? null : s.toArray(new Context[s.size()]);
+        }
 
-            @Override
-            public boolean definesLocation(@Nonnull TreeLocation location) {
-                for (SecurityConfiguration sc : configs) {
-                    if (sc.getContext().definesLocation(location)) {
-                        return true;
+        private void add(@Nonnull SecurityConfiguration configuration) {
+            Context c = configuration.getContext();
+            if (DEFAULT != c) {
+                if (delegatees == null) {
+                    delegatees = new Context[] {c};
+                } else {
+                    for (Context ctx : delegatees) {
+                        if (ctx.equals(c)) {
+                            return;
+                        }
                     }
+                    delegatees = ObjectArrays.concat(delegatees, c);
                 }
-                return false;
             }
-        };
+        }
+
+        @Override
+        public boolean definesProperty(@Nonnull Tree parent, @Nonnull PropertyState property) {
+            if (delegatees == null) {
+                return defaultCtx.definesProperty(parent, property);
+            }
+            for (Context ctx : delegatees) {
+                if (ctx.definesProperty(parent, property)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public boolean definesContextRoot(@Nonnull Tree tree) {
+            if (delegatees == null) {
+                return defaultCtx.definesContextRoot(tree);
+            }
+            for (Context ctx : delegatees) {
+                if (ctx.definesContextRoot(tree)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public boolean definesTree(@Nonnull Tree tree) {
+            if (delegatees == null) {
+                return defaultCtx.definesTree(tree);
+            }
+            for (Context ctx : delegatees) {
+                if (ctx.definesTree(tree)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public boolean definesLocation(@Nonnull TreeLocation location) {
+            if (delegatees == null) {
+                return defaultCtx.definesLocation(location);
+            }
+            for (Context ctx : delegatees) {
+                if (ctx.definesLocation(location)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public boolean definesInternal(@Nonnull Tree tree) {
+            if (delegatees == null) {
+                return defaultCtx.definesInternal(tree);
+            }
+            for (Context ctx : delegatees) {
+                if (ctx.definesInternal(tree)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
+    private static final class ContextFunction implements Function<SecurityConfiguration, Context> {
+
+        private static final ContextFunction INSTANCE = new ContextFunction();
+
+        private ContextFunction() {}
+
+        @Override
+        public Context apply(SecurityConfiguration input) {
+            return input.getContext();
+        }
     }
 }

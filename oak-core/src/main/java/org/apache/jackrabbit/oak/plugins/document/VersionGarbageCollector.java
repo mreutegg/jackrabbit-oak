@@ -85,16 +85,17 @@ public class VersionGarbageCollector {
         Stopwatch sw = Stopwatch.createStarted();
         VersionGCStats stats = new VersionGCStats();
         final long oldestRevTimeStamp = nodeStore.getClock().getTime() - maxRevisionAgeInMillis;
-        final Revision headRevision = nodeStore.getHeadRevision();
+        final RevisionVector headRevision = nodeStore.getHeadRevision();
 
-        log.info("Starting revision garbage collection. Revisions older than [{}] would be " +
+        log.info("Starting revision garbage collection. Revisions older than [{}] will be " +
                 "removed", Utils.timestampToString(oldestRevTimeStamp));
 
         //Check for any registered checkpoint which prevent the GC from running
         Revision checkpoint = nodeStore.getCheckpoints().getOldestRevisionToKeep();
         if (checkpoint != null && checkpoint.getTimestamp() < oldestRevTimeStamp) {
-            log.info("Ignoring version gc as valid checkpoint [{}] found while " +
-                            "need to collect versions older than [{}]", checkpoint.toReadableString(),
+            log.info("Ignoring revision garbage collection because a valid " +
+                            "checkpoint [{}] was found, which is older than [{}].",
+                    checkpoint.toReadableString(),
                     Utils.timestampToString(oldestRevTimeStamp)
             );
             stats.ignoredGCDueToCheckPoint = true;
@@ -105,7 +106,7 @@ public class VersionGarbageCollector {
         collectSplitDocuments(stats, oldestRevTimeStamp);
 
         sw.stop();
-        log.info("Version garbage collected in {}. {}", sw, stats);
+        log.info("Revision garbage collection finished in {}. {}", sw, stats);
         return stats;
     }
 
@@ -114,11 +115,13 @@ public class VersionGarbageCollector {
     }
 
     private void collectSplitDocuments(VersionGCStats stats, long oldestRevTimeStamp) {
+        stats.collectAndDeleteSplitDocs.start();
         versionStore.deleteSplitDocuments(GC_TYPES, oldestRevTimeStamp, stats);
+        stats.collectAndDeleteSplitDocs.stop();
     }
 
     private void collectDeletedDocuments(VersionGCStats stats,
-                                         Revision headRevision,
+                                         RevisionVector headRevision,
                                          long oldestRevTimeStamp)
             throws IOException {
         int docsTraversed = 0;
@@ -166,7 +169,7 @@ public class VersionGarbageCollector {
         int intermediateSplitDocGCCount;
         final Stopwatch collectDeletedDocs = Stopwatch.createUnstarted();
         final Stopwatch deleteDeletedDocs = Stopwatch.createUnstarted();
-
+        final Stopwatch collectAndDeleteSplitDocs = Stopwatch.createUnstarted();
 
         @Override
         public String toString() {
@@ -176,7 +179,8 @@ public class VersionGarbageCollector {
                     ", splitDocGCCount=" + splitDocGCCount +
                     ", intermediateSplitDocGCCount=" + intermediateSplitDocGCCount +
                     ", timeToCollectDeletedDocs=" + collectDeletedDocs +
-                    ", timeTakenToDeleteDocs=" + deleteDeletedDocs +
+                    ", timeTakenToDeleteDeletedDocs=" + deleteDeletedDocs +
+                    ", timeTakenToCollectAndDeleteSplitDocs=" + collectAndDeleteSplitDocs +
                     '}';
         }
     }
@@ -186,13 +190,13 @@ public class VersionGarbageCollector {
      */
     private class DeletedDocsGC implements Closeable {
 
-        private final Revision headRevision;
+        private final RevisionVector headRevision;
         private final StringSort docIdsToDelete = newStringSort();
         private final StringSort prevDocIdsToDelete = newStringSort();
         private final Set<String> exclude = Sets.newHashSet();
         private boolean sorted = false;
 
-        public DeletedDocsGC(@Nonnull Revision headRevision) {
+        public DeletedDocsGC(@Nonnull RevisionVector headRevision) {
             this.headRevision = checkNotNull(headRevision);
         }
 

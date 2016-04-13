@@ -22,17 +22,20 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
 import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
 import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
+import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.junit.Before;
-import org.junit.Ignore;
+import org.junit.Rule;
 import org.junit.Test;
 
 import com.google.common.collect.ImmutableMap;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
@@ -40,6 +43,9 @@ import static org.junit.Assert.assertTrue;
 
 public class CheckpointsTest {
 
+    @Rule
+    public DocumentMKBuilderProvider builderProvider = new DocumentMKBuilderProvider();
+    
     private Clock clock;
 
     private DocumentNodeStore store;
@@ -47,7 +53,7 @@ public class CheckpointsTest {
     @Before
     public void setUp() throws InterruptedException {
         clock = new Clock.Virtual();
-        store = new DocumentMK.Builder().clock(clock).getNodeStore();
+        store = builderProvider.newBuilder().clock(clock).getNodeStore();
     }
 
     @Test
@@ -67,7 +73,7 @@ public class CheckpointsTest {
         Revision r1 = null;
         for(int i = 0; i < Checkpoints.CLEANUP_INTERVAL; i++){
             r1 = Revision.fromString(store.checkpoint(expiryTime));
-            store.setHeadRevision(Revision.newRevision(0));
+            store.setRoot(new RevisionVector(Revision.newRevision(store.getClusterId())));
         }
         assertEquals(r1, store.getCheckpoints().getOldestRevisionToKeep());
         assertEquals(Checkpoints.CLEANUP_INTERVAL, store.getCheckpoints().size());
@@ -81,7 +87,6 @@ public class CheckpointsTest {
         assertEquals(1, store.getCheckpoints().size());
     }
 
-    @Ignore("OAK-1648")
     @Test
     public void multipleCheckpointOnSameRevision() throws Exception{
         long e1 = TimeUnit.HOURS.toMillis(1);
@@ -92,14 +97,15 @@ public class CheckpointsTest {
         Revision r2 = Revision.fromString(store.checkpoint(e2));
         Revision r1 = Revision.fromString(store.checkpoint(e1));
 
-        //Head revision has not changed so revision must be same
-        assertEquals(r1,r2);
-
         clock.waitUntil(clock.getTime() + e1 + 1);
 
         //The older checkpoint was for greater duration so checkpoint
         //must not be GC
-        assertEquals(r1, store.getCheckpoints().getOldestRevisionToKeep());
+        assertEquals(r2, store.getCheckpoints().getOldestRevisionToKeep());
+        // after getOldestRevisionToKeep() only one must be remaining
+        assertEquals(1, store.getCheckpoints().size());
+        assertNull(store.retrieve(r1.toString()));
+        assertNotNull(store.retrieve(r2.toString()));
     }
 
     @Test
@@ -200,5 +206,179 @@ public class CheckpointsTest {
         Map<String, String> info = store.checkpointInfo(r.toString());
         assertNotNull(info);
         assertEquals(props, info);
+    }
+
+    @Test
+    public void parseInfo() {
+        long expires = System.currentTimeMillis();
+        // initial 1.0 format: only expiry time
+        Checkpoints.Info info = Checkpoints.Info.fromString(String.valueOf(expires));
+        assertEquals(expires, info.getExpiryTime());
+        // 1.2 format: json with expiry and info map
+        String infoString = "{\"expires\":\"" + expires + "\",\"foo\":\"bar\"}";
+        info = Checkpoints.Info.fromString(infoString);
+        assertEquals(expires, info.getExpiryTime());
+        assertEquals(Collections.singleton("foo"), info.get().keySet());
+        assertEquals("bar", info.get().get("foo"));
+        // 1.4 format: json with expiry, revision vector and info map
+        Revision r1 = new Revision(1, 0, 1);
+        Revision r2 = new Revision(1, 0, 2);
+        RevisionVector rv = new RevisionVector(r1, r2);
+        infoString = "{\"expires\":\"" + expires +
+                "\",\"rv\":\"" + rv.toString() +
+                "\",\"foo\":\"bar\"}";
+        info = Checkpoints.Info.fromString(infoString);
+        assertEquals(expires, info.getExpiryTime());
+        assertEquals(Collections.singleton("foo"), info.get().keySet());
+        assertEquals("bar", info.get().get("foo"));
+        assertEquals(rv, info.getCheckpoint());
+        assertEquals(infoString, info.toString());
+    }
+
+    @Test
+    public void crossClusterNodeCheckpoint() throws Exception {
+        // use an async delay to ensure DocumentNodeStore.suspendUntil() works
+        // but set it to a high value and control background ops manually in
+        // this test
+        final int asyncDelay = (int) TimeUnit.MINUTES.toMillis(1);
+        DocumentStore store = new MemoryDocumentStore();
+        final DocumentNodeStore ns1 = builderProvider.newBuilder().setClusterId(1)
+                .setDocumentStore(store).setAsyncDelay(asyncDelay).getNodeStore();
+        final DocumentNodeStore ns2 = builderProvider.newBuilder().setClusterId(2)
+                .setDocumentStore(store).setAsyncDelay(asyncDelay).getNodeStore();
+
+        // create node on ns1
+        NodeBuilder builder = ns1.getRoot().builder();
+        builder.child("foo");
+        ns1.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+        // make visible on ns2
+        ns1.runBackgroundOperations();
+        ns2.runBackgroundOperations();
+        // create checkpoint on ns1
+        String cp1 = ns1.checkpoint(Long.MAX_VALUE);
+        // retrieve checkpoint on ns2
+        NodeState root = ns2.retrieve(cp1);
+        assertNotNull(root);
+        assertTrue(root.hasChildNode("foo"));
+        ns2.release(cp1);
+
+        // create node on ns1
+        builder = ns1.getRoot().builder();
+        builder.child("bar");
+        ns1.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+        // create checkpoint when 'bar' is not yet visible to ns2
+        final String cp2 = ns1.checkpoint(Long.MAX_VALUE);
+        // retrieve checkpoint on ns2
+        final NodeState state[] = new NodeState[1];
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                state[0] = ns2.retrieve(cp2);
+            }
+        });
+        t.start();
+        ns1.runBackgroundOperations();
+        ns2.runBackgroundOperations();
+        t.join();
+        assertNotNull(state[0]);
+        assertTrue(state[0].hasChildNode("bar"));
+    }
+
+    @Test
+    public void crossClusterCheckpointNewClusterNode() throws Exception {
+        DocumentStore store = new MemoryDocumentStore();
+        DocumentNodeStore ns1 = builderProvider.newBuilder().setClusterId(1)
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+
+        // create 'foo' on ns1
+        NodeBuilder b1 = ns1.getRoot().builder();
+        b1.child("foo");
+        ns1.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        // checkpoint sees 'foo' but not 'bar'
+        String checkpoint = ns1.checkpoint(Long.MAX_VALUE);
+
+        // create 'bar' on ns1
+        b1 = ns1.getRoot().builder();
+        b1.child("bar");
+        ns1.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        // make visible
+        ns1.runBackgroundOperations();
+
+        // now start second node store
+        DocumentNodeStore ns2 = builderProvider.newBuilder().setClusterId(2)
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+        NodeBuilder b2 = ns2.getRoot().builder();
+        b2.child("baz");
+        ns2.merge(b2, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        NodeState root = ns2.retrieve(checkpoint);
+        assertNotNull(root);
+        assertTrue(root.hasChildNode("foo"));
+        assertFalse(root.hasChildNode("bar"));
+        assertFalse(root.hasChildNode("baz"));
+    }
+
+    @Test
+    public void crossClusterReadOldCheckpoint() throws Exception {
+        DocumentStore store = new MemoryDocumentStore();
+        DocumentNodeStore ns1 = builderProvider.newBuilder().setClusterId(1)
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+
+        NodeBuilder b1 = ns1.getRoot().builder();
+        b1.child("foo");
+        ns1.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+        ns1.runBackgroundOperations();
+
+        // manually create a check point in 1.2 format
+        Revision headRev = Revision.fromString(ns1.getHeadRevision().toString());
+        long expires = Long.MAX_VALUE;
+        String data = "{\"expires\":\"" + expires + "\"}";
+        UpdateOp update = new UpdateOp("checkpoint", false);
+        update.setMapEntry("data", headRev, data);
+        store.createOrUpdate(Collection.SETTINGS, update);
+
+        // now start second node store
+        DocumentNodeStore ns2 = builderProvider.newBuilder().setClusterId(2)
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+        NodeBuilder b2 = ns2.getRoot().builder();
+        b2.child("baz");
+        ns2.merge(b2, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        NodeState root = ns2.retrieve(headRev.toString());
+        assertNotNull(root);
+        assertTrue(root.hasChildNode("foo"));
+        assertFalse(root.hasChildNode("baz"));
+    }
+
+    @Test
+    public void sameClusterReadOldCheckpoint() throws Exception {
+        DocumentStore store = new MemoryDocumentStore();
+        DocumentNodeStore ns1 = builderProvider.newBuilder().setClusterId(1)
+                .setDocumentStore(store).setAsyncDelay(0).getNodeStore();
+
+        NodeBuilder b1 = ns1.getRoot().builder();
+        b1.child("foo");
+        ns1.merge(b1, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+        ns1.runBackgroundOperations();
+
+        // manually create a check point in 1.2 format
+        Revision headRev = Revision.fromString(ns1.getHeadRevision().toString());
+        long expires = Long.MAX_VALUE;
+        String data = "{\"expires\":\"" + expires + "\"}";
+        UpdateOp update = new UpdateOp("checkpoint", false);
+        update.setMapEntry("data", headRev, data);
+        store.createOrUpdate(Collection.SETTINGS, update);
+
+        // create another node
+        NodeBuilder b2 = ns1.getRoot().builder();
+        b2.child("bar");
+        ns1.merge(b2, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+
+        NodeState root = ns1.retrieve(headRev.toString());
+        assertNotNull(root);
+        assertTrue(root.hasChildNode("foo"));
+        assertFalse(root.hasChildNode("bar"));
     }
 }

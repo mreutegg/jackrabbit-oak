@@ -27,14 +27,13 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.util.Random;
 
+import com.google.common.cache.Cache;
 import org.apache.commons.io.FileUtils;
 import org.apache.jackrabbit.oak.cache.CacheLIRS;
-import org.apache.jackrabbit.oak.plugins.document.util.StringValue;
-
-import com.google.common.cache.Cache;
-
 import org.apache.jackrabbit.oak.plugins.document.PathRev;
 import org.apache.jackrabbit.oak.plugins.document.Revision;
+import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
+import org.apache.jackrabbit.oak.plugins.document.util.StringValue;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.blob.MemoryBlobStore;
 import org.junit.Test;
@@ -49,7 +48,7 @@ public class CacheTest {
         out.write("corrupt".getBytes());
         out.close();
         PersistentCache pCache = new PersistentCache("target/cacheTest");
-        CacheLIRS<PathRev, StringValue> cache = new CacheLIRS.Builder().
+        CacheLIRS<PathRev, StringValue> cache = new CacheLIRS.Builder<PathRev, StringValue>().
                 maximumSize(1).build();
         Cache<PathRev, StringValue> map = pCache.wrap(null,  null,  cache, CacheType.DIFF);
         String largeString = new String(new char[1024 * 1024]);
@@ -59,7 +58,7 @@ public class CacheTest {
                 Thread.yield();
             }
             for (int i = 0; i < 100; i++) {
-                PathRev k = new PathRev("/" + counter, new Revision(0, 0, i));
+                PathRev k = new PathRev("/" + counter, new RevisionVector(new Revision(0, 0, i)));
                 map.getIfPresent(k);
                 map.put(k, new StringValue(largeString));
             }

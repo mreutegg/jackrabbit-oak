@@ -168,6 +168,9 @@ class UserAuthentication implements Authentication, UserConstants {
                             + newPasswordObject.getClass().getName());
                 }
             }
+        } catch (PasswordHistoryException e) {
+            credentials.setAttribute(e.getClass().getSimpleName(), e.getMessage());
+            log.error("Failed to change password for user " + userId, e.getMessage());
         } catch (RepositoryException e) {
             log.error("Failed to change password for user " + userId, e.getMessage());
         } catch (CommitFailedException e) {
@@ -188,7 +191,7 @@ class UserAuthentication implements Authentication, UserConstants {
                 return user.getImpersonation().allows(subject);
             }
         } catch (RepositoryException e) {
-            log.debug("Error while validating impersonation", e.getMessage());
+            log.debug("Error while validating impersonation: {}", e.getMessage());
         }
         return false;
     }

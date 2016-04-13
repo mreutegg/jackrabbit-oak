@@ -33,15 +33,41 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
+
 import org.apache.commons.io.FileUtils;
 import org.apache.jackrabbit.oak.benchmark.CSVResultGenerator;
 import org.apache.jackrabbit.oak.benchmark.util.Date;
 import org.apache.jackrabbit.oak.fixture.JackrabbitRepositoryFixture;
 import org.apache.jackrabbit.oak.fixture.OakRepositoryFixture;
 import org.apache.jackrabbit.oak.fixture.RepositoryFixture;
+import org.apache.jackrabbit.oak.scalability.benchmarks.AggregateNodeSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.ConcurrentReader;
+import org.apache.jackrabbit.oak.scalability.benchmarks.ConcurrentWriter;
+import org.apache.jackrabbit.oak.scalability.benchmarks.FacetSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.FormatSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.FullTextSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.LastModifiedSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.MultiFilterOrderByKeysetPageSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.MultiFilterOrderByOffsetPageSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.MultiFilterOrderBySearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.MultiFilterSplitOrderByKeysetPageSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.MultiFilterSplitOrderByOffsetPageSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.MultiFilterSplitOrderBySearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.NodeTypeSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.OrderByDate;
+import org.apache.jackrabbit.oak.scalability.benchmarks.OrderByKeysetPageSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.OrderByOffsetPageSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.OrderBySearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.SplitOrderByKeysetPageSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.SplitOrderByOffsetPageSearcher;
+import org.apache.jackrabbit.oak.scalability.benchmarks.SplitOrderBySearcher;
+import org.apache.jackrabbit.oak.scalability.suites.ScalabilityBlobSearchSuite;
+import org.apache.jackrabbit.oak.scalability.suites.ScalabilityNodeRelationshipSuite;
+import org.apache.jackrabbit.oak.scalability.suites.ScalabilityNodeSuite;
 
 /**
  * Main class for running scalability/longevity tests.
@@ -66,6 +92,14 @@ public class ScalabilityRunner {
                 parser.accepts("dropDBAfterTest",
                         "Whether to drop the MongoDB database after the test")
                         .withOptionalArg().ofType(Boolean.class).defaultsTo(true);
+        OptionSpec<String> rdbjdbcuri = parser.accepts("rdbjdbcuri", "RDB JDBC URI")
+            .withOptionalArg().defaultsTo("jdbc:h2:./target/benchmark");
+        OptionSpec<String> rdbjdbcuser = parser.accepts("rdbjdbcuser", "RDB JDBC user")
+            .withOptionalArg().defaultsTo("");
+        OptionSpec<String> rdbjdbcpasswd = parser.accepts("rdbjdbcpasswd", "RDB JDBC password")
+            .withOptionalArg().defaultsTo("");
+        OptionSpec<String> rdbjdbctableprefix = parser.accepts("rdbjdbctableprefix", "RDB JDBC table prefix")
+            .withOptionalArg().defaultsTo("");
         OptionSpec<Boolean> mmap = parser.accepts("mmap", "TarMK memory mapping")
                 .withOptionalArg().ofType(Boolean.class)
                 .defaultsTo("64".equals(System.getProperty("sun.arch.data.model")));
@@ -94,23 +128,30 @@ public class ScalabilityRunner {
                 new JackrabbitRepositoryFixture(base.value(options), cacheSize),
                 OakRepositoryFixture.getMemoryNS(cacheSize * MB),
                 OakRepositoryFixture.getMongo(
-                        host.value(options), port.value(options),
-                        dbName.value(options), dropDBAfterTest.value(options),
-                        cacheSize * MB),
+                    host.value(options), port.value(options),
+                    dbName.value(options), dropDBAfterTest.value(options),
+                    cacheSize * MB),
                 OakRepositoryFixture.getMongoWithFDS(
-                        host.value(options), port.value(options),
-                        dbName.value(options), dropDBAfterTest.value(options),
-                        cacheSize * MB,
-                        base.value(options),
-                        fdsCache.value(options)),
+                    host.value(options), port.value(options),
+                    dbName.value(options), dropDBAfterTest.value(options),
+                    cacheSize * MB,
+                    base.value(options),
+                    fdsCache.value(options)),
                 OakRepositoryFixture.getMongoNS(
-                        host.value(options), port.value(options),
-                        dbName.value(options), dropDBAfterTest.value(options),
-                        cacheSize * MB),
+                    host.value(options), port.value(options),
+                    dbName.value(options), dropDBAfterTest.value(options),
+                    cacheSize * MB),
                 OakRepositoryFixture.getTar(
-                        base.value(options), 256, cacheSize, mmap.value(options)),
+                    base.value(options), 256, cacheSize, mmap.value(options)),
                 OakRepositoryFixture.getTarWithBlobStore(
-                        base.value(options), 256, cacheSize, mmap.value(options))
+                    base.value(options), 256, cacheSize, mmap.value(options)),
+                OakRepositoryFixture.getRDB(rdbjdbcuri.value(options), rdbjdbcuser.value(options),
+                    rdbjdbcpasswd.value(options), rdbjdbctableprefix.value(options),
+                    dropDBAfterTest.value(options), cacheSize * MB),
+                OakRepositoryFixture.getRDBWithFDS(rdbjdbcuri.value(options), rdbjdbcuser.value(options),
+                    rdbjdbcpasswd.value(options), rdbjdbctableprefix.value(options),
+                    dropDBAfterTest.value(options), cacheSize * MB, base.value(options),
+                    fdsCache.value(options))
         };
         ScalabilitySuite[] allSuites =
                 new ScalabilitySuite[] {
@@ -118,6 +159,7 @@ public class ScalabilityRunner {
                                 .addBenchmarks(new FullTextSearcher(),
                                         new NodeTypeSearcher(),
                                         new FormatSearcher(),
+                                        new FacetSearcher(),
                                         new LastModifiedSearcher(Date.LAST_2_HRS),
                                         new LastModifiedSearcher(Date.LAST_24_HRS),
                                         new LastModifiedSearcher(Date.LAST_7_DAYS),
@@ -136,7 +178,9 @@ public class ScalabilityRunner {
                                         new MultiFilterOrderByOffsetPageSearcher(),
                                         new MultiFilterSplitOrderByOffsetPageSearcher(),
                                         new MultiFilterOrderByKeysetPageSearcher(),
-                                        new MultiFilterSplitOrderByKeysetPageSearcher()),
+                                        new MultiFilterSplitOrderByKeysetPageSearcher(),
+                                        new ConcurrentReader(),
+                                        new ConcurrentWriter()),
                         new ScalabilityNodeRelationshipSuite(withStorage.value(options))
                                 .addBenchmarks(new AggregateNodeSearcher())
                 };

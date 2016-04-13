@@ -18,14 +18,12 @@
  */
 package org.apache.jackrabbit.oak.plugins.segment.standby;
 
-import static org.apache.jackrabbit.oak.plugins.segment.SegmentTestUtils.createTmpTargetDir;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
 import java.io.IOException;
 import java.util.Random;
 
@@ -66,13 +64,13 @@ public class StandbyTest extends TestBase {
         FileStore primary = getPrimary();
         FileStore secondary = getSecondary();
 
-        NodeStore store = new SegmentNodeStore(primary);
-        final StandbyServer server = new StandbyServer(getPort(), primary);
+        NodeStore store = SegmentNodeStore.builder(primary).build();
+        final StandbyServer server = new StandbyServer(port, primary);
         server.start();
         byte[] data = addTestContent(store, "server", blobSize, 150);
         primary.flush();
 
-        StandbyClient cl = new StandbyClient("127.0.0.1", getPort(), secondary);
+        StandbyClient cl = newStandbyClient(secondary);
         cl.run();
 
         try {
@@ -119,19 +117,4 @@ public class StandbyTest extends TestBase {
         store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
         return data;
     }
-
-    public static void main(String[] args) throws Exception {
-        File d = createTmpTargetDir("StandbyLiveTest");
-        d.delete();
-        d.mkdir();
-        FileStore s = new FileStore(d, 256, false);
-        StandbyClient cl = new StandbyClient("127.0.0.1", 8023, s);
-        try {
-            cl.run();
-        } finally {
-            s.close();
-            cl.close();
-        }
-    }
-
 }

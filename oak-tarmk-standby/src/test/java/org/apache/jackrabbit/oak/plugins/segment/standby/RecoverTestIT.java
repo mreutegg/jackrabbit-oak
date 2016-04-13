@@ -47,14 +47,16 @@ public class RecoverTestIT extends TestBase {
     @Test
     public void testBrokenConnection() throws Exception {
 
-        NodeStore store = new SegmentNodeStore(storeS);
+        NodeStore store = SegmentNodeStore.builder(storeS).build();
         DebugSegmentStore s = new DebugSegmentStore(storeS);
+        addTestContent(store, "server");
+        storeS.flush();
+
         final StandbyServer server = new StandbyServer(port, s);
         s.createReadErrors = true;
         server.start();
-        addTestContent(store, "server");
 
-        StandbyClient cl = new StandbyClient("127.0.0.1", port, storeC);
+        StandbyClient cl = newStandbyClient(storeC);
         cl.run();
 
         try {
@@ -72,16 +74,16 @@ public class RecoverTestIT extends TestBase {
     @Test
     public void testLocalChanges() throws Exception {
 
-        NodeStore store = new SegmentNodeStore(storeC);
+        NodeStore store = SegmentNodeStore.builder(storeC).build();
         addTestContent(store, "client");
 
         final StandbyServer server = new StandbyServer(port, storeS);
         server.start();
-        store = new SegmentNodeStore(storeS);
+        store = SegmentNodeStore.builder(storeS).build();
         addTestContent(store, "server");
         storeS.flush();
 
-        StandbyClient cl = new StandbyClient("127.0.0.1", port, storeC);
+        StandbyClient cl = newStandbyClient(storeC);
         try {
             assertFalse("stores are not expected to be equal", storeS.getHead().equals(storeC.getHead()));
             cl.run();

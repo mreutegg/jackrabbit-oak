@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.oak.plugins.document.util;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -256,6 +257,25 @@ public class TimingDocumentStoreWrapper implements DocumentStore {
     }
 
     @Override
+    public <T extends Document> List<T> createOrUpdate(Collection<T> collection, List<UpdateOp> updateOps) {
+        try {
+            long start = now();
+            List<T> result = base.createOrUpdate(collection, updateOps);
+            updateAndLogTimes("createOrUpdate", start, 0, size(result));
+            if (logCommonCall()) {
+                List<String> ids = new ArrayList<String>();
+                for (UpdateOp op : updateOps) {
+                    ids.add(op.getId());
+                }
+                logCommonCall(start, "createOrUpdate " + collection + " " + updateOps + " " + ids);
+            }
+            return result;
+        } catch (Exception e) {
+            throw convert(e);
+        }
+    }
+
+    @Override
     @CheckForNull
     public <T extends Document> T findAndUpdate(Collection<T> collection, UpdateOp update) {
         try {
@@ -277,6 +297,18 @@ public class TimingDocumentStoreWrapper implements DocumentStore {
             long start = now();
             CacheInvalidationStats result = base.invalidateCache();
             updateAndLogTimes("invalidateCache", start, 0, 0);
+            return result;
+        } catch (Exception e) {
+            throw convert(e);
+        }
+    }
+    
+    @Override
+    public CacheInvalidationStats invalidateCache(Iterable<String> keys) {
+        try {
+            long start = now();
+            CacheInvalidationStats result = base.invalidateCache(keys);
+            updateAndLogTimes("invalidateCache3", start, 0, 0);
             return result;
         } catch (Exception e) {
             throw convert(e);
@@ -330,10 +362,10 @@ public class TimingDocumentStoreWrapper implements DocumentStore {
 
 
     @Override
-    public CacheStats getCacheStats() {
+    public Iterable<CacheStats> getCacheStats() {
         try {
             long start = now();
-            CacheStats result = base.getCacheStats();
+            Iterable<CacheStats> result = base.getCacheStats();
             updateAndLogTimes("getCacheStats", start, 0, 0);
             return result;
         } catch (Exception e) {
@@ -344,6 +376,18 @@ public class TimingDocumentStoreWrapper implements DocumentStore {
     @Override
     public Map<String, String> getMetadata() {
         return base.getMetadata();
+    }
+
+    @Override
+    public long determineServerTimeDifferenceMillis() {
+        try {
+            long start = now();
+            long result = base.determineServerTimeDifferenceMillis();
+            updateAndLogTimes("determineServerTimeDifferenceMillis", start, 0, 0);
+            return result;
+        } catch (Exception e) {
+            throw convert(e);
+        }
     }
 
     private void logCommonCall(long start, String key) {
@@ -389,7 +433,7 @@ public class TimingDocumentStoreWrapper implements DocumentStore {
     private static <T extends Document> int size(List<T> list) {
         int result = 0;
         for (T doc : list) {
-            result += doc.getMemory();
+            result += size(doc);
         }
         return result;
     }

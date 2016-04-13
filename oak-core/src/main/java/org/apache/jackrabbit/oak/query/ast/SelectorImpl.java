@@ -41,6 +41,7 @@ import javax.annotation.Nonnull;
 
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.PropertyValue;
+import org.apache.jackrabbit.oak.api.Result.SizePrecision;
 import org.apache.jackrabbit.oak.api.Tree;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.commons.PathUtils;
@@ -190,6 +191,10 @@ public class SelectorImpl extends SourceImpl {
 
     public String getSelectorName() {
         return selectorName;
+    }
+
+    public String getNodeType() {
+        return nodeTypeName;
     }
 
     public boolean matchesAllTypes() {
@@ -351,6 +356,25 @@ public class SelectorImpl extends SourceImpl {
         return buff.toString();
     }
 
+    @Override
+    public String getIndexCostInfo(NodeState rootState) {
+        StringBuilder buff = new StringBuilder();
+        buff.append(quoteJson(selectorName)).append(": ");
+        QueryIndex index = getIndex();
+        if (index != null) {
+            if (index instanceof AdvancedQueryIndex) {
+                IndexPlan p = plan.getIndexPlan();
+                buff.append("{ perEntry: ").append(p.getCostPerEntry());
+                buff.append(", perExecution: ").append(p.getCostPerExecution());
+                buff.append(", count: ").append(p.getEstimatedEntryCount());
+                buff.append(" }");
+            } else {
+                buff.append(index.getCost(createFilter(true), rootState));
+            }
+        }
+        return buff.toString();
+    }
+
     /**
      * Create the filter condition for planning or execution.
      * 
@@ -369,8 +393,11 @@ public class SelectorImpl extends SourceImpl {
         // we will need the excerpt
         for (ColumnImpl c : query.getColumns()) {
             if (c.getSelector().equals(this)) {
-                if (c.getColumnName().equals("rep:excerpt")) {
-                    f.restrictProperty("rep:excerpt", Operator.NOT_EQUAL, null);
+                String columnName = c.getColumnName();
+                if (columnName.equals(QueryImpl.REP_EXCERPT) || columnName.equals(QueryImpl.OAK_SCORE_EXPLANATION)) {
+                    f.restrictProperty(columnName, Operator.NOT_EQUAL, null);
+                } else if (columnName.startsWith(QueryImpl.REP_FACET)) {
+                    f.restrictProperty(QueryImpl.REP_FACET, Operator.EQUAL, PropertyValues.newString(columnName));
                 }
             }
         }
@@ -411,6 +438,9 @@ public class SelectorImpl extends SourceImpl {
                 // where [b].[jcr:path] = $path"
                 // because if we did, we would filter out
                 // correct results
+            } else if (currentRow.isVirtualRow()) {
+                // this is a virtual row and should be selected as is
+                return true;
             } else {
                 // we must check whether the _child_ is readable
                 // (even if no properties are read) for joins of type
@@ -436,6 +466,10 @@ public class SelectorImpl extends SourceImpl {
     }
 
     private boolean evaluateCurrentRow() {
+        if (currentRow.isVirtualRow()) {
+            //null path implies that all checks are already done -- we just need to pass it through
+            return true;
+        }
         if (!matchesAllTypes && !evaluateTypeMatch()) {
             return false;
         }
@@ -619,7 +653,7 @@ public class SelectorImpl extends SourceImpl {
     
     private PropertyValue currentOakProperty(Tree t, String oakPropertyName, Integer propertyType) {
         PropertyValue result;
-        if (t == null || !t.exists()) {
+        if ((t == null || !t.exists()) && (currentRow == null || !currentRow.isVirtualRow())) {
             return null;
         }
         if (oakPropertyName.equals(QueryImpl.JCR_PATH)) {
@@ -634,10 +668,14 @@ public class SelectorImpl extends SourceImpl {
             result = currentRow.getValue(QueryImpl.JCR_SCORE);
         } else if (oakPropertyName.equals(QueryImpl.REP_EXCERPT)) {
             result = currentRow.getValue(QueryImpl.REP_EXCERPT);
+        } else if (oakPropertyName.equals(QueryImpl.OAK_SCORE_EXPLANATION)) {
+            result = currentRow.getValue(QueryImpl.OAK_SCORE_EXPLANATION);
         } else if (oakPropertyName.equals(QueryImpl.REP_SPELLCHECK)) {
             result = currentRow.getValue(QueryImpl.REP_SPELLCHECK);
         } else if (oakPropertyName.equals(QueryImpl.REP_SUGGEST)) {
             result = currentRow.getValue(QueryImpl.REP_SUGGEST);
+        } else if (oakPropertyName.startsWith(QueryImpl.REP_FACET)) {
+            result = currentRow.getValue(oakPropertyName);
         } else {
             result = PropertyValues.create(t.getProperty(oakPropertyName));
         }
@@ -697,6 +735,10 @@ public class SelectorImpl extends SourceImpl {
         }
     }
 
+    public boolean isVirtualRow() {
+        return currentRow != null && currentRow.isVirtualRow();
+    }
+
     @Override
     public SelectorImpl getSelector(String selectorName) {
         if (selectorName.equals(this.selectorName)) {
@@ -721,7 +763,7 @@ public class SelectorImpl extends SourceImpl {
     public boolean equals(Object other) {
         if (this == other) {
             return true;
-        } else if (!(this instanceof SelectorImpl)) {
+        } else if (!(other instanceof SelectorImpl)) {
             return false;
         }
         return selectorName.equals(((SelectorImpl) other).selectorName);
@@ -752,4 +794,16 @@ public class SelectorImpl extends SourceImpl {
         return query;
     }
 
+    @Override
+    public long getSize(SizePrecision precision, long max) {
+        if (cursor == null) {
+            return -1;
+        }
+        return cursor.getSize(precision, max);
+    }
+
+    @Override
+    public SourceImpl copyOf() {
+        return new SelectorImpl(nodeType, selectorName);
+    }
 }

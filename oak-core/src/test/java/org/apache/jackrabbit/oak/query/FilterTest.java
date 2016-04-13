@@ -17,11 +17,12 @@
 
 package org.apache.jackrabbit.oak.query;
 
-import static junit.framework.Assert.assertFalse;
 import static org.apache.jackrabbit.JcrConstants.JCR_SYSTEM;
 import static org.apache.jackrabbit.oak.plugins.nodetype.NodeTypeConstants.JCR_NODE_TYPES;
 import static org.apache.jackrabbit.oak.plugins.nodetype.write.InitialContent.INITIAL_CONTENT;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 
 import java.text.ParseException;
 
@@ -29,6 +30,7 @@ import org.apache.jackrabbit.oak.namepath.NamePathMapper;
 import org.apache.jackrabbit.oak.query.xpath.XPathToSQL2Converter;
 import org.apache.jackrabbit.oak.spi.query.Filter;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -45,6 +47,23 @@ public class FilterTest {
         String sql = new XPathToSQL2Converter().convert(xpath);
         QueryImpl q = (QueryImpl) p.parse(sql);
         return q.createFilter(true);
+    }
+    
+    private Filter createFilterSQL(String sql) throws ParseException {
+        QueryImpl q = (QueryImpl) p.parse(sql);
+        return q.createFilter(true);
+    }
+    
+    @Test
+    public void localName() throws Exception {
+        Filter f = createFilterSQL("select * from [nt:base] where localname() = 'resource'");
+        assertEquals("[resource]", f.getPropertyRestrictions(":localname").toString());
+    }
+    
+    @Test
+    public void name() throws Exception {
+        Filter f = createFilter("//*[fn:name() = 'nt:resource']");
+        assertEquals("[resource]", f.getPropertyRestrictions(":localname").toString());
     }
 
     @Test
@@ -68,4 +87,10 @@ public class FilterTest {
         assertEquals("[is not null]", f.getPropertyRestrictions("c").toString());
     }
 
+    @Ignore("OAK-4170")
+    @Test
+    public void fulltext() throws Exception {
+        Filter f = createFilterSQL("select * from [nt:unstructured] where CONTAINS([jcr:content/metadata/comment], 'december')");
+        assertNotNull(f.getPropertyRestriction("jcr:content/metadata/comment"));
+    }
 }

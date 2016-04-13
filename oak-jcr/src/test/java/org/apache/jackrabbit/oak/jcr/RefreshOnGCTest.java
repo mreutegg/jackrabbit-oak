@@ -21,11 +21,11 @@ package org.apache.jackrabbit.oak.jcr;
 
 import static java.io.File.createTempFile;
 import static org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy.CleanupType.CLEAN_NONE;
-import static org.apache.jackrabbit.oak.plugins.segment.file.FileStore.newFileStore;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
@@ -37,6 +37,7 @@ import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.jackrabbit.api.JackrabbitRepository;
 import org.apache.jackrabbit.oak.Oak;
 import org.apache.jackrabbit.oak.spi.gc.GCMonitorTracker;
@@ -49,11 +50,25 @@ import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.junit.runners.Parameterized;
 
+@RunWith(Parameterized.class)
 public class RefreshOnGCTest {
+    private final boolean usePersistedMap;
+
     private FileStore fileStore;
     private Repository repository;
     private GCMonitorTracker gcMonitor;
+
+    @Parameterized.Parameters
+    public static List<Boolean[]> fixtures() {
+        return ImmutableList.of(new Boolean[] {true}, new Boolean[] {false});
+    }
+
+    public RefreshOnGCTest(boolean usePersistedMap) {
+        this.usePersistedMap = usePersistedMap;
+    }
 
     @Before
     public void setup() throws IOException {
@@ -64,19 +79,21 @@ public class RefreshOnGCTest {
         Whiteboard whiteboard = new DefaultWhiteboard();
         gcMonitor = new GCMonitorTracker();
         gcMonitor.start(whiteboard);
-        fileStore = newFileStore(directory)
+        CompactionStrategy strategy = new CompactionStrategy(
+                false, false, CLEAN_NONE, 0, CompactionStrategy.MEMORY_THRESHOLD_DEFAULT) {
+            @Override
+            public boolean compacted(@Nonnull Callable<Boolean> setHead) throws Exception {
+                setHead.call();
+                return true;
+            }
+        };
+        strategy.setPersistCompactionMap(usePersistedMap);
+        fileStore = FileStore.builder(directory)
                 .withGCMonitor(gcMonitor)
-                .create()
-                .setCompactionStrategy(new CompactionStrategy(
-                        false, false, CLEAN_NONE, 0, CompactionStrategy.MEMORY_THRESHOLD_DEFAULT) {
-                    @Override
-                    public boolean compacted(@Nonnull Callable<Boolean> setHead) throws Exception {
-                        setHead.call();
-                        return true;
-                    }
-                });
+                .build()
+                .setCompactionStrategy(strategy);
 
-        NodeStore nodeStore = new SegmentNodeStore(fileStore);
+        NodeStore nodeStore = SegmentNodeStore.builder(fileStore).build();
         Oak oak = new Oak(nodeStore);
         oak.with(whiteboard);
         repository = new Jcr(oak).createRepository();
@@ -91,7 +108,7 @@ public class RefreshOnGCTest {
     }
 
     @Test
-    public void compactionCausesRefresh() throws RepositoryException, InterruptedException, ExecutionException {
+    public void compactionCausesRefresh() throws RepositoryException, InterruptedException, ExecutionException, IOException {
         Session session = repository.login(new SimpleCredentials("admin", "admin".toCharArray()));
         try {
             Node root = session.getRootNode();

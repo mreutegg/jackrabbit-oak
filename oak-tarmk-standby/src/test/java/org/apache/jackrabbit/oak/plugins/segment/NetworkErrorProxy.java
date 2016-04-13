@@ -33,7 +33,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.TimeUnit;
 
 public class NetworkErrorProxy {
-    private static final Logger log = LoggerFactory
+    static final Logger log = LoggerFactory
             .getLogger(NetworkErrorProxy.class);
 
     private final int inboundPort;
@@ -93,13 +93,13 @@ public class NetworkErrorProxy {
 
     public void close() {
         if (f != null) {
-            f.channel().close();
+            f.channel().close().syncUninterruptibly();
         }
         if (bossGroup != null && !bossGroup.isShuttingDown()) {
-            bossGroup.shutdownGracefully(1, 2, TimeUnit.SECONDS).syncUninterruptibly();
+            bossGroup.shutdownGracefully(0, 150, TimeUnit.MILLISECONDS).syncUninterruptibly();
         }
         if (workerGroup != null && !workerGroup.isShuttingDown()) {
-            workerGroup.shutdownGracefully(1, 2, TimeUnit.SECONDS).syncUninterruptibly();
+            workerGroup.shutdownGracefully(0, 150, TimeUnit.MILLISECONDS).syncUninterruptibly();
         }
     }
 }
@@ -168,7 +168,7 @@ class ForwardHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
-        cause.printStackTrace();
+        NetworkErrorProxy.log.debug(cause.getMessage(), cause);
         ctx.close();
     }
 }
@@ -233,7 +233,7 @@ class SendBackHandler implements ChannelInboundHandler {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        cause.printStackTrace();
+        NetworkErrorProxy.log.debug(cause.getMessage(), cause);
         this.target.close();
     }
 

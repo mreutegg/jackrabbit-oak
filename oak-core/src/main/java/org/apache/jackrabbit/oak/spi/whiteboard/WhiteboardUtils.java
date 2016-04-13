@@ -23,7 +23,6 @@ import java.util.Collections;
 import java.util.Hashtable;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
 
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
@@ -31,6 +30,7 @@ import javax.annotation.Nullable;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 
+import org.apache.jackrabbit.oak.commons.jmx.JmxUtil;
 import org.apache.jackrabbit.oak.spi.commit.Observer;
 
 import com.google.common.base.Predicate;
@@ -40,7 +40,10 @@ import com.google.common.collect.Iterables;
 
 public class WhiteboardUtils {
 
-    private static final AtomicLong COUNTER = new AtomicLong();
+    /**
+     * JMX Domain name under which Oak related JMX MBeans are registered
+     */
+    public static final String JMX_OAK_DOMAIN = "org.apache.jackrabbit.oak";
 
     public static Registration scheduleWithFixedDelay(
             Whiteboard whiteboard, Runnable runnable, long delayInSeconds) {
@@ -72,12 +75,11 @@ public class WhiteboardUtils {
         try {
 
             Hashtable<String, String> table = new Hashtable<String, String>(attrs);
-            table.put("type", ObjectName.quote(type));
-            table.put("name", ObjectName.quote(name));
-            table.put("id", String.valueOf(COUNTER.incrementAndGet()));
+            table.put("type", JmxUtil.quoteValueIfRequired(type));
+            table.put("name", JmxUtil.quoteValueIfRequired(name));
             return whiteboard.register(iface, bean, ImmutableMap.of(
                     "jmx.objectname",
-                    new ObjectName("org.apache.jackrabbit.oak", table)));
+                    new ObjectName(JMX_OAK_DOMAIN, table)));
         } catch (MalformedObjectNameException e) {
             throw new IllegalArgumentException(e);
         }
@@ -167,6 +169,5 @@ public class WhiteboardUtils {
         }
 
     }
-
 
 }

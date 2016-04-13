@@ -17,7 +17,6 @@
 package org.apache.jackrabbit.oak.plugins.document.memory;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentNavigableMap;
@@ -35,9 +34,8 @@ import org.apache.jackrabbit.oak.plugins.document.Collection;
 import org.apache.jackrabbit.oak.plugins.document.Document;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStoreException;
+import org.apache.jackrabbit.oak.plugins.document.JournalEntry;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
-import org.apache.jackrabbit.oak.plugins.document.Revision;
-import org.apache.jackrabbit.oak.plugins.document.StableRevisionComparator;
 import org.apache.jackrabbit.oak.plugins.document.UpdateOp;
 import org.apache.jackrabbit.oak.plugins.document.UpdateOp.Condition;
 import org.apache.jackrabbit.oak.plugins.document.UpdateUtils;
@@ -47,6 +45,7 @@ import com.mongodb.ReadPreference;
 import com.mongodb.WriteConcern;
 import org.apache.jackrabbit.oak.plugins.document.cache.CacheInvalidationStats;
 
+import static org.apache.jackrabbit.oak.plugins.document.UpdateUtils.assertUnconditional;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateUtils.checkConditions;
 
 /**
@@ -73,13 +72,13 @@ public class MemoryDocumentStore implements DocumentStore {
     private ConcurrentSkipListMap<String, Document> settings =
             new ConcurrentSkipListMap<String, Document>();
 
-    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
-
     /**
-     * Comparator for maps with {@link Revision} keys. The maps are ordered
-     * descending, newest revisions first!
+     * The 'externalChanges' collection.
      */
-    private final Comparator<Revision> comparator = StableRevisionComparator.REVERSE;
+    private ConcurrentSkipListMap<String, JournalEntry> externalChanges =
+            new ConcurrentSkipListMap<String, JournalEntry>();
+
+    private final ReadWriteLock rwLock = new ReentrantReadWriteLock();
 
     private ReadPreference readPreference;
 
@@ -206,12 +205,48 @@ public class MemoryDocumentStore implements DocumentStore {
     @CheckForNull
     @Override
     public <T extends Document> T createOrUpdate(Collection<T> collection, UpdateOp update) {
+        assertUnconditional(update);
         return internalCreateOrUpdate(collection, update, false);
+    }
+
+    @Override
+    public <T extends Document> List<T> createOrUpdate(Collection<T> collection, List<UpdateOp> updateOps) {
+        List<T> result = new ArrayList<T>(updateOps.size());
+        for (UpdateOp update : updateOps) {
+            result.add(createOrUpdate(collection, update));
+        }
+        return result;
     }
 
     @Override
     public <T extends Document> T findAndUpdate(Collection<T> collection, UpdateOp update) {
         return internalCreateOrUpdate(collection, update, true);
+    }
+
+    /**
+     * @return a copy of this document store.
+     */
+    @Nonnull
+    public MemoryDocumentStore copy() {
+        MemoryDocumentStore copy = new MemoryDocumentStore();
+        copyDocuments(Collection.NODES, copy);
+        copyDocuments(Collection.CLUSTER_NODES, copy);
+        copyDocuments(Collection.SETTINGS, copy);
+        copyDocuments(Collection.JOURNAL, copy);
+        return copy;
+    }
+
+    private <T extends Document> void copyDocuments(Collection<T> collection,
+                                                    MemoryDocumentStore target) {
+        ConcurrentSkipListMap<String, T> from = getMap(collection);
+        ConcurrentSkipListMap<String, T> to = target.getMap(collection);
+
+        for (Map.Entry<String, T> entry : from.entrySet()) {
+            T doc = collection.newDocument(target);
+            entry.getValue().deepCopy(doc);
+            doc.seal();
+            to.put(entry.getKey(), doc);
+        }
     }
 
     /**
@@ -226,8 +261,10 @@ public class MemoryDocumentStore implements DocumentStore {
             return (ConcurrentSkipListMap<String, T>) nodes;
         } else if (collection == Collection.CLUSTER_NODES) {
             return (ConcurrentSkipListMap<String, T>) clusterNodes;
-        }else if (collection == Collection.SETTINGS) {
+        } else if (collection == Collection.SETTINGS) {
             return (ConcurrentSkipListMap<String, T>) settings;
+        } else if (collection == Collection.JOURNAL) {
+            return (ConcurrentSkipListMap<String, T>) externalChanges;
         } else {
             throw new IllegalArgumentException(
                     "Unknown collection: " + collection.toString());
@@ -259,7 +296,7 @@ public class MemoryDocumentStore implements DocumentStore {
                 return null;
             }
             // update the document
-            UpdateUtils.applyChanges(doc, update, comparator);
+            UpdateUtils.applyChanges(doc, update);
             doc.seal();
             map.put(update.getId(), doc);
             return oldDoc;
@@ -281,6 +318,7 @@ public class MemoryDocumentStore implements DocumentStore {
                 }
             }
             for (UpdateOp op : updateOps) {
+                assertUnconditional(op);
                 internalCreateOrUpdate(collection, op, false);
             }
             return true;
@@ -293,6 +331,7 @@ public class MemoryDocumentStore implements DocumentStore {
     public <T extends Document> void update(Collection<T> collection,
                                             List<String> keys,
                                             UpdateOp updateOp) {
+        assertUnconditional(updateOp);
         Lock lock = rwLock.writeLock();
         lock.lock();
         try {
@@ -315,8 +354,8 @@ public class MemoryDocumentStore implements DocumentStore {
         for (String p : nodes.keySet()) {
             buff.append("Path: ").append(p).append('\n');
             NodeDocument doc = nodes.get(p);
-            for (String prop : doc.keySet()) {
-                buff.append(prop).append('=').append(doc.get(prop)).append('\n');
+            for (Map.Entry<String, Object> entry : doc.entrySet()) {
+                buff.append(entry.getKey()).append('=').append(entry.getValue()).append('\n');
             }
             buff.append("\n");
         }
@@ -328,6 +367,11 @@ public class MemoryDocumentStore implements DocumentStore {
         return null;
     }
 
+    @Override
+    public CacheInvalidationStats invalidateCache(Iterable<String> keys) {
+        return null;
+    }
+    
     @Override
     public void dispose() {
         // ignore
@@ -379,7 +423,7 @@ public class MemoryDocumentStore implements DocumentStore {
     }
 
     @Override
-    public CacheStats getCacheStats() {
+    public Iterable<CacheStats> getCacheStats() {
         return null;
     }
 
@@ -388,4 +432,9 @@ public class MemoryDocumentStore implements DocumentStore {
         return metadata;
     }
 
+    @Override
+    public long determineServerTimeDifferenceMillis() {
+        // the MemoryDocumentStore has no delays, thus return 0
+        return 0;
+    }
 }

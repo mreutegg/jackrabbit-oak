@@ -30,7 +30,11 @@ import org.apache.jackrabbit.oak.spi.security.SecurityProvider;
  * {@link PrincipalConfiguration} that combines different principal provider
  * implementations that share a common principal manager implementation.
  */
-public final class CompositePrincipalConfiguration extends CompositeConfiguration<PrincipalConfiguration> implements PrincipalConfiguration {
+public class CompositePrincipalConfiguration extends CompositeConfiguration<PrincipalConfiguration> implements PrincipalConfiguration {
+
+    public CompositePrincipalConfiguration() {
+        super(PrincipalConfiguration.NAME);
+    }
 
     public CompositePrincipalConfiguration(@Nonnull SecurityProvider securityProvider) {
         super(PrincipalConfiguration.NAME, securityProvider);

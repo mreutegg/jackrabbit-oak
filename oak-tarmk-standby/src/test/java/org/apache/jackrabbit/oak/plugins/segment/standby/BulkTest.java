@@ -97,7 +97,7 @@ public class BulkTest extends TestBase {
 
     private void test(int number, int minExpectedSegments, int maxExpectedSegments, long minExpectedBytes, long maxExpectedBytes,
                       boolean useSSL) throws Exception {
-        NodeStore store = new SegmentNodeStore(storeS);
+        NodeStore store = SegmentNodeStore.builder(storeS).build();
         NodeBuilder rootbuilder = store.getRoot().builder();
         NodeBuilder b = rootbuilder.child("store");
         for (int j=0; j<=number / 1000; j++) {
@@ -113,7 +113,7 @@ public class BulkTest extends TestBase {
         server.start();
 
         System.setProperty(StandbyClient.CLIENT_ID_PROPERTY_NAME, "Bar");
-        StandbyClient cl = new StandbyClient("127.0.0.1", port, storeC, useSSL, 5000);
+        StandbyClient cl = newStandbyClient(storeC, port, useSSL);
 
         final MBeanServer jmxServer = ManagementFactory.getPlatformMBeanServer();
         ObjectName status = new ObjectName(StandbyStatusMBean.JMX_NAME + ",id=*");

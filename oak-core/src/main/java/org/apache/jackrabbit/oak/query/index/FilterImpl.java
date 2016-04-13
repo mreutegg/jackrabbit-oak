@@ -218,9 +218,16 @@ public class FilterImpl implements Filter {
         return alwaysFalse;
     }
 
-    @Override
     public SelectorImpl getSelector() {
         return selector;
+    }
+
+    @Override @Nullable
+    public String getNodeType() {
+        if (selector == null) {
+            return null;
+        }
+        return selector.getNodeType();
     }
 
     @Override
@@ -230,17 +237,26 @@ public class FilterImpl implements Filter {
 
     @Override @Nonnull
     public Set<String> getSupertypes() {
-        return selector == null ? Collections.EMPTY_SET : selector.getSupertypes();
+        if (selector == null) {
+            return Collections.emptySet();
+        }
+        return selector.getSupertypes();
     }
 
     @Override @Nonnull
     public Set<String> getPrimaryTypes() {
-        return selector == null ? Collections.EMPTY_SET : selector.getPrimaryTypes();
+        if (selector == null) {
+            return Collections.emptySet();
+        }        
+        return selector.getPrimaryTypes();
     }
 
     @Override @Nonnull
     public Set<String> getMixinTypes() {
-        return selector == null ? Collections.EMPTY_SET : selector.getMixinTypes();
+        if (selector == null) {
+            return Collections.emptySet();
+        }             
+        return selector.getMixinTypes();
     }
 
     @Override

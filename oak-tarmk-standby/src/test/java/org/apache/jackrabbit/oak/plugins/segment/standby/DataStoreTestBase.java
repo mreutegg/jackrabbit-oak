@@ -18,8 +18,18 @@
  */
 package org.apache.jackrabbit.oak.plugins.segment.standby;
 
-import com.google.common.io.ByteStreams;
+import static org.junit.Assert.assertArrayEquals;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.util.Random;
+
+import com.google.common.io.ByteStreams;
 import org.apache.jackrabbit.core.data.FileDataStore;
 import org.apache.jackrabbit.oak.api.Blob;
 import org.apache.jackrabbit.oak.api.CommitFailedException;
@@ -38,13 +48,6 @@ import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.IOException;
-import java.util.Random;
-
-import static org.junit.Assert.*;
-
 public class DataStoreTestBase extends TestBase {
 
     protected boolean storesCanBeEqual = false;
@@ -59,7 +62,12 @@ public class DataStoreTestBase extends TestBase {
         fds.setMinRecordLength(4092);
         fds.init(path);
         DataStoreBlobStore blobStore = new DataStoreBlobStore(fds);
-        return new FileStore(blobStore, d, 1, false);
+        return FileStore.builder(d)
+            .withMaxFileSize(1)
+            .withMemoryMapping(false)
+            .withNoCache()
+            .withBlobStore(blobStore)
+            .build();
     }
 
     protected byte[] addTestContent(NodeStore store, String child, int size)
@@ -84,12 +92,13 @@ public class DataStoreTestBase extends TestBase {
         FileStore primary = getPrimary();
         FileStore secondary = getSecondary();
 
-        NodeStore store = new SegmentNodeStore(primary);
-        final StandbyServer server = new StandbyServer(getPort(), primary);
+        NodeStore store = SegmentNodeStore.builder(primary).build();
+        final StandbyServer server = new StandbyServer(port, primary);
         server.start();
         byte[] data = addTestContent(store, "server", blobSize);
+        primary.flush();
 
-        StandbyClient cl = new StandbyClient("127.0.0.1", getPort(), secondary);
+        StandbyClient cl = newStandbyClient(secondary);
         cl.run();
 
         try {
@@ -149,7 +158,6 @@ public class DataStoreTestBase extends TestBase {
     }
 
     private void useProxy(int skipPosition, int skipBytes, int flipPosition, boolean intermediateChange) throws Exception {
-        int proxyPort = Integer.valueOf(System.getProperty("standby.proxy.port", "51913"));
         final int mb = 1 * 1024 * 1024;
         int blobSize = 5 * mb;
         FileStore primary = getPrimary();
@@ -160,12 +168,13 @@ public class DataStoreTestBase extends TestBase {
         p.flipByte(flipPosition);
         p.run();
 
-        NodeStore store = new SegmentNodeStore(primary);
-        final StandbyServer server = new StandbyServer(getPort(), primary);
+        NodeStore store = SegmentNodeStore.builder(primary).build();
+        final StandbyServer server = new StandbyServer(port, primary);
         server.start();
         byte[] data = addTestContent(store, "server", blobSize);
+        primary.flush();
 
-        StandbyClient cl = new StandbyClient("127.0.0.1", proxyPort, secondary);
+        StandbyClient cl = newStandbyClient(secondary, proxyPort);
         cl.run();
 
         try {
@@ -177,6 +186,7 @@ public class DataStoreTestBase extends TestBase {
                 if (intermediateChange) {
                     blobSize = 2 * mb;
                     data = addTestContent(store, "server", blobSize);
+                    primary.flush();
                 }
                 cl.run();
             }

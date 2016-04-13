@@ -88,23 +88,35 @@ public class LastRevRecoveryAgentTest {
         ClusterNodeInfo.setClock(clock);
         Revision.setClock(clock);
         sharedStore = fixture.createDocumentStore();
+        DocumentStoreWrapper store = new DocumentStoreWrapper(sharedStore) {
+            @Override
+            public void dispose() {
+                // do not dispose when called by DocumentNodeStore
+            }
+        };
         ds1 = new DocumentMK.Builder()
                 .setAsyncDelay(0)
                 .clock(clock)
-                .setDocumentStore(sharedStore)
+                .setDocumentStore(store)
+                .setLeaseCheck(false)
+                .setClusterId(1)
                 .getNodeStore();
         c1Id = ds1.getClusterId();
 
         ds2 = new DocumentMK.Builder()
                 .setAsyncDelay(0)
                 .clock(clock)
-                .setDocumentStore(sharedStore)
+                .setDocumentStore(store)
+                .setLeaseCheck(false)
+                .setClusterId(2)
                 .getNodeStore();
         c2Id = ds2.getClusterId();
     }
 
     @After
     public void tearDown(){
+        ds1.dispose();
+        ds2.dispose();
         sharedStore.dispose();
         ClusterNodeInfo.resetClockToDefault();
         Revision.resetClockToDefault();
@@ -127,7 +139,7 @@ public class LastRevRecoveryAgentTest {
         b2.child("x").child("y").child("z").setProperty("foo", "bar");
         ds2.merge(b2, EmptyHook.INSTANCE, CommitInfo.EMPTY);
 
-        Revision zlastRev2 = ds2.getHeadRevision();
+        Revision zlastRev2 = ds2.getHeadRevision().getRevision(ds2.getClusterId());
 
         long leaseTime = ds1.getClusterInfo().getLeaseTime();
         ds1.runBackgroundOperations();

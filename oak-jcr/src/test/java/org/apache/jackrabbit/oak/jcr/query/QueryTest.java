@@ -19,17 +19,15 @@
 package org.apache.jackrabbit.oak.jcr.query;
 
 import static com.google.common.collect.Sets.newHashSet;
-import static junit.framework.Assert.assertEquals;
-import static junit.framework.Assert.assertTrue;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
-import java.sql.Timestamp;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -54,8 +52,10 @@ import org.apache.jackrabbit.api.security.user.User;
 import org.apache.jackrabbit.api.security.user.UserManager;
 import org.apache.jackrabbit.commons.JcrUtils;
 import org.apache.jackrabbit.commons.cnd.CndImporter;
+import org.apache.jackrabbit.oak.commons.json.JsonObject;
+import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
+import org.apache.jackrabbit.oak.fixture.NodeStoreFixture;
 import org.apache.jackrabbit.oak.jcr.AbstractRepositoryTest;
-import org.apache.jackrabbit.oak.jcr.NodeStoreFixture;
 import org.junit.Ignore;
 import org.junit.Test;
 
@@ -66,6 +66,30 @@ public class QueryTest extends AbstractRepositoryTest {
 
     public QueryTest(NodeStoreFixture fixture) {
         super(fixture);
+    }
+
+    @Test
+    public void join() throws Exception {
+        Session session = getAdminSession();
+        Node root = session.getRootNode();
+        Node a = root.addNode("a");
+        a.addMixin("mix:referenceable");
+        Node b = root.addNode("b");
+        b.setProperty("join", a.getProperty("jcr:uuid").getString(), PropertyType.REFERENCE);
+        // b.setProperty("join", a.getProperty("jcr:uuid").getString(), PropertyType.STRING);
+        session.save();
+        assertEquals("/a",
+                getNodeList(session, 
+                        "select [a].* from [nt:unstructured] as [a] "+ 
+                                "inner join [nt:unstructured] as [b] " + 
+                                "on [a].[jcr:uuid] = [b].[join] where issamenode([a], '/a')",
+                        Query.JCR_SQL2));
+        assertEquals("/a",
+                getNodeList(session, 
+                        "select [a].* from [nt:unstructured] as [a] "+ 
+                                "inner join [nt:unstructured] as [b] " + 
+                                "on [b].[join] = [a].[jcr:uuid] where issamenode([a], '/a')",
+                        Query.JCR_SQL2));
     }
     
     @Test
@@ -169,72 +193,31 @@ public class QueryTest extends AbstractRepositoryTest {
     }
     
     @Test
-    public void orderBy() throws Exception {
+    public void propertyIndexWithDeclaringNodeTypeAndRelativQuery() throws RepositoryException {
         Session session = getAdminSession();
-        Node root = session.getRootNode();
-        
-        // add an ordered index on "lastMod"
-        Node index = root.getNode("oak:index").
-                addNode("lastMod", "oak:QueryIndexDefinition");
-        index.setProperty("reindex", true);
-        // index.setProperty("async", "async");
-        index.setProperty("type", "ordered");
-        index.setProperty("propertyNames", new String[] { "lastMod" },
-                PropertyType.NAME);
-        
-        // disable the nodetype index
-        Node nodeTypeIndex = root.getNode("oak:index").getNode("nodetype");
-        nodeTypeIndex.setProperty("declaringNodeTypes", new String[] {
-                "nt:Folder"
-            }, PropertyType.NAME);
-        session.save();
-
-        // add 10 nodes
-        Node test = root.addNode("test");
-        for (int i = 0; i < 10; i++) {
-            Node n = test.addNode("test" + i, "oak:Unstructured");
-            Calendar cal = Calendar.getInstance();
-            cal.setTimeInMillis(Timestamp.valueOf("2000-01-01 10:00:00")
-                    .getTime() + 1000 * i);
-            n.addNode("content").setProperty("lastMod", cal);
-        }
-        
-        session.save();
-
-        // run the query
-        String query = "/jcr:root/test//*[@jcr:primaryType='oak:Unstructured'] " + 
-                "order by content/@lastMod descending";
-        QueryResult r = session.getWorkspace().getQueryManager()
-                .createQuery(query, "xpath").execute();
-        NodeIterator it = r.getNodes();
-        StringBuilder buff = new StringBuilder();
-        while (it.hasNext()) {
-            if (buff.length() > 0) {
-                buff.append(", ");
-            }
-            buff.append(it.nextNode().getPath());
-        }
-        assertEquals("/test/test9, /test/test8, /test/test7, /test/test6, /test/test5, /test/test4, /test/test3, /test/test2, /test/test1, /test/test0", 
-                buff.toString());
-        
         RowIterator rit;
+        QueryResult r;
+        String query;
+        query = "//element(*, rep:Authorizable)[@rep:principalName = 'admin']";
+        r = session.getWorkspace().getQueryManager()
+                .createQuery("explain " + query, "xpath").execute();
+        rit = r.getRows();
+        assertEquals("[rep:Authorizable] as [a] /* property principalName = admin " + 
+                "where [a].[rep:principalName] = 'admin' */", 
+                rit.nextRow().getValue("plan").getString());
         
+        query = "//element(*, rep:Authorizable)[admin/@rep:principalName = 'admin']";
         r = session.getWorkspace().getQueryManager()
                 .createQuery("explain " + query, "xpath").execute();
         rit = r.getRows();
-        assertEquals("[nt:base] as [a] /* ordered order by lastMod ancestor 1 " +
-                "where ([a].[jcr:primaryType] = 'oak:Unstructured') " +
-                "and (isdescendantnode([a], [/test])) */", rit.nextRow().getValue("plan").getString());
-
-        query = "/jcr:root/test//*[@jcr:primaryType='oak:Unstructured' " +
-                "and  content/@lastMod > '2001-02-01']";
-        r = session.getWorkspace().getQueryManager()
-                .createQuery("explain " + query, "xpath").execute();
-        rit = r.getRows();
-        assertEquals("[nt:base] as [a] /* ordered lastMod > 2001-02-01 " +
-                "where ([a].[jcr:primaryType] = 'oak:Unstructured') " +
-                "and ([a].[content/lastMod] > '2001-02-01') " +
-                "and (isdescendantnode([a], [/test])) */",
+        assertEquals("[rep:Authorizable] as [a] /* nodeType " + 
+                "Filter(query=explain select [jcr:path], [jcr:score], * " + 
+                "from [rep:Authorizable] as a " + 
+                "where [admin/rep:principalName] = 'admin' " + 
+                "/* xpath: //element(*, rep:Authorizable)[" + 
+                "admin/@rep:principalName = 'admin'] */, path=*, " + 
+                "property=[admin/rep:principalName=[admin]]) " + 
+                "where [a].[admin/rep:principalName] = 'admin' */", 
                 rit.nextRow().getValue("plan").getString());
         
     }
@@ -721,12 +704,13 @@ public class QueryTest extends AbstractRepositoryTest {
         session.save();
         Query q = session.getWorkspace().getQueryManager().createQuery(
                 "/jcr:root/etc//*["+
-                        "(@jcr:primaryType = 'a'  or @jcr:primaryType = 'b') "+
+                        "(@jcr:primaryType = 'nt:file'  or @jcr:primaryType = 'nt:folder') "+
                         "or @nt:resourceType = 'test']", "xpath");
         QueryResult qr = q.execute();
         NodeIterator ni = qr.getNodes();
         Node n = ni.nextNode();
         assertEquals("/etc/p2/r", n.getPath());
+        session.logout();
     }
 
     @Test
@@ -746,6 +730,7 @@ public class QueryTest extends AbstractRepositoryTest {
         Node n = ni.nextNode();
         assertEquals("/etc/p1", n.getPath());
         assertFalse(ni.hasNext());
+        session.logout();
     }
 
     @Test
@@ -773,6 +758,66 @@ public class QueryTest extends AbstractRepositoryTest {
         Node n = ni.nextNode();
         assertEquals("/one", n.getPath());
         assertFalse(ni.hasNext());
+        session.logout();
+    }
+    
+    @Test
+    public void approxCount() throws Exception {
+        Session session = createAdminSession();
+        double c = getCost(session, "//*[@x=1]");
+        // *with* the counter index, the estimated cost to traverse is low
+        assertTrue("cost: " + c, c > 0 && c < 100000);
+        
+        // *without* the counter index, the estimated cost to traverse is high
+        session.getNode("/oak:index/counter").remove();
+        session.save();
+        double c2 = getCost(session, "//*[@x=1]");
+        assertTrue("cost: " + c2, c2 > 1000000);
+
+        session.logout();
+    }
+
+    @Test
+    public void nodeType() throws Exception {
+        Session session = createAdminSession();
+        String xpath = "/jcr:root//element(*,rep:User)[xyz/@jcr:primaryType]";
+        assertTrue(getPlan(session, xpath).startsWith("[rep:User] as [a] /* nodeType"));
+        
+        session.getNode("/oak:index/nodetype").setProperty("declaringNodeTypes", 
+                new String[]{"oak:Unstructured"}, PropertyType.NAME);
+        session.save();
+
+        assertTrue(getPlan(session, xpath).startsWith("[rep:User] as [a] /* traverse "));
+
+        xpath = "/jcr:root//element(*,oak:Unstructured)[xyz/@jcr:primaryType]";
+        assertTrue(getPlan(session, xpath).startsWith("[oak:Unstructured] as [a] /* nodeType "));
+
+        session.logout();
+    }
+    
+    private static String getPlan(Session session, String xpath) throws RepositoryException {
+        QueryManager qm = session.getWorkspace().getQueryManager();
+        QueryResult qr = qm.createQuery("explain " + xpath, "xpath").execute();
+        Row r = qr.getRows().nextRow();
+        String plan = r.getValue("plan").getString();
+        return plan;
+    }
+    
+    private static double getCost(Session session, String xpath) throws RepositoryException {
+        QueryManager qm = session.getWorkspace().getQueryManager();
+        QueryResult qr = qm.createQuery("explain measure " + xpath, "xpath").execute();
+        Row r = qr.getRows().nextRow();
+        String plan = r.getValue("plan").getString();
+        String cost = plan.substring(plan.lastIndexOf('{'));
+        JsonObject json = parseJson(cost);
+        double c = Double.parseDouble(json.getProperties().get("a"));
+        return c;
+    }
+    
+    private static JsonObject parseJson(String json) {
+        JsopTokenizer t = new JsopTokenizer(json);
+        t.read('{');
+        return JsonObject.create(t);
     }
 
 }

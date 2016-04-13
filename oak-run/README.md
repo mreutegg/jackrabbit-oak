@@ -5,22 +5,30 @@ This jar contains everything you need for a simple Oak installation.
 
 The following runmodes are currently available:
 
-    * backup      : Backup an existing Oak repository.
-    * restore     : Restore a backup of an Oak repository.
-    * benchmark   : Run benchmark tests against different Oak repository fixtures.
-    * debug       : Print status information about an Oak repository.
-    * compact     : Segment compaction on a TarMK repository.
-    * upgrade     : Migrate existing Jackrabbit 2.x repository to Oak.
-    * server      : Run the Oak Server.
-    * console     : Start an interactive console.
-    * explore     : Starts a GUI browser based on java swing.
-    * check       : Check the FileStore for inconsistencies
-    * primary     : Run a TarMK Cold Standby primary instance
-    * standby     : Run a TarMK Cold Standby standby instance
-    * scalability : Run scalability tests against different Oak repository fixtures.
-    * recovery    : Run a _lastRev recovery on a MongoMK repository
-    * checkpoints : Manage checkpoints
-    * help        : Print a list of available runmodes
+    * backup          : Backup an existing Oak repository.
+    * restore         : Restore a backup of an Oak repository.
+    * benchmark       : Run benchmark tests against different Oak repository fixtures.
+    * debug           : Print status information about an Oak repository.
+    * compact         : Segment compaction on a TarMK repository.
+    * upgrade         : Migrate existing Jackrabbit 2.x repository to Oak.
+    * server          : Run the Oak Server.
+    * console         : Start an interactive console.
+    * explore         : Starts a GUI browser based on java swing.
+    * graph           : Export the segment graph of a segment store to a file.
+    * history         : Trace the history of a node
+    * check           : Check the FileStore for inconsistencies
+    * primary         : Run a TarMK Cold Standby primary instance
+    * standby         : Run a TarMK Cold Standby standby instance
+    * scalability     : Run scalability tests against different Oak repository fixtures.
+    * recovery        : Run a _lastRev recovery on a MongoMK repository
+    * checkpoints     : Manage checkpoints
+    * tika            : Performs text extraction
+    * garbage         : Identifies blob garbage on a DocumentMK repository
+    * tarmkdiff       : Show changes between revisions on TarMk
+    * tarmkrecovery   : Lists candidates for head journal entries
+    * dumpdatastorerefs : Dump all the blob references used to a file 
+    * resetclusterid  : Resets the cluster id   
+    * help            : Print a list of available runmodes
     
 
 Some of the features related to Jackrabbit 2.x are provided by oak-run-jr2 jar. See
@@ -31,18 +39,25 @@ See the subsections below for more details on how to use these modes.
 Backup
 ------
 
-The 'backup' mode creates a backup from an existing oak repository. To start this mode, use:
+The 'backup' mode creates a backup from an existing oak repository. The most efficient 
+way to backup the TarMK repository is to use a file system copy of the repository folder.
+The current backup implementation acts like a compaction to an enternal folder, on top of 
+copying the state, it will also try to compress it, so it will significantly slower than 
+what one might expect from a simple copy backup. Incremental backups (backup over an existing
+backup will still need to perform a full content diff) and will attempt to compact the diff.
+All optimisation flags used for offline compaction very much apply for this case as well.
+The FileStore backup doesn't need access to the DataStore, but if one is usually configured with
+the repository, it will need the following system property set to true in order to be able to
+perform the diffing `-Doak.backup.UseFakeBlobStore=true`. To start this mode, use:
 
-    $ java -jar oak-run-*.jar backup \
-          { /path/to/oak/repository | mongodb://host:port/database } /path/to/backup
+    $ java -jar oak-run-*.jar backup /path/to/oak/repository /path/to/backup
 
 Restore
 -------
 
 The 'restore' mode imports a backup of an existing oak repository. To start this mode, use:
 
-    $ java -jar oak-run-*.jar restore \
-          { /path/to/oak/repository | mongodb://host:port/database } /path/to/backup
+    $ java -jar oak-run-*.jar restore /path/to/oak/repository /path/to/backup
 
 Debug
 -----
@@ -92,6 +107,50 @@ The 'explore' mode starts a desktop browser GUI based on java swing which allows
 browsing of an existing oak repository.
 
     $ java -jar oak-run-*.jar explore /path/to/oak/repository [skip-size-check]
+
+Graph
+-----
+
+The 'graph' mode export the segment graph of a file store to a text file in the
+[Guess GDF format](https://gephi.github.io/users/supported-graph-formats/gdf-format/),
+which is easily imported into [Gephi](https://gephi.github.io).
+
+As the GDF format only supports integer values but the segment time stamps are encoded as long
+values an optional 'epoch' argument can be specified. If no epoch is given on the command line
+the start of the day of the last modified date of the 'journal.log' is used. The epoch specifies
+a negative offset translating all timestamps into a valid int range.
+
+    $ java -jar oak-run-*.jar graph [File] <options>
+
+    [File] -- Path to segment store (required)
+
+    Option           Description
+    ------           -----------
+    --epoch <Long>   Epoch of the segment time stamps
+                       (derived from journal.log if not
+                       given)
+    --output <File>  Output file (default: segments.gdf)
+    --gc             Write the gc generation graph instead of the full graph
+    --pattern        Regular exception specifying which
+                       nodes to include (optional). Ignore
+                       when --gc is specified.
+
+History
+-------
+
+Trace the history of a node backward through the revision history.
+
+    $ java -jar oak-run-*.jar history [File] <options>
+
+    [File] -- Path to segment store (required)
+
+    Option             Description
+    ------             -----------
+    --depth <Integer>  Depth up to which to dump node states
+                         (default: 0)
+    --journal          journal file (default: journal.log)
+    --path             Path for which to trace the history
+                         (default: /)
 
 Check
 -----
@@ -166,7 +225,14 @@ Compact
 The 'compact' mode runs the segment compaction operation on the provided TarMK
 repository. To start this mode, use:
 
-    $ java -jar oak-run-*.jar compact /path/to/TarMK
+    $ java -jar oak-run-*.jar compact [path] <options>
+
+    [File] -- Path to segment store (required)
+
+    Option   Description
+    ------   -----------
+    --force  Force compaction and ignore non
+               matching segment version
 
 Checkpoints
 -----------
@@ -180,6 +246,118 @@ The 'list' option (treated as a default when nothing is specified) will list all
 The 'rm-all' option will wipe clean the 'checkpoints' node.
 The 'rm-unreferenced' option will remove all checkpoints except the one referenced from the async indexer (/:async@async).
 The 'rm <checkpoint>' option will remove a specific checkpoint from the repository.
+
+<a name="tika"></a>
+Tika
+----
+
+The 'tika' mode enables performing text extraction, report generation and 
+csv generation required for text extraction
+
+
+    Apache Jackrabbit Oak 1.4-SNAPSHOT
+    Non-option arguments:                                                         
+    tika [extract|report|generate]                                                
+    report   : Generates a summary report related to binary data                  
+    extract  : Performs the text extraction                                       
+    generate : Generates the csv data file based on configured NodeStore/BlobStore
+    
+    Option                 Description                            
+    ------                 -----------                            
+    -?, -h, --help         show help                              
+    --data-file <File>     Data file in csv format containing the 
+                             binary metadata                      
+    --fds-path <File>      Path of directory used by FileDataStore
+    --nodestore            NodeStore detail                       
+                             /path/to/oak/repository | mongodb:   
+                             //host:port/database                 
+    --path                 Path in repository under which the     
+                             binaries would be searched           
+    --pool-size <Integer>  Size of the thread pool used to        
+                             perform text extraction. Defaults to 
+                             number of cores on the system        
+    --store-path <File>    Path of directory used to store        
+                             extracted text content               
+    --tika-config <File>   Tika config file path   
+
+<a name="tika-csv"></a>
+### CSV File Format
+
+Text extraction tool reads a csv file which contains details regarding those
+binary files from which text needs to be extracted. Entries in csv file look like
+below
+
+```
+43844ed22d640a114134e5a25550244e8836c00c#28705,28705,"application/octet-stream",,"/content/activities/jcr:content/folderThumbnail/jcr:content"
+43844ed22d640a114134e5a25550244e8836c00c#28705,28705,"application/octet-stream",,"/content/snowboarding/jcr:content/folderThumbnail/jcr:content"
+...
+```
+
+Where the columns are in following order
+
+1. BlobId - Value of [Jackrabbit ContentIdentity](http://jackrabbit.apache.org/api/2.0/org/apache/jackrabbit/api/JackrabbitValue.html)
+2. Length
+3. jcr:mimeType
+4. jcr:encoding
+5. path of parent node    
+
+The csv file can be generated programatically. For Oak based repositories
+it can be generated via `generate` command. 
+
+### Generate
+
+CSV file required for `extract` and `report` can  be generated via `generate` 
+mode
+
+    java -jar oak-run.jar tika \  
+    --fds-path /path/to/datastore \
+    --nodestore /path/to/segmentstore --data-file dump.csv generate
+
+Above command would scan the NodeStore and create the csv file. This file can 
+then be passed to `extract` command
+    
+### Report
+
+Tool can generate a summary report from a [csv](#tika-csv) file
+
+    java -jar oak-run.jar tika \ 
+        --data-file /path/to/binary-stats.csv report
+
+The report provides a summary like
+
+```
+14:39:05.402 [main] INFO  o.a.j.o.p.tika.TextExtractorMain - MimeType Stats
+        Total size         : 89.3 MB
+        Total indexed size : 3.4 MB
+        Total count        : 1048
+
+               Type                 Indexed   Supported    Count       Size   
+___________________________________________________________________________________
+application/epub+zip              |      true|      true|  1       |    3.4 MB
+image/png                         |     false|      true|  544     |   40.2 MB
+image/jpeg                        |     false|      true|  444     |   34.0 MB
+image/tiff                        |     false|      true|  11      |    6.1 MB
+application/x-indesign            |     false|     false|  1       |    3.7 MB
+application/octet-stream          |     false|     false|  39      |    1.2 MB
+application/x-shockwave-flash     |     false|     false|  4       |  372.2 kB
+application/pdf                   |     false|     false|  3       |  168.3 kB
+video/quicktime                   |     false|     false|  1       |   95.9 kB
+```
+
+### Extract
+
+Extraction can be performed via following command
+
+    java -cp oak-run.jar:tika-app-1.8.jar \
+    org.apache.jackrabbit.oak.run.Main tika \
+    --data-file binary-stats.csv \
+    --store-path ./store 
+    --fds-path /path/to/datastore  extract
+    
+You would need to provide the tika-app jar which contains all the parsers. 
+It can be downloaded from [here](https://tika.apache.org/download.html). 
+Extraction would then be performed in a multi threaded mode. Extracted text
+would be stored in the `store-path`
 
 Upgrade
 -------
@@ -283,6 +461,7 @@ The following benchmark options (with default values) are currently supported:
     --host localhost       - MongoDB host
     --port 27101           - MongoDB port
     --db <name>            - MongoDB database (default is a generated name)
+    --mongouri             - MongoDB URI (takes precedence over host, port and db)
     --dropDBAfterTest true - Whether to drop the MongoDB database after the test
     --base target          - Path to the base file (Tar setup),
     --mmap <64bit?>        - TarMK memory mapping (the default on 64 bit JVMs)
@@ -566,6 +745,8 @@ the `ScalabilitySuite` interface and add an instance of the new suite to the
 in the `org.apache.jackrabbit.oak.scalability` package.
 To implement the test benchmarks, it is required to extend the `ScalabilityBenchmark` 
 abstract class and implement the `execute()` method.
+In addition, the methods `beforeExecute()` and `afterExecute()` can overridden to do processing 
+before and after the benchmark executes.
 
 The best way to implement the `ScalabilitySuite` interface is to extend the
 `ScalabilityAbstractSuite` base class that takes care of most of the benchmarking
@@ -663,6 +844,22 @@ The recovery tool will only perform the check and fix for the given clusterId.
 It is therefore recommended to explicitly specify a clusterId. The tool will
 fix the documents it identified, unless the `dryRun` keyword is specified.
 
+Garbage
+=======
+
+The garbage mode can the used to identify blob garbage still referenced by
+documents in a MongoMK repository. It can be invoked like this:
+
+    $ java -jar oak-run-*.jar garbage [options] mongodb://host:port/database
+
+The following recovery options (with default values) are currently supported:
+
+    --clusterId         - MongoMK clusterId (default: 0 -> automatic)
+
+The tool will scan the store for documents with blob references and print a
+report with the top 100 documents with blob references considered garbage. The
+rank is based on the size of the referenced blobs.
+
 <a name="jr2"></a>
 Oak Runnable Jar - JR 2
 ===============================
@@ -701,6 +898,92 @@ can be dumped to a file
 
 [1]: http://jackrabbit.apache.org/oak/docs/oak-mongo-js/oak.html
 
+<a name="tarmkdiff"></a>
+Oak TarMK Revision Diff
+-----------------------
+
+Show changes between revisions on TarMk. It uses a read-only store, so it can also be used on a running system without the need to shut down.
+
+    $ java -jar oak-run-*.jar tarmkdiff path/to/repository [--list] [--diff=R0..R1] [--incremental] [--ignore-snfes] [--output=/path/to/output/file]
+
+The following options are available:
+
+    --list           - Lists the existing revisions. will ignore other params if this is provided
+    --diff           - Revision diff interval. Ex '--diff=R0..R1'. 'HEAD' can be used to reference the latest head revision, ie. '--diff=R0..HEAD'
+    --incremental    - Runs diffs between each subsequent revisions in the provided interval (false by default)
+    --ignore-snfes   - Ignores SegmentNotFoundExceptions and continues running the diff (experimental) (false by default)
+    --path           - Filter diff by given path
+    --output         - Output file name (generated randomly if not provided)
+
+Output sample
+
+    rev 7583946d-1817-4716-a05c-660ee52ddce0.ff94..c238cd7d-87a0-4cca-aa14-80b75e8ab81d.fb3e
+    ^ /oak:index
+    ^ /oak:index/lucene
+    ^ /oak:index/lucene/:data
+    - /oak:index/lucene/:data/_3729.cfs
+    + /oak:index/lucene/:data/_372d.si
+        + blobSize<LONG> = 1047552
+        + jcr:lastModified<LONG> = 1447948037017
+        + jcr:data<BINARIES>[1] = [252 bytes]
+    - /oak:index/lucene/:data/segments_37bv
+    + /oak:index/lucene/:data/_372d.cfe
+        + blobSize<LONG> = 1047552
+        + jcr:lastModified<LONG> = 1447948037017
+        + jcr:data<BINARIES>[1] = [224 bytes]
+    - /oak:index/lucene/:data/_3729.si
+    - /oak:index/lucene/:data/_3729.cfe
+    + /oak:index/lucene/:data/_372d.cfs
+        + blobSize<LONG> = 1047552
+        + jcr:lastModified<LONG> = 1447948037017
+        + jcr:data<BINARIES>[1] = [907 bytes]
+    + /oak:index/lucene/:data/segments_37bz
+        + blobSize<LONG> = 1047552
+        + jcr:lastModified<LONG> = 1447948045167
+        + jcr:data<BINARIES>[1] = [863 bytes]
+    ^ /oak:index/lucene/:data/segments.gen
+        ^ jcr:lastModified
+          - jcr:lastModified<LONG> = 1447947918027
+          + jcr:lastModified<LONG> = 1447948045167
+        ^ jcr:data
+          - jcr:data<BINARIES>[1] = [20 bytes]
+          + jcr:data<BINARIES>[1] = [20 bytes]
+    ^ /oak:index/lucene/:status
+        ^ lastUpdated
+          - lastUpdated<DATE> = 2015-11-19T10:45:18.027-05:00
+          + lastUpdated<DATE> = 2015-11-19T10:47:25.167-05:00
+
+<a name="tarmkrecovery"></a>
+Oak TarMK Revision Recovery
+---------------------------
+
+Lists candidates for head journal entries. Uses a read-only store, so no updates will be performed on target repository.
+
+    $ java -jar oak-run-*.jar tarmkrecovery path/to/repository [--version-v10]
+
+The following options are available:
+
+    --version-v10           - Uses V10 version repository reading (see OAK-2527)
+
+Oak Dump DataStore References
+-----------------------------
+
+Dumps all the DataStore/BlobStore references used. Use the following commmand
+
+    $ java -jar oak-run-*.jar dumpdatastorerefs \
+            { /path/to/oak/repository | mongodb://host:port/database } [/path/to/dump]
+
+This will create a dump file with name starting with 'marked-'.The dump path is optional and if not specified the file will be created in the user tmp directory.
+
+Reset Cluster Id
+---------------
+
+Resets the cluster id generated internally. Use the following command after stopping the server
+
+    $ java -jar oak-run-*.jar resetclusterid \
+            { /path/to/oak/repository | mongodb://host:port/database }
+
+The cluster id will be removed and will be generated on next server start up.
 
 License
 -------

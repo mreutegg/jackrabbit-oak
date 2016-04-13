@@ -28,8 +28,8 @@ import org.apache.jackrabbit.oak.query.xpath.Expression.Property;
  */
 public class Statement {
 
-    private boolean explain;
-    private boolean measure;
+    boolean explain;
+    boolean measure;
     
     /**
      * The selector to get the columns from (the selector used in the select
@@ -52,13 +52,11 @@ public class Statement {
     
     public Statement optimize() {
         ignoreOrderByScoreDesc();
-        if (explain || measure) {
-            return this;
-        }
         if (where == null) {
             return this;
         }
         where = where.optimize();
+        optimizeSelectorNodeTypes();
         ArrayList<Expression> unionList = new ArrayList<Expression>();
         addToUnionList(where, unionList);
         if (unionList.size() == 1) {
@@ -68,8 +66,8 @@ public class Statement {
         for (int i = 0; i < unionList.size(); i++) {
             Expression e = unionList.get(i);
             Statement s = new Statement();
-            s.columnSelector = columnSelector;
-            s.selectors = selectors;
+            s.columnSelector = new Selector(columnSelector);
+            s.selectors = cloneSelectors();
             s.columnList = columnList;
             s.where = e;
             if (union == null) {
@@ -80,7 +78,37 @@ public class Statement {
         }
         union.orderList = orderList;
         union.xpathQuery = xpathQuery;
+        union.measure = measure;
+        union.explain = explain;
+
         return union;
+    }
+    
+    private ArrayList<Selector> cloneSelectors() {
+        ArrayList<Selector> list = new ArrayList<Selector>();
+        for (Selector s : selectors) {
+            list.add(new Selector(s));
+        }
+        return list;
+    }
+    
+    private void optimizeSelectorNodeTypes() {
+        if (!XPathToSQL2Converter.NODETYPE_OPTIMIZATION) {
+            return;
+        }
+        for (int i = 0; i < selectors.size(); i++) {
+            Selector s = selectors.get(i);
+            if (s.nodeType != null && !"nt:base".equals(s.nodeType)) {
+                // explicit node type: ignore
+                continue;
+            }
+            // only filter by selectorName if there are multiple selectors
+            String selectorName = selectors.size() == 1 ? null : s.name;
+            String nodeType = where.getMostSpecificNodeType(selectorName);
+            if (nodeType != null) {
+                s.nodeType = nodeType;
+            }
+        }
     }
     
     private static void addToUnionList(Expression condition,  ArrayList<Expression> unionList) {
@@ -118,7 +146,8 @@ public class Statement {
         // explain | measure ...
         if (explain) {
             buff.append("explain ");
-        } else if (measure) {
+        } 
+        if (measure) {
             buff.append("measure ");
         }
         
@@ -249,6 +278,13 @@ public class Statement {
         @Override
         public String toString() {
             StringBuilder buff = new StringBuilder();
+            // explain | measure ...
+            if (explain) {
+                buff.append("explain ");
+            } 
+            if (measure) {
+                buff.append("measure ");
+            }
             buff.append(s1).append(" union ").append(s2);
             // order by ...
             if (orderList != null && !orderList.isEmpty()) {

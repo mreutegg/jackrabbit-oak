@@ -24,11 +24,6 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import java.io.UnsupportedEncodingException;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -37,15 +32,15 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-
 import org.apache.jackrabbit.oak.plugins.document.UpdateOp.Condition;
 import org.apache.jackrabbit.oak.plugins.document.UpdateOp.Key;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
 
 public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
 
@@ -70,6 +65,196 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
         up.set("_id", id);
         assertTrue(super.ds.create(Collection.NODES, Collections.singletonList(up)));
         removeMe.add(id);
+    }
+
+    @Test
+    public void testAddAndRemoveJournalEntry() {
+        // OAK-4021
+        String id = this.getClass().getName() + ".testAddAndRemoveJournalEntry";
+
+        // remove if present
+        Document d = super.ds.find(Collection.JOURNAL, id);
+        if (d != null) {
+            super.ds.remove(Collection.JOURNAL, id);
+        }
+
+        // add
+        UpdateOp up = new UpdateOp(id, true);
+        up.set("_id", id);
+        assertTrue(super.ds.create(Collection.JOURNAL, Collections.singletonList(up)));
+    }
+
+    @Test
+    public void testConditionalUpdate() {
+        String id = this.getClass().getName() + ".testConditionalUpdate";
+
+        // remove if present
+        NodeDocument nd = super.ds.find(Collection.NODES, id);
+        if (nd != null) {
+            super.ds.remove(Collection.NODES, id);
+        }
+
+        String existingProp = "_recoverylock";
+        String existingRevisionProp = "recoverylock";
+        String nonExistingProp = "_qux";
+        String nonExistingRevisionProp = "qux";
+        Revision r = new Revision(1, 1, 1);
+
+        // add
+        UpdateOp up = new UpdateOp(id, true);
+        up.set("_id", id);
+        up.set(existingProp, "lock");
+        up.setMapEntry(existingRevisionProp, r, "lock");
+        assertTrue(super.ds.create(Collection.NODES, Collections.singletonList(up)));
+
+        // updates
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.notEquals(nonExistingProp, "none");
+        NodeDocument result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNotNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(nonExistingProp, null);
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNotNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.notEquals(nonExistingRevisionProp, r, "none");
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNotNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(nonExistingRevisionProp, r, null);
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNotNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(existingProp, "none");
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(existingProp, null);
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(existingRevisionProp, r, "none");
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(existingRevisionProp, r, null);
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.notEquals(existingProp, "lock");
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(existingProp, null);
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.notEquals(existingRevisionProp, r, "lock");
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(existingRevisionProp, r, null);
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(existingProp, "lock");
+        up.set(existingProp, "none");
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNotNull(result);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.equals(existingRevisionProp, r, "lock");
+        up.setMapEntry(existingRevisionProp, r, "none");
+        result = super.ds.findAndUpdate(Collection.NODES, up);
+        assertNotNull(result);
+
+        removeMe.add(id);
+    }
+
+    @Test
+    public void testConditionalUpdateForbidden() {
+        String id = this.getClass().getName() + ".testConditionalupdateForbidden";
+
+        // remove if present
+        NodeDocument nd = super.ds.find(Collection.NODES, id);
+        if (nd != null) {
+            super.ds.remove(Collection.NODES, id);
+        }
+
+        try {
+            UpdateOp up = new UpdateOp(id, true);
+            up.set("_id", id);
+            up.equals("foo", "bar");
+            super.ds.create(Collection.NODES, Collections.singletonList(up));
+            fail("conditional create should fail");
+        }
+        catch (IllegalStateException expected) {
+            // reported by UpdateOp
+        }
+
+        UpdateOp cup = new UpdateOp(id, true);
+        cup.set("_id", id);
+        assertTrue(super.ds.create(Collection.NODES, Collections.singletonList(cup)));
+        removeMe.add(id);
+
+        try {
+            UpdateOp up = new UpdateOp(id, false);
+            up.set("_id", id);
+            up.equals("foo", "bar");
+            super.ds.createOrUpdate(Collection.NODES, up);
+            fail("conditional createOrUpdate should fail");
+        }
+        catch (IllegalArgumentException expected) {
+            // reported by DocumentStore
+        }
+
+        try {
+            UpdateOp up = new UpdateOp(id, false);
+            up.set("_id", id);
+            up.equals("foo", "bar");
+            super.ds.createOrUpdate(Collection.NODES, Collections.singletonList(up));
+            fail("conditional createOrUpdate should fail");
+        }
+        catch (IllegalArgumentException expected) {
+            // reported by DocumentStore
+        }
+
+        try {
+            UpdateOp up = new UpdateOp(id, false);
+            up.set("_id", id);
+            up.equals("foo", "bar");
+            super.ds.update(Collection.NODES, Collections.singletonList(id), up);
+            fail("conditional update should fail");
+        }
+        catch (IllegalArgumentException expected) {
+            // reported by DocumentStore
+        }
     }
 
     @Test
@@ -120,7 +305,11 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
         int last = 0;
 
         while (max - min >= 256) {
-            test = (max + min) / 2;
+            if (test == 0) {
+                test = max; // try largest first
+            } else {
+                test = (max + min) / 2;
+            }
             String id = this.getClass().getName() + ".testMaxProperty-" + test;
             String pval = generateString(test, true);
             UpdateOp up = new UpdateOp(id, true);
@@ -143,7 +332,7 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
     }
 
     @Test
-    public void testInterestingPropLengths() {
+    public void testInterestingPropLengths() throws UnsupportedEncodingException {
         int lengths[] = { 1, 10, 100, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000,
                 15000, 16000, 20000 };
 
@@ -167,19 +356,56 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
             up.set("foo", pval);
             super.ds.remove(Collection.NODES, id);
             boolean success = super.ds.create(Collection.NODES, Collections.singletonList(up));
-            try {
-                assertTrue("failed to insert a document with property of length " + test
-                        + "(potentially non-ASCII, actual octet length in UTF-8: " + pval.getBytes("UTF-8").length + ") in "
-                        + super.dsname, success);
-            } catch (UnsupportedEncodingException e) {
-                // outch
+            assertTrue("failed to insert a document with property of length " + test
+                    + " (potentially non-ASCII, actual octet length with UTF-8 encoding: " + pval.getBytes("UTF-8").length + ") in "
+                    + super.dsname, success);
+            // check that update works as well
+            if (success) {
+                try {
+                    super.ds.findAndUpdate(Collection.NODES, up);
+                } catch (Exception ex) {
+                    ex.printStackTrace(System.err);
+                    fail("failed to update a document with property of length " + test
+                            + " (potentially non-ASCII, actual octet length with UTF-8 encoding: " + pval.getBytes("UTF-8").length + ") in "
+                            + super.dsname);
+                }
             }
             super.ds.remove(Collection.NODES, id);
         }
     }
 
     @Test
-    public void testModifiedMaxUpdate() {
+    public void testRepeatingUpdatesOnSQLServer() {
+        // simulates two updates to trigger the off-by-one bug documented in OAK-3670
+        String id = this.getClass().getName() + ".testRepeatingUpdatesOnSQLServer";
+
+        // remove if present
+        NodeDocument nd = super.ds.find(Collection.NODES, id);
+        if (nd != null) {
+            super.ds.remove(Collection.NODES, id);
+        }
+
+        UpdateOp up = new UpdateOp(id, true);
+        up.set("_id", id);
+        assertTrue(super.ds.create(Collection.NODES, Collections.singletonList(up)));
+        removeMe.add(id);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.set("f0", generateConstantString(3000));
+        super.ds.update(Collection.NODES, Collections.singletonList(id), up);
+
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.set("f1", generateConstantString(967));
+        super.ds.update(Collection.NODES, Collections.singletonList(id), up);
+
+        NodeDocument doc = super.ds.find(Collection.NODES, id, 0);
+        assertNotNull(doc);
+    }
+
+    @Test
+    public void testModifiedMaxUpdateQuery() {
         String id = this.getClass().getName() + ".testModifiedMaxUpdate";
         // create a test node
         UpdateOp up = new UpdateOp(id, true);
@@ -191,15 +417,76 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
 
         // update with smaller _modified
         UpdateOp up2 = new UpdateOp(id, true);
-        up2.max("_modified", 100L);
         up2.set("_id", id);
+        up2.max("_modified", 100L);
         super.ds.findAndUpdate(Collection.NODES, up2);
 
         super.ds.invalidateCache();
 
         // this should find the document; will fail if the MAX operation wasn't applied to the indexed property
-        List<NodeDocument> results = super.ds.query(Collection.NODES, this.getClass().getName() + ".testModifiedMaxUpdatd", this.getClass().getName() + ".testModifiedMaxUpdatf", "_modified", 1000, 1);
+        String startId = this.getClass().getName() + ".testModifiedMaxUpdatd";
+        String endId = this.getClass().getName() + ".testModifiedMaxUpdatf";
+        List<NodeDocument> results = super.ds.query(Collection.NODES, startId, endId, "_modified", 1000, 1);
         assertEquals("document not found, maybe indexed _modified property not properly updated", 1, results.size());
+    }
+
+    @Test
+    public void testModifyModified() {
+        // https://issues.apache.org/jira/browse/OAK-2940
+        String id = this.getClass().getName() + ".testModifyModified";
+        // create a test node
+        UpdateOp up = new UpdateOp(id, true);
+        up.set("_id", id);
+        up.set("_modified", 1000L);
+        boolean success = super.ds.create(Collection.NODES, Collections.singletonList(up));
+        assertTrue(success);
+        removeMe.add(id);
+
+        // update with "max" operation
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.max("_modified", 2000L);
+        super.ds.update(Collection.NODES, Collections.singletonList(id), up);
+        NodeDocument nd = super.ds.find(Collection.NODES, id, 0);
+        assertEquals(((Number)nd.get("_modified")).longValue(), 2000L);
+
+        // update with "set" operation
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.set("_modified", 1500L);
+        super.ds.update(Collection.NODES, Collections.singletonList(id), up);
+        nd = super.ds.find(Collection.NODES, id, 0);
+        assertEquals(((Number)nd.get("_modified")).longValue(), 1500L);
+    }
+
+    @Test
+    public void testModifyDeletedOnce() {
+        // https://issues.apache.org/jira/browse/OAK-3852
+        String id = this.getClass().getName() + ".testModifyDeletedOnce";
+        // create a test node
+        UpdateOp up = new UpdateOp(id, true);
+        up.set("_id", id);
+        up.set(NodeDocument.DELETED_ONCE, Boolean.FALSE);
+        boolean success = super.ds.create(Collection.NODES, Collections.singletonList(up));
+        assertTrue(success);
+        removeMe.add(id);
+        NodeDocument nd = super.ds.find(Collection.NODES, id, 0);
+        assertNotNull(nd);
+        Boolean dovalue = (Boolean)nd.get(NodeDocument.DELETED_ONCE);
+        if (dovalue != null) {
+            // RDB persistence does not distinguish null and false
+            assertEquals(dovalue.booleanValue(), Boolean.FALSE);
+        }
+
+        // update
+        up = new UpdateOp(id, false);
+        up.set("_id", id);
+        up.set(NodeDocument.DELETED_ONCE, Boolean.TRUE);
+        super.ds.update(Collection.NODES, Collections.singletonList(id), up);
+        nd = super.ds.find(Collection.NODES, id, 0);
+        assertNotNull(nd);
+        assertNotNull(nd.get(NodeDocument.DELETED_ONCE));
+        assertEquals(((Boolean)nd.get(NodeDocument.DELETED_ONCE)).booleanValue(), Boolean.TRUE);
     }
 
     @Test
@@ -225,6 +512,67 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
             NodeDocument nd = super.ds.find(Collection.NODES, id);
             assertEquals("failure to round-trip " + testname + " through " + super.dsname, test, nd.get("foo"));
             super.ds.remove(Collection.NODES, id);
+        }
+    }
+
+    @Test
+    public void testCreatePartialFailure() {
+        String bid = this.getClass().getName() + ".testCreatePartialFailure-";
+        int cnt = 10;
+        assertTrue(cnt > 8);
+
+        // clear repo
+        for (int i = 0; i < cnt; i++) {
+            super.ds.remove(Collection.NODES, bid + i);
+            removeMe.add(bid + i);
+        }
+
+        // create one of the test nodes
+        int pre = cnt / 2;
+        UpdateOp up = new UpdateOp(bid + pre, true);
+        up.set("_id", bid + pre);
+        up.set("foo", "bar");
+        assertTrue(super.ds.create(Collection.NODES, Collections.singletonList(up)));
+
+        // batch create
+        Set<String> toCreate = new HashSet<String>();
+        Set<String> toCreateFailEarly = new HashSet<String>();
+        List<UpdateOp> ups = new ArrayList<UpdateOp>();
+        for (int i = 0; i < cnt; i++) {
+            UpdateOp op = new UpdateOp(bid + i, true);
+            op.set("_id", bid + i);
+            op.set("foo", "qux");
+            ups.add(op);
+            if (i != pre) {
+                toCreate.add(bid + i);
+            }
+            if (i < pre) {
+                toCreateFailEarly.add(bid + i);
+            }
+        }
+        assertFalse(super.ds.create(Collection.NODES, ups));
+
+        // check how many nodes are there
+        Set<String> created = new HashSet<String>();
+        for (int i = 0; i < cnt; i++) {
+            boolean present = null != super.ds.find(Collection.NODES, bid + i, 0);
+            if (i == pre && !present) {
+                fail(super.dsname + ": batch update removed previously existing node " + (bid + i));
+            } else if (present && i != pre) {
+                created.add(bid + i);
+            }
+        }
+
+        // diagnostics
+        toCreate.removeAll(created);
+        if (created.isEmpty()) {
+            LOG.info(super.dsname + ": create() apparently is atomic");
+        } else if (created.size() == toCreate.size()) {
+            LOG.info(super.dsname + ": create() apparently is best-effort");
+        } else if (created.equals(toCreateFailEarly)) {
+            LOG.info(super.dsname + ": create() stops at first failure");
+        } else {
+            LOG.info(super.dsname + ": create() created: " + created + ", missing: " + toCreate);
         }
     }
 
@@ -278,6 +626,56 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
         assertNotNull(d);
         assertEquals(id, d.getId());
         assertEquals("bar", d.get("foo").toString());
+    }
+
+    @Test
+    public void testUpdateModified() {
+        String id = this.getClass().getName() + ".testUpdateModified";
+        // create a test node
+        super.ds.remove(Collection.NODES, id);
+        UpdateOp up = new UpdateOp(id, true);
+        up.set("_id", id);
+        boolean success = super.ds.create(Collection.NODES, Collections.singletonList(up));
+        assertTrue(success);
+        removeMe.add(id);
+
+        ds.invalidateCache();
+        Document d = super.ds.find(Collection.NODES, id);
+        Object m = d.get("_modified");
+        assertNull("_modified should be null until set", m);
+
+        up = new UpdateOp(id, true);
+        up.set("_id", id);
+        up.set("_modified", 123L);
+        super.ds.findAndUpdate(Collection.NODES, up); 
+
+        ds.invalidateCache();
+        d = super.ds.find(Collection.NODES, id);
+        m = d.get("_modified");
+        assertNotNull("_modified should now be != null", m);
+        assertEquals("123", m.toString());
+
+        up = new UpdateOp(id, true);
+        up.set("_id", id);
+        up.max("_modified", 122L);
+        super.ds.findAndUpdate(Collection.NODES, up); 
+
+        ds.invalidateCache();
+        d = super.ds.find(Collection.NODES, id);
+        m = d.get("_modified");
+        assertNotNull("_modified should now be != null", m);
+        assertEquals("123", m.toString());
+
+        up = new UpdateOp(id, true);
+        up.set("_id", id);
+        up.max("_modified", 124L);
+        super.ds.findAndUpdate(Collection.NODES, up); 
+
+        ds.invalidateCache();
+        d = super.ds.find(Collection.NODES, id);
+        m = d.get("_modified");
+        assertNotNull("_modified should now be != null", m);
+        assertEquals("124", m.toString());
     }
 
     @Test
@@ -396,274 +794,6 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
         return result;
     }
 
-    @Test
-    public void testCreatePerfSmall() {
-        createPerf(16, 1);
-    }
-
-    @Test
-    public void testCreatePerfSmallBatch() {
-        createPerf(16, 64);
-    }
-
-    @Test
-    public void testCreatePerfBig() {
-        createPerf(32 * 1024, 1);
-    }
-
-    private void createPerf(int size, int amount) {
-        String pval = generateString(size, true);
-        long duration = 1000;
-        long end = System.currentTimeMillis() + duration;
-        long cnt = 0;
-        List<String> ids = new ArrayList<String>();
-
-        while (System.currentTimeMillis() < end) {
-            List<UpdateOp> ups = new ArrayList<UpdateOp>();
-            for (int i = 0; i < amount; i++) {
-                String id = this.getClass().getName() + ".testCreatePerf-" + size + "-" + cnt + "-" + i;
-                UpdateOp up = new UpdateOp(id, true);
-                up.set("_id", id);
-                up.set("foo", pval);
-                ups.add(up);
-                ids.add(id);
-            }
-            boolean success = super.ds.create(Collection.NODES, ups);
-            removeMe.addAll(ids);
-            assertTrue("documents with " + ids + " not created", success);
-            cnt += 1;
-        }
-
-        LOG.info("document creation with property of size " + size + " and batch size " + amount + " for " + super.dsname + " was " + cnt + " in " + duration + "ms (" + (cnt / (duration / 1000f)) + "/s)");
-    }
-
-    @Test
-    public void testPerfCollectionPaging() {
-        testPerfCollectionPaging(this.getClass().getName() + ".testPerfCollectionPaging", false);
-    }
-
-    @Test
-    public void testPerfCollectionPagingUnCached() {
-        testPerfCollectionPaging(this.getClass().getName() + ".testPerfCollectionPagingUnCached", true);
-    }
-
-    private void testPerfCollectionPaging(String name, boolean invalidateCache) {
-        String cid = name;
-        int nodecount = 20000;
-        int initialFetchCount = 100;
-        int maxFetchCount = 1600;
-        int fetchcount = initialFetchCount;
-        long duration = 2000;
-        int cnt = 0;
-        List<UpdateOp> ups = new ArrayList<UpdateOp>();
-
-        UpdateOp container = new UpdateOp(cid, true);
-        container.set("_id", cid);
-        ups.add(container);
-        removeMe.add(cid);
-        for (int i = 0; i < nodecount; i++) {
-            String id = String.format("%s/%08d", cid, i);
-            removeMe.add(id);
-            UpdateOp u = new UpdateOp(id, true);
-            u.set("_id", id);
-            ups.add(u);
-        }
-
-        boolean success = super.ds.create(Collection.NODES, ups);
-        assertTrue(success);
-        super.ds.invalidateCache();
-
-        long end = System.currentTimeMillis() + duration;
-        String sid = cid;
-        int found = 0;
-        while (System.currentTimeMillis() < end) {
-            long now = System.currentTimeMillis();
-            List<NodeDocument> result = super.ds.query(Collection.NODES, sid, cid + "X", fetchcount);
-            if (super.ds.getCacheStats() != null && result.size() > 0) {
-                // check freshness of returned documents
-                long created = result.get(0).getLastCheckTime();
-                assertTrue(
-                        "'getLastCheckTime' timestamp of NodeDocument too old (" + created + " vs " + now + ") (on " + super.dsname + ")",
-                        created >= now);
-            }
-            found += result.size();
-            if (result.size() < fetchcount) {
-                if (sid.equals(cid)) {
-                    fail("first page must not be empty");
-                }
-                sid = cid;
-                assertEquals(nodecount, found);
-                found = 0;
-                fetchcount = initialFetchCount;
-            }
-            else {
-                sid = result.get(result.size() -1).getId();
-                if (fetchcount < maxFetchCount) {
-                    fetchcount *= 2;
-                }
-            }
-            cnt += 1;
-            if (invalidateCache) {
-                super.ds.invalidateCache();
-            }
-        }
-
-        LOG.info("collection lookups " + (invalidateCache ? "(uncached) " : "") + super.dsname + " was " + cnt + " in " + duration
-                + "ms (" + (cnt / (duration / 1000f)) + "/s)");
-    }
-
-    @Test
-    public void testPerfLastRevBatch() {
-        String bid = this.getClass().getName() + ".testPerfLastRevBatch";
-        int nodecount = 100;
-        long duration = 5000;
-        int cnt = 0;
-        List<String> ids = new ArrayList<String>();
-        Revision cr = Revision.fromString("r0-0-1");
-
-        // create test nodes
-        for (int i = 0; i < nodecount; i++) {
-            String id = bid + "-" + i;
-            super.ds.remove(Collection.NODES, id);
-            removeMe.add(id);
-            UpdateOp up = new UpdateOp(id, true);
-            up.set("_id", id);
-            up.set("testprop", generateString(100 * i, true));
-            up.setMapEntry("_lastRev", cr, "setup");
-            up.set("_modified", NodeDocument.getModifiedInSecs(System.currentTimeMillis()));
-            boolean success = super.ds.create(Collection.NODES, Collections.singletonList(up));
-            assertTrue("creation failed for " + id + " in " + super.dsname, success);
-            ids.add(id);
-        }
-
-        long end = System.currentTimeMillis() + duration;
-        while (System.currentTimeMillis() < end) {
-            UpdateOp up = new UpdateOp(bid, true);
-            up.setMapEntry("_lastRev", cr, "iteration-" + cnt);
-            up.max("_modified", NodeDocument.getModifiedInSecs(System.currentTimeMillis()));
-            super.ds.update(Collection.NODES, ids, up);
-            cnt += 1;
-        }
-
-        // check postcondition
-        super.ds.invalidateCache();
-        for (int i = 0; i < nodecount; i++) {
-            NodeDocument d = super.ds.find(Collection.NODES, bid + "-" + i);
-            assertNotNull(d);
-            Map<Revision, String> m = (Map<Revision, String>)d.get("_lastRev");
-            assertEquals("iteration-" + (cnt - 1), m.get(cr));
-        }
-
-        LOG.info("batch update for _lastRev for " + super.dsname + " was "
-                + cnt + " in " + duration + "ms (" + (cnt / (duration / 1000f)) + "/s)");
-    }
-
-    @Test
-    public void testPerfReadBigDocCached() {
-        perfReadBigDoc(true, this.getClass().getName() + ".testReadBigDocCached");
-    }
-
-    @Test
-    public void testPerfReadBigDocAfterInvalidate() {
-        perfReadBigDoc(false, this.getClass().getName() + ".testReadBigDocAfterInvalidate");
-    }
-
-    private void perfReadBigDoc(boolean cached, String name) {
-        String id = name;
-        long duration = 1000;
-        int cnt = 0;
-
-        super.ds.remove(Collection.NODES, Collections.singletonList(id));
-        UpdateOp up = new UpdateOp(id, true);
-        up.set("_id", id);
-        for (int i = 0; i < 100; i++) {
-            up.set("foo" + i, generateString(1024, true));
-        }
-        assertTrue(super.ds.create(Collection.NODES, Collections.singletonList(up)));
-        removeMe.add(id);
-
-        long end = System.currentTimeMillis() + duration;
-        while (System.currentTimeMillis() < end) {
-            if (!cached) {
-                super.ds.invalidateCache(Collection.NODES, id);
-            }
-            NodeDocument d = super.ds.find(Collection.NODES, id, 10);
-            cnt += 1;
-        }
-
-        LOG.info("big doc read " + (cached ? "" : "(after invalidate) ") + "from " + super.dsname + " was " + cnt + " in "
-                + duration + "ms (" + (cnt / (duration / 1000f)) + "/s)");
-    }
-
-    @Test
-    public void testUpdatePerfSmall() {
-        updatePerf(16, false);
-    }
-
-    @Test
-    public void testUpdatePerfSmallGrowing() {
-        updatePerf(16, true);
-    }
-
-    @Test
-    public void testUpdatePerfBig() {
-        updatePerf(32 * 1024, false);
-    }
-
-    private void updatePerf(int size, boolean growing) {
-        String pval = generateString(size, true);
-        long duration = 1000;
-        long end = System.currentTimeMillis() + duration;
-        long cnt = 0;
-        Set<Revision> expectedRevs = new HashSet<Revision>();
-
-        String id = this.getClass().getName() + ".testUpdatePerf" + (growing ? "Growing" : "") + "-" + size;
-        removeMe.add(id);
-
-        while (System.currentTimeMillis() < end) {
-            UpdateOp up = new UpdateOp(id, true);
-            up.set("_id", id);
-            if (growing) {
-                Revision r = new Revision(System.currentTimeMillis(), (int) cnt, 1);
-                up.setMapEntry("foo", r, pval);
-                up.setMapEntry("_commitRoot", r, "1");
-                up.increment("c", 1);
-                up.max("max", System.currentTimeMillis());
-                expectedRevs.add(r);
-            } else {
-                up.set("foo", pval);
-            }
-            NodeDocument old = super.ds.createOrUpdate(Collection.NODES, up);
-            if (cnt == 0) {
-                assertNull("expect null on create", old);
-            } else {
-                assertNotNull("fail on update " + cnt, old);
-            }
-            cnt += 1;
-        }
-
-        if (growing) {
-            NodeDocument result = super.ds.find(Collection.NODES, id, 0);
-            Map<Revision, Object> m = (Map<Revision, Object>)result.get("foo");
-            assertEquals("number of revisions", expectedRevs.size(), m.size());
-            assertTrue(m.keySet().equals(expectedRevs));
-        }
-
-        LOG.info("document updates with property of size " + size + (growing ? " (growing)" : "") + " for " + super.dsname + " was " + cnt + " in " + duration + "ms (" + (cnt / (duration / 1000f)) + "/s)");
-    }
-
-    private static String generateString(int length, boolean ascii) {
-        char[] s = new char[length];
-        for (int i = 0; i < length; i++) {
-            if (ascii) {
-                s[i] = (char) (32 + (int) (95 * Math.random()));
-            } else {
-                s[i] = (char) (32 + (int) ((0xd7ff - 32) * Math.random()));
-            }
-        }
-        return new String(s);
-    }
-
     private static String generateId(int length, boolean ascii) {
         StringBuffer sb = new StringBuffer();
         for (int i = 0; i < length; i++) {
@@ -675,243 +805,6 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
             }
         }
         return sb.toString();
-    }
-
-    @Test
-    public void testPerfUpdateLimit() throws SQLException, UnsupportedEncodingException {
-        internalTestPerfUpdateLimit("testPerfUpdateLimit", "raw row update (set long)", 0);
-    }
-
-    @Test
-    public void testPerfUpdateLimitString() throws SQLException, UnsupportedEncodingException {
-        internalTestPerfUpdateLimit("testPerfUpdateLimitString", "raw row update (set long/string)", 1);
-    }
-
-    @Test
-    public void testPerfUpdateLimitStringBlob() throws SQLException, UnsupportedEncodingException {
-        internalTestPerfUpdateLimit("testPerfUpdateLimitStringBlob", "raw row update (set long/string/blob)", 2);
-    }
-
-    @Test
-    public void testPerfUpdateAppendString() throws SQLException, UnsupportedEncodingException {
-        internalTestPerfUpdateLimit("testPerfUpdateAppendString", "raw row update (append string)", 3);
-    }
-
-    @Test
-    public void testPerfUpdateGrowingDoc() throws SQLException, UnsupportedEncodingException {
-        internalTestPerfUpdateLimit("testPerfUpdateGrowingDoc", "raw row update (string + blob)", 4);
-    }
-
-    private void internalTestPerfUpdateLimit(String name, String desc, int mode) throws SQLException, UnsupportedEncodingException {
-        if (super.rdbDataSource != null) {
-            String key = name;
-            Connection connection = null;
-            String table = DocumentStoreFixture.TABLEPREFIX + "NODES";
-
-            // create test node
-            try {
-                connection = super.rdbDataSource.getConnection();
-                connection.setAutoCommit(false);
-                // we use the same pool as the document store, and the connection might have been returned in read-only mode
-                connection.setReadOnly(false);
-                PreparedStatement stmt = connection.prepareStatement("insert into " + table
-                        + " (ID, MODCOUNT, DATA) values (?, ?, ?)");
-                try {
-                    setIdInStatement(stmt, 1, key);
-                    stmt.setLong(2, 0);
-                    stmt.setString(3, "X");
-                    stmt.executeUpdate();
-                    connection.commit();
-                } finally {
-                    stmt.close();
-                }
-            } catch (SQLException ex) {
-                // ignored
-                // ex.printStackTrace();
-            } finally {
-                if (connection != null) {
-                    try {
-                        connection.close();
-                    } catch (SQLException e) {
-                        // ignored
-                    }
-                }
-            }
-
-            removeMe.add(key);
-            StringBuffer expect = new StringBuffer("X");
-
-            String appendString = generateString(512, true);
-
-            long duration = 1000;
-            long end = System.currentTimeMillis() + duration;
-            long cnt = 0;
-            byte bdata[] = new byte[65536];
-            String sdata = appendString;
-            boolean needsConcat = super.dsname.contains("MySQL");
-            boolean needsSQLStringConcat = super.dsname.contains("MSSql");
-            int dataInChars = ((super.dsname.contains("Oracle") || (super.dsname.contains("MSSql"))) ? 4000 : 16384);
-            int dataInBytes = dataInChars / 3;
-
-            while (System.currentTimeMillis() < end) {
-
-                try {
-                    connection = super.rdbDataSource.getConnection();
-                    connection.setAutoCommit(false);
-
-                    if (mode == 0) {
-                        PreparedStatement stmt = connection.prepareStatement("update " + table + " set MODCOUNT = ? where ID = ?");
-                        try {
-                            stmt.setLong(1, cnt);
-                            setIdInStatement(stmt, 2, key);
-                            assertEquals(1, stmt.executeUpdate());
-                            connection.commit();
-                        } finally {
-                            stmt.close();
-                        }
-                    } else if (mode == 1) {
-                        PreparedStatement stmt = connection.prepareStatement("update " + table
-                                + " set MODCOUNT = ?, DATA = ? where ID = ?");
-                        try {
-                            stmt.setLong(1, cnt);
-                            stmt.setString(2, "JSON data " + UUID.randomUUID());
-                            setIdInStatement(stmt, 3, key);
-                            assertEquals(1, stmt.executeUpdate());
-                            connection.commit();
-                        } finally {
-                            stmt.close();
-                        }
-                    } else if (mode == 2) {
-                        PreparedStatement stmt = connection.prepareStatement("update " + table
-                                + " set MODCOUNT = ?, DATA = ?, BDATA = ? where ID = ?");
-                        try {
-                            stmt.setLong(1, cnt);
-                            stmt.setString(2, "JSON data " + UUID.randomUUID());
-                            bdata[(int) cnt % bdata.length] = (byte) (cnt & 0xff);
-                            stmt.setString(2, "JSON data " + UUID.randomUUID());
-                            stmt.setBytes(3, bdata);
-                            setIdInStatement(stmt, 4, key);
-                            assertEquals(1, stmt.executeUpdate());
-                            connection.commit();
-                        } finally {
-                            stmt.close();
-                        }
-                    } else if (mode == 3) {
-                        String t = "update " + table + " ";
-
-                        t += "set DATA = ";
-                        if (needsConcat) {
-                            t += "CONCAT(DATA, ?) ";
-                        } else if (needsSQLStringConcat) {
-                            t += "CASE WHEN LEN(DATA) <= " + (dataInChars - appendString.length()) + " THEN (DATA + CAST(? AS nvarchar(" + 4000
-                                    + "))) ELSE (DATA + CAST(DATA AS nvarchar(max))) END";
-                        } else {
-                            t += "DATA || CAST(? as varchar(" + dataInChars + "))";
-                        }
-
-                        t += " where ID = ?";
-
-                        PreparedStatement stmt = connection.prepareStatement(t);
-                        try {
-                            stmt.setString(1, appendString);
-                            setIdInStatement(stmt, 2, key);
-                            assertEquals(1, stmt.executeUpdate());
-                            connection.commit();
-                            expect.append(appendString);
-                        } catch (SQLException ex) {
-                            // ex.printStackTrace();
-                            String state = ex.getSQLState();
-                            if ("22001".equals(state) /* everybody */ || ("72000".equals(state) && 1489 == ex.getErrorCode()) /* Oracle */) {
-                                // overflow
-                                connection.rollback();
-                                stmt = connection.prepareStatement("update " + table
-                                        + " set MODCOUNT = MODCOUNT + 1, DATA = ? where ID = ?");
-                                stmt.setString(1, "X");
-                                setIdInStatement(stmt, 2, key);
-                                assertEquals(1, stmt.executeUpdate());
-                                connection.commit();
-                                expect = new StringBuffer("X");
-                            } else {
-                                // ex.printStackTrace();
-                                throw (ex);
-                            }
-                        } finally {
-                            stmt.close();
-                        }
-                    } else if (mode == 4) {
-                        PreparedStatement stmt = connection.prepareStatement("update " + table
-                                + " set MODIFIED = ?, HASBINARY = ?, MODCOUNT = ?, CMODCOUNT = ?, DSIZE = ?, DATA = ?, BDATA = ? where ID = ?");
-                        try {
-                            int si = 1;
-                            stmt.setObject(si++, System.currentTimeMillis() / 5, Types.BIGINT);
-                            stmt.setObject(si++, 0, Types.SMALLINT);
-                            stmt.setObject(si++, cnt, Types.BIGINT);
-                            stmt.setObject(si++, null, Types.BIGINT);
-                            stmt.setObject(si++, sdata.length(), Types.BIGINT);
-
-                            if (sdata.length() < dataInBytes) {
-                                stmt.setString(si++, sdata);
-                                stmt.setBinaryStream(si++, null, 0);
-                            }
-                            else {
-                                stmt.setString(si++, "null");
-                                stmt.setBytes(si++, sdata.getBytes("UTF-8"));
-                            }
-                            setIdInStatement(stmt, si++, key);
-                            assertEquals(1, stmt.executeUpdate());
-                            connection.commit();
-                            sdata += appendString;
-                        } finally {
-                            stmt.close();
-                        }
-
-                    }
-                } catch (SQLException ex) {
-                    LOG.error(ex.getMessage() + " " + ex.getSQLState() + " " + ex.getErrorCode(), ex);
-                } finally {
-                    if (connection != null) {
-                        try {
-                            connection.close();
-                        } catch (SQLException e) {
-                            // ignored
-                        }
-                    }
-                }
-
-                cnt += 1;
-            }
-
-            // check persisted values
-            if (mode == 3) {
-                try {
-                    connection = super.rdbDataSource.getConnection();
-                    connection.setAutoCommit(false);
-                    PreparedStatement stmt = connection.prepareStatement("select DATA, MODCOUNT from " + table + " where ID = ?");
-                    try {
-                        setIdInStatement(stmt, 1, key);
-                        ResultSet rs = stmt.executeQuery();
-                        assertTrue("test record " + key + " not found in " + super.dsname, rs.next());
-                        String got = rs.getString(1);
-                        long modc = rs.getLong(2);
-                        LOG.info("column reset " + modc + " times");
-                        assertEquals(expect.toString(), got);
-                    } finally {
-                        stmt.close();
-                    }
-                } finally {
-                    if (connection != null) {
-                        try {
-                            connection.close();
-                        } catch (SQLException e) {
-                            // ignored
-                        }
-                    }
-                }
-            }
-
-            LOG.info(desc + " for " + super.dsname + " was " + cnt + " in " + duration + "ms (" + (cnt / (duration / 1000f))
-                    + "/s)");
-        }
     }
 
     // make sure _collisionsModCount property is maintained properly when it exists
@@ -970,20 +863,6 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
         }
     }
 
-    private void setIdInStatement(PreparedStatement stmt, int idx, String id) throws SQLException {
-        boolean binaryId = super.dsname.contains("MySQL") || super.dsname.contains("MSSql");
-        if (binaryId) {
-            try {
-                stmt.setBytes(idx, id.getBytes("UTF-8"));
-            } catch (UnsupportedEncodingException ex) {
-                LOG.error("UTF-8 not supported??", ex);
-                throw new DocumentStoreException(ex);
-            }
-        } else {
-            stmt.setString(idx, id);
-        }
-    }
-
     @Test
     public void description() throws Exception{
         Map<String, String> desc = ds.getMetadata();
@@ -991,7 +870,23 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
     }
 
     @Test
+    public void testServerTimeDiff() throws Exception {
+        UpdateOp up = new UpdateOp("0:/", true);
+        up.set("_id", "0:/");
+        super.ds.create(Collection.NODES, Collections.singletonList(up));
+        removeMe.add("0:/");
+        long td = super.ds.determineServerTimeDifferenceMillis();
+        LOG.info("Server time difference on " + super.dsname + ": " + td + "ms");
+    }
+
+    @Test
     public void removeWithCondition() throws Exception {
+
+        Set<String> existingDocs = new HashSet<String>();
+        for (NodeDocument doc : Utils.getAllDocuments(ds)) {
+            existingDocs.add(doc.getPath());
+        }
+
         List<UpdateOp> docs = Lists.newArrayList();
         docs.add(newDocument("/foo", 100));
         removeMe.add(Utils.getIdFromPath("/foo"));
@@ -1016,10 +911,29 @@ public class BasicDocumentStoreTest extends AbstractDocumentStoreTest {
         assertEquals(2, removed);
         assertNotNull(ds.find(Collection.NODES, Utils.getIdFromPath("/bar")));
         for (NodeDocument doc : Utils.getAllDocuments(ds)) {
-            if (!doc.getPath().equals("/bar")) {
+            if (!doc.getPath().equals("/bar") && !existingDocs.contains(doc.getPath())) {
                 fail("document must not exist: " + doc.getId());
             }
         }
+    }
+
+    @Test
+    public void removeInvalidatesCache() throws Exception {
+        String id = Utils.getIdFromPath("/foo");
+        removeMe.add(id);
+        ds.create(Collection.NODES, Collections.singletonList(newDocument("/foo", 1)));
+
+        Map<Key, Condition> conditions = Collections.emptyMap();
+        ds.remove(Collection.NODES, Collections.singletonMap(id, conditions));
+        assertNull(ds.getIfCached(Collection.NODES, id));
+    }
+
+    // OAK-3932
+    @Test
+    public void getIfCachedNonExistingDocument() throws Exception {
+        String id = Utils.getIdFromPath("/foo");
+        assertNull(ds.find(Collection.NODES, id));
+        assertNull(ds.getIfCached(Collection.NODES, id));
     }
 
     private UpdateOp newDocument(String path, long modified) {

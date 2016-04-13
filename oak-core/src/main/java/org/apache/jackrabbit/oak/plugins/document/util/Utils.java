@@ -34,23 +34,24 @@ import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
+import com.google.common.base.Function;
 import com.google.common.base.Predicate;
 import com.google.common.collect.AbstractIterator;
-import com.mongodb.BasicDBObject;
 
 import org.apache.commons.codec.binary.Hex;
 import org.apache.jackrabbit.oak.commons.PathUtils;
+import org.apache.jackrabbit.oak.commons.StringUtils;
 import org.apache.jackrabbit.oak.plugins.document.Collection;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
 import org.apache.jackrabbit.oak.plugins.document.Revision;
-import org.apache.jackrabbit.oak.plugins.document.RevisionContext;
+import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
 import org.apache.jackrabbit.oak.plugins.document.StableRevisionComparator;
-import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Iterables.transform;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.isDeletedEntry;
 
 /**
@@ -82,7 +83,7 @@ public class Utils {
     /**
      * The maximum size a node name, in bytes. This is only a problem for long path.
      */
-    private static final int NODE_NAME_LIMIT = Integer.getInteger("oak.nodeNameLimit", 150);
+    public static final int NODE_NAME_LIMIT = Integer.getInteger("oak.nodeNameLimit", 150);
 
     private static final Charset UTF_8 = Charset.forName("UTF-8");
 
@@ -135,11 +136,11 @@ public class Utils {
             if (e.getKey() instanceof Revision) {
                 size += 32;
             } else {
-                size += 48 + e.getKey().toString().length() * 2;
+                size += StringUtils.estimateMemoryUsage(e.getKey().toString());
             }
             Object o = e.getValue();
             if (o instanceof String) {
-                size += 48 + ((String) o).length() * 2;
+                size += StringUtils.estimateMemoryUsage((String) o);
             } else if (o instanceof Long) {
                 size += 16;
             } else if (o instanceof Boolean) {
@@ -155,28 +156,13 @@ public class Utils {
             }
         }
 
-        if (map instanceof BasicDBObject) {
-            // Based on empirical testing using JAMM
-            size += 176;
-            size += map.size() * 136;
-        } else {
-            // overhead for some other kind of map
-            // TreeMap (80) + unmodifiable wrapper (32)
-            size += 112;
-            // 64 bytes per entry
-            size += map.size() * 64;
-        }
-        return size;
-    }
+        // overhead for map object
+        // TreeMap (80) + unmodifiable wrapper (32)
+        size += 112;
+        // 64 bytes per entry
+        size += map.size() * 64;
 
-    /**
-     * Generate a unique cluster id, similar to the machine id field in MongoDB ObjectId objects.
-     *
-     * @return the unique machine id
-     */
-    public static int getUniqueClusterId() {
-        ObjectId objId = new ObjectId();
-        return objId._machine();
+        return size;
     }
 
     public static String escapePropertyName(String propertyName) {
@@ -353,6 +339,30 @@ public class Utils {
     }
 
     /**
+     * Determines if the passed id belongs to a previous doc
+     *
+     * @param id id to check
+     * @return true if the id belongs to a previous doc
+     */
+    public static boolean isPreviousDocId(String id){
+        int indexOfColon = id.indexOf(':');
+        if (indexOfColon > 0 && indexOfColon < id.length() - 1){
+            return id.charAt(indexOfColon + 1) == 'p';
+        }
+        return false;
+    }
+
+    /**
+     * Determines if the passed id belongs to a leaf level previous doc
+     *
+     * @param id id to check
+     * @return true if the id belongs to a leaf level previous doc
+     */
+    public static boolean isLeafPreviousDocId(String id){
+        return isPreviousDocId(id) && id.endsWith("/0");
+    }
+
+    /**
      * Deep copy of a map that may contain map values.
      *
      * @param source the source map
@@ -475,19 +485,6 @@ public class Utils {
     }
 
     /**
-     * Checks that revision x is newer than another revision.
-     *
-     * @param x the revision to check
-     * @param previous the presumed earlier revision
-     * @return true if x is newer
-     */
-    public static boolean isRevisionNewer(@Nonnull RevisionContext context,
-                                          @Nonnull Revision x,
-                                          @Nonnull Revision previous) {
-        return context.getRevisionComparator().compare(x, previous) > 0;
-    }
-
-    /**
      * Returns the revision with the newer timestamp or {@code null} if both
      * revisions are {@code null}. The implementation will return the first
      * revision if both have the same timestamp.
@@ -498,12 +495,67 @@ public class Utils {
      */
     @CheckForNull
     public static Revision max(@Nullable Revision a, @Nullable Revision b) {
+        return max(a, b, StableRevisionComparator.INSTANCE);
+    }
+
+    /**
+     * Returns the revision which is considered more recent or {@code null} if
+     * both revisions are {@code null}. The implementation will return the first
+     * revision if both are considered equal. The comparison is done using the
+     * provided comparator.
+     *
+     * @param a the first revision (or {@code null}).
+     * @param b the second revision (or {@code null}).
+     * @param c the comparator.
+     * @return the revision considered more recent.
+     */
+    @CheckForNull
+    public static Revision max(@Nullable Revision a,
+                               @Nullable Revision b,
+                               @Nonnull Comparator<Revision> c) {
         if (a == null) {
             return b;
         } else if (b == null) {
             return a;
         }
-        return StableRevisionComparator.INSTANCE.compare(a, b) >= 0 ? a : b;
+        return c.compare(a, b) >= 0 ? a : b;
+    }
+
+    /**
+     * Returns the revision with the older timestamp or {@code null} if both
+     * revisions are {@code null}. The implementation will return the first
+     * revision if both have the same timestamp.
+     *
+     * @param a the first revision (or {@code null}).
+     * @param b the second revision (or {@code null}).
+     * @return the revision with the older timestamp.
+     */
+    @CheckForNull
+    public static Revision min(@Nullable Revision a, @Nullable Revision b) {
+        return min(a, b, StableRevisionComparator.INSTANCE);
+    }
+
+    /**
+     * Returns the revision which is considered older or {@code null} if
+     * both revisions are {@code null}. The implementation will return the first
+     * revision if both are considered equal. The comparison is done using the
+     * provided comparator.
+     *
+     * @param a the first revision (or {@code null}).
+     * @param b the second revision (or {@code null}).
+     * @param c the comparator.
+     * @return the revision considered more recent.
+     */
+    @CheckForNull
+    public static Revision min(@Nullable Revision a,
+                               @Nullable Revision b,
+                               @Nonnull Comparator<Revision> c) {
+        if (a == null) {
+            return b;
+        } else if (b == null) {
+            return a;
+        }
+        return c.compare(a, b) <= 0 ? a : b;
     }
 
     /**
@@ -518,6 +570,27 @@ public class Utils {
      */
     public static Iterable<NodeDocument> getAllDocuments(final DocumentStore store) {
         return internalGetSelectedDocuments(store, null, 0);
+    }
+
+    /**
+     * Returns the root node document of the given document store. The returned
+     * document is retrieved from the document store via
+     * {@link DocumentStore#find(Collection, String)}, which means the
+     * implementation is allowed to return a cached version of the document.
+     * The document is therefore not guaranteed to be up-to-date.
+     *
+     * @param store a document store.
+     * @return the root document.
+     * @throws IllegalStateException if there is no root document.
+     */
+    @Nonnull
+    public static NodeDocument getRootDocument(@Nonnull DocumentStore store) {
+        String rootId = Utils.getIdFromPath("/");
+        NodeDocument root = store.find(Collection.NODES, rootId);
+        if (root == null) {
+            throw new IllegalStateException("missing root document");
+        }
+        return root;
     }
 
     /**
@@ -588,5 +661,101 @@ public class Utils {
      */
     public static boolean isHiddenPath(@Nonnull String path) {
         return path.contains("/:");
+    }
+
+    /**
+     * Transforms the given {@link Iterable} from {@link String} to
+     * {@link StringValue} elements. The {@link Iterable} must no have
+     * {@code null} values.
+     */
+    public static Iterable<StringValue> asStringValueIterable(
+            @Nonnull Iterable<String> values) {
+        return transform(values, new Function<String, StringValue>() {
+            @Override
+            public StringValue apply(String input) {
+                return new StringValue(input);
+            }
+        });
+    }
+
+    /**
+     * Transforms the given paths into ids using {@link #getIdFromPath(String)}.
+     */
+    public static Iterable<String> pathToId(@Nonnull Iterable<String> paths) {
+        return transform(paths, new Function<String, String>() {
+            @Override
+            public String apply(String input) {
+                return getIdFromPath(input);
+            }
+        });
+    }
+
+    /**
+     * Returns the highest timestamp of all the passed external revisions.
+     * A revision is considered external if the clusterId is different from the
+     * passed {@code localClusterId}.
+     *
+     * @param revisions the revisions to consider.
+     * @param localClusterId the id of the local cluster node.
+     * @return the highest timestamp or {@link Long#MIN_VALUE} if none of the
+     *          revisions is external.
+     */
+    public static long getMaxExternalTimestamp(Iterable<Revision> revisions,
+                                               int localClusterId) {
+        long maxTime = Long.MIN_VALUE;
+        for (Revision r : revisions) {
+            if (r.getClusterId() == localClusterId) {
+                continue;
+            }
+            maxTime = Math.max(maxTime, r.getTimestamp());
+        }
+        return maxTime;
+    }
+
+    /**
+     * Returns the given number instance as a {@code Long}.
+     *
+     * @param n a number or {@code null}.
+     * @return the number converted to a {@code Long} or {@code null}
+     *      if {@code n} is {@code null}.
+     */
+    public static Long asLong(@Nullable Number n) {
+        if (n == null) {
+            return null;
+        } else if (n instanceof Long) {
+            return (Long) n;
+        } else {
+            return n.longValue();
+        }
+    }
+
+    /**
+     * Returns the minimum timestamp to use for a query for child documents that
+     * have been modified between {@code fromRev} and {@code toRev}.
+     *
+     * @param fromRev the from revision.
+     * @param toRev the to revision.
+     * @param minRevisions the minimum revisions of foreign cluster nodes. These
+     *                     are derived from the startTime of a cluster node.
+     * @return the minimum timestamp.
+     */
+    public static long getMinTimestampForDiff(@Nonnull RevisionVector fromRev,
+                                              @Nonnull RevisionVector toRev,
+                                              @Nonnull RevisionVector minRevisions) {
+        // make sure we have minimum revisions for all known cluster nodes
+        fromRev = fromRev.pmax(minRevisions);
+        toRev = toRev.pmax(minRevisions);
+        // keep only revision entries that changed
+        RevisionVector from = fromRev.difference(toRev);
+        RevisionVector to = toRev.difference(fromRev);
+        // now calculate minimum timestamp
+        long min = Long.MAX_VALUE;
+        for (Revision r : from) {
+            min = Math.min(r.getTimestamp(), min);
+        }
+        for (Revision r : to) {
+            min = Math.min(r.getTimestamp(), min);
+        }
+        return min;
     }
 }

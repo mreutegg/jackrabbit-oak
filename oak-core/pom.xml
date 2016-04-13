@@ -23,7 +23,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>oak-parent</artifactId>
-    <version>1.4-SNAPSHOT</version>
+    <version>1.6-SNAPSHOT</version>
     <relativePath>../oak-parent/pom.xml</relativePath>
   </parent>
 
@@ -38,16 +38,11 @@
         <artifactId>maven-bundle-plugin</artifactId>
         <configuration>
           <instructions>
-            <Embed-Dependency>
-            </Embed-Dependency>
-            <Embed-Transitive>true</Embed-Transitive>
-            <Import-Package>
-              *;resolution:=optional
-            </Import-Package>
             <Export-Package>
               org.apache.jackrabbit.oak,
               org.apache.jackrabbit.oak.api,
               org.apache.jackrabbit.oak.api.jmx,
+              org.apache.jackrabbit.oak.cache,
               org.apache.jackrabbit.oak.stats,
               org.apache.jackrabbit.oak.json,
               org.apache.jackrabbit.oak.management,
@@ -55,10 +50,12 @@
               org.apache.jackrabbit.oak.namepath,
               org.apache.jackrabbit.oak.osgi,
               org.apache.jackrabbit.oak.plugins.atomic,
-              org.apache.jackrabbit.oak.plugins.backup,
+              org.apache.jackrabbit.oak.plugins.blob,
+              org.apache.jackrabbit.oak.plugins.blob.datastore,
               org.apache.jackrabbit.oak.plugins.commit,
               org.apache.jackrabbit.oak.plugins.identifier,
               org.apache.jackrabbit.oak.plugins.index,
+              org.apache.jackrabbit.oak.plugins.index.fulltext,
               org.apache.jackrabbit.oak.plugins.index.aggregate,
               org.apache.jackrabbit.oak.plugins.index.counter,
               org.apache.jackrabbit.oak.plugins.index.nodetype,
@@ -73,9 +70,6 @@
               org.apache.jackrabbit.oak.plugins.nodetype.write,
               org.apache.jackrabbit.oak.plugins.observation,
               org.apache.jackrabbit.oak.plugins.observation.filter,
-              org.apache.jackrabbit.oak.plugins.segment,
-              org.apache.jackrabbit.oak.plugins.segment.http,
-              org.apache.jackrabbit.oak.plugins.segment.file,
               org.apache.jackrabbit.oak.plugins.tree,
               org.apache.jackrabbit.oak.plugins.value,
               org.apache.jackrabbit.oak.plugins.version,
@@ -86,6 +80,7 @@
               org.apache.jackrabbit.oak.spi.security,
               org.apache.jackrabbit.oak.spi.security.authentication,
               org.apache.jackrabbit.oak.spi.security.authentication.callback,
+              org.apache.jackrabbit.oak.spi.security.authentication.credentials,
               org.apache.jackrabbit.oak.spi.security.authentication.token,
               org.apache.jackrabbit.oak.spi.security.authorization,
               org.apache.jackrabbit.oak.spi.security.authorization.accesscontrol,
@@ -99,9 +94,12 @@
               org.apache.jackrabbit.oak.spi.state,
               org.apache.jackrabbit.oak.spi.whiteboard,
               org.apache.jackrabbit.oak.spi.xml,
+              org.apache.jackrabbit.oak.stats,
               org.apache.jackrabbit.oak.query,
               org.apache.jackrabbit.oak.query.fulltext,
-              org.apache.jackrabbit.oak.security
+              org.apache.jackrabbit.oak.query.facet,
+              org.apache.jackrabbit.oak.security,
+              org.apache.jackrabbit.oak.util,
             </Export-Package>
             <Jaas-ModuleClass>
               org.apache.jackrabbit.oak.spi.security.authentication.GuestLoginModule,
@@ -117,22 +115,6 @@
       <plugin>
         <groupId>org.apache.felix</groupId>
         <artifactId>maven-scr-plugin</artifactId>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-jar-plugin</artifactId>
-        <executions>
-          <execution>
-            <goals>
-              <goal>test-jar</goal>
-            </goals>
-            <configuration>
-              <excludes>
-                <exclude>logback-test.xml</exclude>
-              </excludes>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
       <plugin>
         <artifactId>maven-failsafe-plugin</artifactId>
@@ -219,10 +201,10 @@
       <version>2.4</version>
     </dependency>
     <dependency>
-      <groupId>com.googlecode.json-simple</groupId>
-      <artifactId>json-simple</artifactId>
-      <version>1.1.1</version>
-      <!--<optional>true</optional>-->
+      <groupId>io.dropwizard.metrics</groupId>
+      <artifactId>metrics-core</artifactId>
+      <version>3.1.0</version>
+      <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
@@ -245,20 +227,6 @@
       <optional>true</optional>
     </dependency>
 
-    <!-- Required for OffHeap storage and serialization-->
-    <dependency>
-      <groupId>com.esotericsoftware.kryo</groupId>
-      <artifactId>kryo</artifactId>
-      <version>2.22</version>
-      <optional>true</optional>
-    </dependency>
-    <dependency>
-      <groupId>org.apache.directmemory</groupId>
-      <artifactId>directmemory-cache</artifactId>
-      <version>0.2</version>
-      <optional>true</optional>
-    </dependency>
-    
     <!-- Required for the persistent cache -->
     <dependency>
       <groupId>com.h2database</groupId>
@@ -290,12 +258,6 @@
       <optional>true</optional>
     </dependency>
 
-    <dependency>
-      <groupId>commons-dbcp</groupId>
-      <artifactId>commons-dbcp</artifactId>
-      <version>1.4</version>
-    </dependency>
-
     <!-- Logging -->
     <dependency>
       <groupId>org.slf4j</groupId>
@@ -315,9 +277,25 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>junit-addons</groupId>
+      <artifactId>junit-addons</artifactId>
+      <version>1.4</version>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>xerces</groupId>
+          <artifactId>xercesImpl</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>xerces</groupId>
+          <artifactId>xmlParserAPIs</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
       <groupId>org.mockito</groupId>
       <artifactId>mockito-core</artifactId>
-      <version>1.9.5</version>
+      <version>1.10.19</version>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -345,6 +323,28 @@
     <dependency>
       <groupId>commons-lang</groupId>
       <artifactId>commons-lang</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.sling</groupId>
+      <artifactId>org.apache.sling.testing.osgi-mock</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-math3</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.tomcat</groupId>
+      <artifactId>tomcat-jdbc</artifactId>
+      <version>7.0.64</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.googlecode.json-simple</groupId>
+      <artifactId>json-simple</artifactId>
+      <version>1.1.1</version>
       <scope>test</scope>
     </dependency>
   </dependencies>

@@ -19,8 +19,6 @@ package org.apache.jackrabbit.oak.plugins.index.lucene;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
-import static org.apache.jackrabbit.oak.plugins.index.lucene.LuceneIndexConstants.TYPE_LUCENE;
-
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.plugins.index.IndexEditor;
 import org.apache.jackrabbit.oak.plugins.index.IndexEditorProvider;
@@ -28,6 +26,8 @@ import org.apache.jackrabbit.oak.plugins.index.IndexUpdateCallback;
 import org.apache.jackrabbit.oak.spi.commit.Editor;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+
+import static org.apache.jackrabbit.oak.plugins.index.lucene.LuceneIndexConstants.TYPE_LUCENE;
 
 /**
  * Service that provides Lucene based {@link IndexEditor}s
@@ -38,13 +38,29 @@ import org.apache.jackrabbit.oak.spi.state.NodeState;
  */
 public class LuceneIndexEditorProvider implements IndexEditorProvider {
     private final IndexCopier indexCopier;
+    private final ExtractedTextCache extractedTextCache;
+    private final IndexAugmentorFactory augmentorFactory;
 
     public LuceneIndexEditorProvider() {
         this(null);
     }
 
     public LuceneIndexEditorProvider(@Nullable IndexCopier indexCopier) {
+        //Disable the cache by default in ExtractedTextCache
+        this(indexCopier, new ExtractedTextCache(0, 0));
+    }
+
+    public LuceneIndexEditorProvider(@Nullable IndexCopier indexCopier,
+                                     ExtractedTextCache extractedTextCache) {
+        this(indexCopier, extractedTextCache, null);
+    }
+
+    public LuceneIndexEditorProvider(@Nullable IndexCopier indexCopier,
+                                     ExtractedTextCache extractedTextCache,
+                                     IndexAugmentorFactory augmentorFactory) {
         this.indexCopier = indexCopier;
+        this.extractedTextCache = extractedTextCache;
+        this.augmentorFactory = augmentorFactory;
     }
 
     @Override
@@ -53,12 +69,16 @@ public class LuceneIndexEditorProvider implements IndexEditorProvider {
             @Nonnull IndexUpdateCallback callback)
             throws CommitFailedException {
         if (TYPE_LUCENE.equals(type)) {
-            return new LuceneIndexEditor(root, definition, callback, indexCopier);
+            return new LuceneIndexEditor(root, definition, callback, indexCopier, extractedTextCache, augmentorFactory);
         }
         return null;
     }
 
     IndexCopier getIndexCopier() {
         return indexCopier;
+    }
+
+    ExtractedTextCache getExtractedTextCache() {
+        return extractedTextCache;
     }
 }

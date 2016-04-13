@@ -19,6 +19,9 @@
 
 package org.apache.jackrabbit.oak.jcr;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.Collection;
@@ -37,10 +40,14 @@ import org.apache.jackrabbit.api.JackrabbitRepository;
 import org.apache.jackrabbit.api.ReferenceBinary;
 import org.apache.jackrabbit.commons.jackrabbit.SimpleReferenceBinary;
 import org.apache.jackrabbit.core.data.RandomInputStream;
+import org.apache.jackrabbit.oak.fixture.DocumentMongoFixture;
+import org.apache.jackrabbit.oak.fixture.NodeStoreFixture;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreBlobStore;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.OakFileDataStore;
+import org.apache.jackrabbit.oak.plugins.document.MongoUtils;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentStore;
 import org.apache.jackrabbit.oak.plugins.segment.file.FileStore;
+import org.apache.jackrabbit.oak.plugins.segment.fixture.SegmentFixture;
 import org.apache.jackrabbit.oak.spi.blob.BlobStore;
 import org.apache.jackrabbit.oak.spi.blob.FileBlobStore;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
@@ -49,10 +56,6 @@ import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
-
-import static org.apache.jackrabbit.oak.jcr.NodeStoreFixture.DocumentFixture;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 
 @RunWith(Parameterized.class)
 public class ReferenceBinaryIT {
@@ -133,23 +136,31 @@ public class ReferenceBinaryIT {
     @Parameterized.Parameters
     public static Collection<Object[]> fixtures() throws IOException {
         File file = getTestDir("tar");
-        SegmentStore segmentStore = new FileStore(createBlobStore(), file, 266, true);
+        SegmentStore segmentStore = FileStore.builder(file)
+                .withBlobStore(createBlobStore())
+                .withMaxFileSize(256)
+                .withMemoryMapping(true)
+                .build();
 
         List<Object[]> fixtures = Lists.newArrayList();
-        NodeStoreFixture.SegmentFixture segmentFixture = new NodeStoreFixture.SegmentFixture(segmentStore);
+        SegmentFixture segmentFixture = new SegmentFixture(segmentStore);
         if (segmentFixture.isAvailable()) {
             fixtures.add(new Object[] {segmentFixture});
         }
 
         FileBlobStore fbs = new FileBlobStore(getTestDir("fbs1").getAbsolutePath());
         fbs.setReferenceKeyPlainText("foobar");
-        SegmentStore segmentStoreWithFBS =  new FileStore(fbs, getTestDir("tar2"), 266, true);
-        NodeStoreFixture.SegmentFixture segmentFixtureFBS = new NodeStoreFixture.SegmentFixture(segmentStoreWithFBS);
+        SegmentStore segmentStoreWithFBS = FileStore.builder(getTestDir("tar2"))
+                .withBlobStore(fbs)
+                .withMaxFileSize(256)
+                .withMemoryMapping(true)
+                .build();
+        SegmentFixture segmentFixtureFBS = new SegmentFixture(segmentStoreWithFBS);
         if (segmentFixtureFBS.isAvailable()) {
             fixtures.add(new Object[] {segmentFixtureFBS});
         }
 
-        DocumentFixture documentFixture = new DocumentFixture(DocumentFixture.DEFAULT_URI, false, createBlobStore());
+        DocumentMongoFixture documentFixture = new DocumentMongoFixture(MongoUtils.URL, createBlobStore());
         if (documentFixture.isAvailable()) {
             fixtures.add(new Object[]{documentFixture});
         }

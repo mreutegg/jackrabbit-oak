@@ -19,11 +19,13 @@ package org.apache.jackrabbit.oak.plugins.index;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Lists.newArrayListWithCapacity;
+import static com.google.common.collect.Sets.newHashSet;
 import static org.apache.jackrabbit.oak.api.Type.BOOLEAN;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.ASYNC_PROPERTY_NAME;
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.ASYNC_REINDEX_VALUE;
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.INDEX_DEFINITIONS_NAME;
+import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.INDEX_PATH;
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.REINDEX_ASYNC_PROPERTY_NAME;
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.REINDEX_COUNT;
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.REINDEX_PROPERTY_NAME;
@@ -47,6 +49,7 @@ import com.google.common.base.Stopwatch;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
@@ -64,6 +67,34 @@ import com.google.common.base.Objects;
 public class IndexUpdate implements Editor {
 
     private static final Logger log = LoggerFactory.getLogger(IndexUpdate.class);
+
+    /**
+     * <p>
+     * The value of this flag determines the behavior of the IndexUpdate when
+     * dealing with {@code reindex} flags.
+     * </p>
+     * <p>
+     * If {@code false} (default value), the indexer will start reindexing
+     * immediately in the current thread, blocking a commit until this operation
+     * is done.
+     * </p>
+     * <p>
+     * If {@code true}, the indexer will ignore the flag, therefore ignoring any
+     * reindex requests.
+     * </p>
+     * <p>
+     * This is only provided as a support tool (see OAK-3505) so it should be
+     * used with extreme caution!
+     * </p>
+     */
+    private static final boolean IGNORE_REINDEX_FLAGS = Boolean
+            .getBoolean("oak.indexUpdate.ignoreReindexFlags");
+
+    static {
+        if (IGNORE_REINDEX_FLAGS) {
+            log.warn("Reindexing is disabled by configuration. This value is configurable via the 'oak.indexUpdate.ignoreReindexFlags' system property.");
+        }
+    }
 
     private final IndexUpdateRootState rootState;
 
@@ -143,7 +174,7 @@ public class IndexUpdate implements Editor {
             String name) {
         PropertyState ps = definition.getProperty(REINDEX_PROPERTY_NAME);
         if (ps != null && ps.getValue(BOOLEAN)) {
-            return true;
+            return !IGNORE_REINDEX_FLAGS;
         }
         // reindex in the case this is a new node, even though the reindex flag
         // might be set to 'false' (possible via content import)
@@ -165,12 +196,14 @@ public class IndexUpdate implements Editor {
                     // probably not an index def
                     continue;
                 }
+                manageIndexPath(definition, name);
                 boolean shouldReindex = shouldReindex(definition,
                         before, name);
+                String indexPath = getIndexPath(getPath(), name);
                 Editor editor = rootState.provider.getIndexEditor(type, definition, rootState.root,
-                        rootState.newCallback(getIndexPath(getPath(), name), shouldReindex));
+                        rootState.newCallback(indexPath, shouldReindex));
                 if (editor == null) {
-                    missingProvider.onMissingIndex(type, definition);
+                    missingProvider.onMissingIndex(type, definition, indexPath);
                 } else if (shouldReindex) {
                     if (definition.getBoolean(REINDEX_ASYNC_PROPERTY_NAME)
                             && definition.getString(ASYNC_PROPERTY_NAME) == null) {
@@ -193,6 +226,13 @@ public class IndexUpdate implements Editor {
                     editors.add(editor);
                 }
             }
+        }
+    }
+
+    private void manageIndexPath(NodeBuilder definition, String name) {
+        String path = definition.getString(INDEX_PATH);
+        if (path == null){
+            definition.setProperty(INDEX_PATH, PathUtils.concat(getPath(), INDEX_DEFINITIONS_NAME, name));
         }
     }
 
@@ -224,7 +264,7 @@ public class IndexUpdate implements Editor {
         if (parent == null){
             if (rootState.isReindexingPerformed()){
                 log.info(rootState.getReport());
-            } else if (log.isDebugEnabled()){
+            } else if (log.isDebugEnabled() && rootState.somethingIndexed()){
                 log.debug(rootState.getReport());
             }
         }
@@ -312,15 +352,49 @@ public class IndexUpdate implements Editor {
     }
 
     public static class MissingIndexProviderStrategy {
-        public void onMissingIndex(String type, NodeBuilder definition)
+
+        /**
+         * The value of this flag determines the behavior of
+         * {@link #onMissingIndex(String, NodeBuilder, String)}. If
+         * {@code false} (default value), the method will set the
+         * {@code reindex} flag to true and log a warning. if {@code true}, the
+         * method will throw a {@link CommitFailedException} failing the commit.
+         */
+        private boolean failOnMissingIndexProvider = Boolean
+                .getBoolean("oak.indexUpdate.failOnMissingIndexProvider");
+
+        private final Set<String> ignore = newHashSet("disabled");
+
+        public void onMissingIndex(String type, NodeBuilder definition, String indexPath)
                 throws CommitFailedException {
+            if (isDisabled(type)) {
+                return;
+            }
             // trigger reindexing when an indexer becomes available
             PropertyState ps = definition.getProperty(REINDEX_PROPERTY_NAME);
             if (ps != null && ps.getValue(BOOLEAN)) {
                 // already true, skip the update
                 return;
             }
-            definition.setProperty(REINDEX_PROPERTY_NAME, true);
+
+            if (failOnMissingIndexProvider) {
+                throw new CommitFailedException("IndexUpdate", 1,
+                        "Missing index provider detected for type [" + type
+                                + "] on index [" + indexPath + "]");
+            } else {
+                log.warn(
+                        "Missing index provider of type [{}], requesting reindex on [{}]",
+                        type, indexPath);
+                definition.setProperty(REINDEX_PROPERTY_NAME, true);
+            }
+        }
+
+        boolean isDisabled(String type) {
+            return ignore.contains(type);
+        }
+
+        void setFailOnMissingIndexProvider(boolean failOnMissingIndexProvider) {
+            this.failOnMissingIndexProvider = failOnMissingIndexProvider;
         }
     }
 
@@ -363,7 +437,9 @@ public class IndexUpdate implements Editor {
                 if (!log.isDebugEnabled() && !cb.reindex) {
                     continue;
                 }
-                pw.printf("    - %s%n", cb);
+                if (cb.count > 0) {
+                    pw.printf("    - %s%n", cb);
+                }
             }
             return sw.toString();
         }
@@ -376,6 +452,15 @@ public class IndexUpdate implements Editor {
                 }
             }
             return stats;
+        }
+
+        public boolean somethingIndexed() {
+            for (CountingCallback cb : callbacks.values()) {
+                if (cb.count > 0){
+                    return true;
+                }
+            }
+            return false;
         }
 
         public boolean isReindexingPerformed(){

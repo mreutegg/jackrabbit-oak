@@ -108,7 +108,7 @@ public class AuthenticationConfigurationImpl extends ConfigurationBase implement
      *     related validation is omitted</li>
      * </ul>
      *
-     * <h4>Configuration Options</h4>
+     * <h3>Configuration Options</h3>
      * <ul>
      *     <li>{@link #PARAM_APP_NAME}: The appName passed to
      *     {@code Configuration#getAppConfigurationEntry(String)}. The default
@@ -122,7 +122,6 @@ public class AuthenticationConfigurationImpl extends ConfigurationBase implement
     @Override
     public LoginContextProvider getLoginContextProvider(ContentRepository contentRepository) {
         String appName = getParameters().getConfigValue(PARAM_APP_NAME, DEFAULT_APP_NAME);
-        // todo: temporary workaround
         SecurityProvider provider = getSecurityProvider();
         Whiteboard whiteboard = null;
         if (provider instanceof WhiteboardAware) {

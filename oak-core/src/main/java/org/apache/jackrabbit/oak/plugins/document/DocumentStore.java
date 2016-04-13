@@ -23,6 +23,7 @@ import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 
 import org.apache.jackrabbit.oak.cache.CacheStats;
+import org.apache.jackrabbit.oak.plugins.document.UpdateOp.Condition;
 import org.apache.jackrabbit.oak.plugins.document.cache.CacheInvalidationStats;
 
 /**
@@ -165,7 +166,7 @@ public interface DocumentStore {
                                      Map<String, Map<UpdateOp.Key, UpdateOp.Condition>> toRemove);
 
     /**
-     * Try to create a list of documents. This method returns {@code code} iff
+     * Try to create a list of documents. This method returns {@code true} iff
      * none of the documents existed before and the create was successful. This
      * method will return {@code false} if one of the documents already exists
      * in the store. Some documents may still have been created in the store.
@@ -178,8 +179,9 @@ public interface DocumentStore {
      *
      * @param <T> the document type
      * @param collection the collection
-     * @param updateOps the list of documents to add
+     * @param updateOps the list of documents to add (where {@link Condition}s are not allowed)
      * @return true if this worked (if none of the documents already existed)
+     * @throws IllegalArgumentException when at least one of the {@linkplain UpdateOp}s is conditional
      */
     <T extends Document> boolean create(Collection<T> collection, List<UpdateOp> updateOps);
 
@@ -193,7 +195,9 @@ public interface DocumentStore {
      * @param <T> the document type.
      * @param collection the collection.
      * @param keys the keys of the documents to update.
-     * @param updateOp the update operation to apply to each of the documents.
+     * @param updateOp the update operation to apply to each of the documents
+     *        (where {@link Condition}s are not allowed)
+     * @throws IllegalArgumentException when the {@linkplain UpdateOp} is conditional
      */
     <T extends Document> void update(Collection<T> collection,
                                      List<String> keys,
@@ -205,11 +209,30 @@ public interface DocumentStore {
      *
      * @param <T> the document type
      * @param collection the collection
-     * @param update the update operation
+     * @param update the update operation (where {@link Condition}s are not allowed)
      * @return the old document or <code>null</code> if it didn't exist before.
+     * @throws IllegalArgumentException when the {@linkplain UpdateOp} is conditional
      */
     @CheckForNull
     <T extends Document> T createOrUpdate(Collection<T> collection, UpdateOp update);
+
+    /**
+     * Create or unconditionally update a number of documents.
+     * <p>
+     * An implementation does not have to guarantee that all changes are applied
+     * atomically, together. In case of an exception (e.g. when a communication
+     * error occurs) only some changes may have been applied. In this case it is the
+     * responsibility of the caller to check which {@linkplain UpdateOp}s were applied and
+     * take appropriate action.
+     *
+     * @param <T> the document type
+     * @param collection the collection
+     * @param updateOps the update operation list
+     * @return the list containing old documents or <code>null</code> values if they didn't exist
+     *         before (see {@linkplain #createOrUpdate(Collection, UpdateOp)}), where the order
+     *         reflects the order in the "updateOps" parameter
+     */
+    <T extends Document> List<T> createOrUpdate(Collection<T> collection, List<UpdateOp> updateOps);
 
     /**
      * Performs a conditional update (e.g. using
@@ -227,15 +250,49 @@ public interface DocumentStore {
     <T extends Document> T findAndUpdate(Collection<T> collection, UpdateOp update);
 
     /**
-     * Invalidate the document cache.
+     * Invalidate the document cache. Calling this method instructs the
+     * implementation to invalidate each document from the cache, which is not
+     * up to date with the underlying storage at the time this method is called.
+     * A document is considered in the cache if {@link #getIfCached(Collection, String)}
+     * returns a non-null value for a key.
+     * <p>
+     * An implementation is allowed to perform lazy invalidation and only check
+     * whether a document is up-to-date when it is accessed after this method
+     * is called. However, this also includes a call to {@link #getIfCached(Collection, String)},
+     * which must only return the document if it was up-to-date at the time
+     * this method was called. Similarly, a call to {@link #find(Collection, String)}
+     * must guarantee the returned document reflects all the changes done up to
+     * when {@code invalidateCache()} was called.
+     * <p>
+     * In some implementations this method can be a NOP because documents can
+     * only be modified through a single instance of a {@code DocumentStore}.
+     *
+     * @return cache invalidation statistics or {@code null} if none are
+     *          available.
      */
     @CheckForNull
     CacheInvalidationStats invalidateCache();
 
     /**
+     * Invalidate the document cache but only with entries that match one
+     * of the keys provided.
+     *
+     * See {@link #invalidateCache()} for the general contract of cache
+     * invalidation.
+     *
+     * @param keys the keys of the documents to invalidate.
+     * @return cache invalidation statistics or {@code null} if none are
+     *          available.
+     */
+    @CheckForNull
+    CacheInvalidationStats invalidateCache(Iterable<String> keys);
+
+    /**
      * Invalidate the document cache for the given key.
      *
-     * @param <T> the document type
+     * See {@link #invalidateCache()} for the general contract of cache
+     * invalidation.
+     *
      * @param collection the collection
      * @param key the key
      */
@@ -247,12 +304,16 @@ public interface DocumentStore {
     void dispose();
 
     /**
-     * Fetches the cached document. If document is not present in cache <code>null</code> would be returned
+     * Fetches the cached document. If the document is not present in the cache
+     * {@code null} will be returned. This method is consistent with other find
+     * methods that may return cached documents and will return {@code null}
+     * even when the implementation has a negative cache for documents that
+     * do not exist. This method will never return {@link NodeDocument#NULL}.
      *
      * @param <T> the document type
      * @param collection the collection
      * @param key the key
-     * @return cached document if present. Otherwise null
+     * @return cached document if present. Otherwise {@code null}.
      */
     @CheckForNull
     <T extends Document> T getIfCached(Collection<T> collection, String key);
@@ -268,10 +329,21 @@ public interface DocumentStore {
      * @return status information about the cache
      */
     @CheckForNull
-    CacheStats getCacheStats();
+    Iterable<CacheStats> getCacheStats();
 
     /**
      * @return description of the underlying storage.
      */
     Map<String, String> getMetadata();
+
+    /**
+     * @return the estimated time difference in milliseconds between
+     * the local instance and the (typically common, shared) document server system.
+     * The value can be zero if the times are estimated to be equal,
+     * positive when the local instance is ahead of the remote server
+     * and negative when the local instance is behind the remote server. An invocation is not cached
+     * and typically requires a round-trip to the server (but that is not a requirement).
+     * @throws UnsupportedOperationException if this DocumentStore does not support this method
+     */
+    long determineServerTimeDifferenceMillis();
 }

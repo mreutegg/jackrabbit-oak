@@ -13,6 +13,11 @@
  */
 package org.apache.jackrabbit.oak.query;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.Lists.newArrayList;
+import static org.apache.jackrabbit.oak.query.ast.AstElementFactory.copyElementAndCheckReference;
+
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -20,11 +25,21 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+
+import javax.annotation.Nonnull;
+
+import com.google.common.base.Strings;
+import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Maps;
+import com.google.common.collect.Ordering;
 
 import org.apache.jackrabbit.oak.api.PropertyValue;
 import org.apache.jackrabbit.oak.api.Tree;
 import org.apache.jackrabbit.oak.api.Type;
+import org.apache.jackrabbit.oak.api.Result.SizePrecision;
 import org.apache.jackrabbit.oak.namepath.JcrPathParser;
 import org.apache.jackrabbit.oak.namepath.NamePathMapper;
 import org.apache.jackrabbit.oak.query.ast.AndImpl;
@@ -104,6 +119,16 @@ public class QueryImpl implements Query {
     public static final String REP_EXCERPT = "rep:excerpt";
 
     /**
+     * The "rep:facet" pseudo-property.
+     */
+    public static final String REP_FACET = "rep:facet";
+
+    /**
+     * The "oak:explainScore" pseudo-property.
+     */
+    public static final String OAK_SCORE_EXPLANATION = "oak:scoreExplanation";
+
+    /**
      * The "rep:spellcheck" pseudo-property.
      */
     public static final String REP_SPELLCHECK = "rep:spellcheck()";
@@ -115,8 +140,15 @@ public class QueryImpl implements Query {
 
     private static final Logger LOG = LoggerFactory.getLogger(QueryImpl.class);
 
+    private static final Ordering<QueryIndex> MINIMAL_COST_ORDERING = new Ordering<QueryIndex>() {
+        @Override
+        public int compare(QueryIndex left, QueryIndex right) {
+            return Double.compare(left.getMinimumCost(), right.getMinimumCost());
+        }
+    };
+
     SourceImpl source;
-    final String statement;
+    private String statement;
     final HashMap<String, PropertyValue> bindVariableMap = new HashMap<String, PropertyValue>();
     final HashMap<String, Integer> selectorIndexes = new HashMap<String, Integer>();
     final ArrayList<SelectorImpl> selectors = new ArrayList<SelectorImpl>();
@@ -145,6 +177,13 @@ public class QueryImpl implements Query {
     private long size = -1;
     private boolean prepared;
     private ExecutionContext context;
+    
+    /**
+     * whether the object has been initialised or not
+     */
+    private boolean init;
+
+    private boolean isSortedByIndex;
 
     private final NamePathMapper namePathMapper;
     
@@ -157,7 +196,7 @@ public class QueryImpl implements Query {
     private boolean isInternal;
 
     QueryImpl(String statement, SourceImpl source, ConstraintImpl constraint,
-            ColumnImpl[] columns, NamePathMapper mapper, QueryEngineSettings settings) {
+        ColumnImpl[] columns, NamePathMapper mapper, QueryEngineSettings settings) {
         this.statement = statement;
         this.source = source;
         this.constraint = constraint;
@@ -399,6 +438,8 @@ public class QueryImpl implements Query {
             }
             distinctColumns[i] = distinct;
         }
+        
+        init = true;
     }
 
     @Override
@@ -457,6 +498,9 @@ public class QueryImpl implements Query {
         prepare();
         if (explain) {
             String plan = getPlan();
+            if (measure) {
+                plan += " cost: { " + getIndexCostInfo() + " }";
+            }
             columns = new ColumnImpl[] { new ColumnImpl("explain", "plan", "plan")};
             ResultRowImpl r = new ResultRowImpl(this,
                     Tree.EMPTY_ARRAY,
@@ -468,23 +512,74 @@ public class QueryImpl implements Query {
             logDebug("query execute " + statement);
             logDebug("query plan " + getPlan());
         }
-        RowIterator rowIt = new RowIterator(context.getBaseState());
+        final RowIterator rowIt = new RowIterator(context.getBaseState());
         Comparator<ResultRowImpl> orderBy;
-        boolean sortUsingIndex = false;
+        if (isSortedByIndex) {
+            orderBy = null;
+        } else {
+            orderBy = ResultRowImpl.getComparator(orderings);
+        }
+        Iterator<ResultRowImpl> it =
+                FilterIterators.newCombinedFilter(rowIt, distinct, limit, offset, orderBy, settings);
+        if (orderBy != null) {
+            // this will force the rows to be read, so that the size is known
+            it.hasNext();
+            // we need the size, and there is no other way to get it right now
+            // but we also have to take limit and offset into account
+            long read = rowIt.getReadCount();
+            // we will ignore whatever is behind 'limit+offset'
+            read = Math.min(saturatedAdd(limit, offset), read);
+            // and we will skip 'offset' entries
+            read = Math.max(0, read - offset);
+            size = read;
+        }
+        if (measure) {
+            // return the measuring iterator delegating the readCounts to the rowIterator
+            it = new MeasuringIterator(this, it) {
+                @Override
+                protected void setColumns(ColumnImpl[] col) {
+                    columns = col;
+                }
+
+                @Override
+                protected long getReadCount() {
+                    return rowIt.getReadCount();
+                }
+
+                @Override
+                protected Map<String, Long> getSelectorScanCount() {
+                    Map<String, Long> selectorReadCounts = Maps.newHashMap();
+                    for (SelectorImpl selector : selectors) {
+                        selectorReadCounts.put(selector.getSelectorName(), selector.getScanCount());
+                    }
+                    return  selectorReadCounts;
+                }
+            };
+        }
+        return it;
+    }
+
+    @Override
+    public boolean isSortedByIndex() {
+        return isSortedByIndex;
+    }
+
+    private boolean canSortByIndex() {
+        boolean canSortByIndex = false;
         // TODO add issue about order by optimization for multiple selectors
         if (orderings != null && selectors.size() == 1) {
             IndexPlan plan = selectors.get(0).getExecutionPlan().getIndexPlan();
             if (plan != null) {
                 List<OrderEntry> list = plan.getSortOrder();
                 if (list != null && list.size() == orderings.length) {
-                    sortUsingIndex = true;
+                    canSortByIndex = true;
                     for (int i = 0; i < list.size(); i++) {
                         OrderEntry e = list.get(i);
                         OrderingImpl o = orderings[i];
                         DynamicOperandImpl op = o.getOperand();
                         if (!(op instanceof PropertyValueImpl)) {
                             // ordered by a function: currently not supported
-                            sortUsingIndex = false;
+                            canSortByIndex = false;
                             break;
                         }
                         // we only have one selector, so no need to check that
@@ -492,63 +587,31 @@ public class QueryImpl implements Query {
                         String pn = ((PropertyValueImpl) op).getPropertyName();
                         if (!pn.equals(e.getPropertyName())) {
                             // ordered by another property
-                            sortUsingIndex = false;
+                            canSortByIndex = false;
                             break;
                         }
                         if (o.isDescending() != (e.getOrder() == Order.DESCENDING)) {
                             // ordered ascending versus descending
-                            sortUsingIndex = false;
+                            canSortByIndex = false;
                             break;
                         }
                     }
                 }
             }
         }
-        if (sortUsingIndex) {
-            orderBy = null;
-        } else {
-            orderBy = ResultRowImpl.getComparator(orderings);
-        }
-        Iterator<ResultRowImpl> it = 
-                FilterIterators.newCombinedFilter(rowIt, distinct, limit, offset, orderBy, settings);
-        if (measure) {
-            // run the query
-            while (it.hasNext()) {
-                it.next();
-            }
-            columns = new ColumnImpl[] {
-                    new ColumnImpl("measure", "selector", "selector"),
-                    new ColumnImpl("measure", "scanCount", "scanCount")
-            };
-            ArrayList<ResultRowImpl> list = new ArrayList<ResultRowImpl>();
-            ResultRowImpl r = new ResultRowImpl(this,
-                    Tree.EMPTY_ARRAY,
-                    new PropertyValue[] {
-                            PropertyValues.newString("query"),
-                            PropertyValues.newLong(rowIt.getReadCount())
-                        },
-                    null, null);
-            list.add(r);
-            for (SelectorImpl selector : selectors) {
-                r = new ResultRowImpl(this,
-                        Tree.EMPTY_ARRAY,
-                        new PropertyValue[] {
-                                PropertyValues.newString(selector.getSelectorName()),
-                                PropertyValues.newLong(selector.getScanCount()),
-                            },
-                        null, null);
-                list.add(r);
-            }
-            it = list.iterator();
-        }
-        return it;
+        return canSortByIndex;
     }
-    
+
     @Override
     public String getPlan() {
         return source.getPlan(context.getBaseState());
     }
     
+    @Override
+    public String getIndexCostInfo() {
+        return source.getIndexCostInfo(context.getBaseState());
+    }
+
     @Override
     public double getEstimatedCost() {
         return estimatedCost;
@@ -566,6 +629,7 @@ public class QueryImpl implements Query {
         if (sources.size() <= 1) {
             // simple case (no join)
             estimatedCost = source.prepare().getEstimatedCost();
+            isSortedByIndex = canSortByIndex();
             return;
         }
 
@@ -599,7 +663,7 @@ public class QueryImpl implements Query {
         }
         estimatedCost = result.prepare().getEstimatedCost();
         source = result;
-                
+        isSortedByIndex = canSortByIndex();
     }
     
     private static SourceImpl buildJoin(SourceImpl result, SourceImpl last, List<JoinConditionImpl> conditions) {
@@ -632,6 +696,98 @@ public class QueryImpl implements Query {
      */
     Filter createFilter(boolean preparing) {
         return source.createFilter(preparing);
+    }
+
+
+    /**
+     * Abstract decorating iterator for measure queries. The iterator delegates to the underlying actual
+     * query iterator to lazily execute and return counts.
+     */
+    abstract static class MeasuringIterator extends AbstractIterator<ResultRowImpl> {
+        private Iterator<ResultRowImpl> delegate;
+        private Query query;
+        private List<ResultRowImpl> results;
+        private boolean init;
+
+        MeasuringIterator(Query query, Iterator<ResultRowImpl> delegate) {
+            this.query = query;
+            this.delegate = delegate;
+            results = Lists.newArrayList();
+        }
+
+        @Override
+        protected ResultRowImpl computeNext() {
+            if (!init) {
+                getRows();
+            }
+
+            if (!results.isEmpty()) {
+                return results.remove(0);
+            } else {
+                return endOfData();
+            }
+        }
+
+        void getRows() {
+            // run the query
+            while (delegate.hasNext()) {
+                delegate.next();
+            }
+
+            ColumnImpl[] columns = new ColumnImpl[] {
+                new ColumnImpl("measure", "selector", "selector"),
+                new ColumnImpl("measure", "scanCount", "scanCount")
+            };
+            setColumns(columns);
+
+            ResultRowImpl r = new ResultRowImpl(query,
+                Tree.EMPTY_ARRAY,
+                new PropertyValue[] {
+                    PropertyValues.newString("query"),
+                    PropertyValues.newLong(getReadCount())
+                },
+                null, null);
+            results.add(r);
+
+            Map<String, Long> selectorScanCount = getSelectorScanCount();
+            for (String selector : selectorScanCount.keySet()) {
+                r = new ResultRowImpl(query,
+                    Tree.EMPTY_ARRAY,
+                    new PropertyValue[] {
+                        PropertyValues.newString(selector),
+                        PropertyValues.newLong(selectorScanCount.get(selector)),
+                    },
+                    null, null);
+                results.add(r);
+            }
+            init = true;
+        }
+
+        /**
+         * Set the measure specific columns in the query object
+         * @param columns the measure specific columns
+         */
+        protected abstract void setColumns(ColumnImpl[] columns);
+
+        /**
+         * Retrieve the selector scan count
+         * @return map of selector to scan count
+         */
+        protected abstract Map<String, Long> getSelectorScanCount();
+
+        /**
+         * Retrieve the query read count
+         * @return count
+         */
+        protected abstract long getReadCount();
+
+        /**
+         * Retrieves the actual query iterator
+         * @return the delegate
+         */
+        protected Iterator<ResultRowImpl> getDelegate() {
+            return delegate;
+        }
     }
 
     /**
@@ -804,8 +960,21 @@ public class QueryImpl implements Query {
 
         double bestCost = Double.POSITIVE_INFINITY;
         IndexPlan bestPlan = null;
-        for (QueryIndex index : indexProvider.getQueryIndexes(rootState)) {
+
+        // Sort the indexes according to their minimum cost to be able to skip the remaining indexes if the cost of the
+        // current index is below the minimum cost of the next index.
+        List<? extends QueryIndex> queryIndexes = MINIMAL_COST_ORDERING
+                .sortedCopy(indexProvider.getQueryIndexes(rootState));
+        for (int i = 0; i < queryIndexes.size(); i++) {
+            QueryIndex index = queryIndexes.get(i);
+            double minCost = index.getMinimumCost();
+            if (minCost > bestCost) {
+                // Stop looking if the minimum cost is higher than the current best cost
+                break;
+            }
+
             double cost;
+            String indexName = index.getIndexName();
             IndexPlan indexPlan = null;
             if (index instanceof AdvancedQueryIndex) {
                 AdvancedQueryIndex advIndex = (AdvancedQueryIndex) index;
@@ -853,6 +1022,9 @@ public class QueryImpl implements Query {
                     double c = p.getCostPerExecution() + entryCount * p.getCostPerEntry();
                     if (c < cost) {
                         cost = c;
+                        if (p.getPlanName() != null) {
+                            indexName += "[" + p.getPlanName() + "]";
+                        }
                         indexPlan = p;
                     }
                 }
@@ -860,10 +1032,10 @@ public class QueryImpl implements Query {
                 cost = index.getCost(filter, rootState);
             }
             if (LOG.isDebugEnabled()) {
-                logDebug("cost for " + index.getIndexName() + " is " + cost);
+                logDebug("cost for " + indexName + " is " + cost);
             }
             if (cost < 0) {
-                LOG.error("cost below 0 for " + index.getIndexName() + " is " + cost);
+                LOG.error("cost below 0 for " + indexName + " is " + cost);
             }
             if (cost < bestCost) {
                 bestCost = cost;
@@ -979,9 +1151,20 @@ public class QueryImpl implements Query {
     public long getSize() {
         return size;
     }
+    
+    @Override
+    public long getSize(SizePrecision precision, long max) {
+        // Note: DISTINCT is ignored
+        if (size != -1) {
+            // "order by" was used, so we know the size
+            return size;
+        }
+        return Math.min(limit, source.getSize(precision, max));
+    }
 
+    @Override
     public String getStatement() {
-        return statement;
+        return Strings.isNullOrEmpty(statement) ? toString() : statement;
     }
 
     public QueryEngineSettings getSettings() {
@@ -995,6 +1178,138 @@ public class QueryImpl implements Query {
 
     public ExecutionContext getExecutionContext() {
         return context;
+    }
+    
+    /**
+     * Add two values, but don't let it overflow or underflow.
+     * 
+     * @param x the first value
+     * @param y the second value
+     * @return the sum, or Long.MIN_VALUE for underflow, or Long.MAX_VALUE for
+     *         overflow
+     */
+    public static long saturatedAdd(long x, long y) {
+        BigInteger min = BigInteger.valueOf(Long.MIN_VALUE);
+        BigInteger max = BigInteger.valueOf(Long.MAX_VALUE);
+        BigInteger sum = BigInteger.valueOf(x).add(BigInteger.valueOf(y));
+        return sum.min(max).max(min).longValue();
+    }
+
+    @Override
+    public Query buildAlternativeQuery() {
+        Query result = this;
+        
+        if (constraint != null) {
+            Set<ConstraintImpl> unionList = constraint.convertToUnion();
+            if (unionList.size() > 1) {
+                // there are some cases where multiple ORs simplify into a single one. If we get a
+                // union list of just one we don't really have to UNION anything.
+                QueryImpl left = null;
+                Query right = null;
+                // we have something to do here.
+                for (ConstraintImpl c : unionList) {
+                    if (right != null) {
+                        right = newAlternativeUnionQuery(left, right);
+                    } else {
+                        // pulling left to the right
+                        if (left != null) {
+                            right = left;
+                        }
+                    }
+                    
+                    // cloning original query
+                    left = (QueryImpl) this.copyOf();
+                    
+                    // cloning the constraints and assigning to new query
+                    left.constraint = (ConstraintImpl) copyElementAndCheckReference(c);
+                    // re-composing the statement for better debug messages
+                    left.statement = recomposeStatement(left);
+                }
+                
+                result = newAlternativeUnionQuery(left, right);
+            }
+        }
+        
+        return result;
+    }
+    
+    private static String recomposeStatement(@Nonnull QueryImpl query) {
+        checkNotNull(query);
+        String original = query.getStatement();
+        String origUpper = original.toUpperCase();
+        StringBuilder recomputed = new StringBuilder();
+        final String where = " WHERE ";
+        final String orderBy = " ORDER BY ";
+        int whereOffset = where.length();
+        
+        if (query.getConstraint() == null) {
+            recomputed.append(original);
+        } else {
+            recomputed.append(original.substring(0, origUpper.indexOf(where) + whereOffset));
+            recomputed.append(query.getConstraint());
+            if (origUpper.indexOf(orderBy) > -1) {
+                recomputed.append(original.substring(origUpper.indexOf(orderBy)));
+            }
+        }
+        return recomputed.toString();
+    }
+    
+    /**
+     * Convenience method for creating a UnionQueryImpl with proper settings.
+     * 
+     * @param left the first subquery
+     * @param right the second subquery
+     * @return the union query
+     */
+    private UnionQueryImpl newAlternativeUnionQuery(@Nonnull Query left, @Nonnull Query right) {
+        UnionQueryImpl u = new UnionQueryImpl(
+            false, 
+            checkNotNull(left, "`left` cannot be null"), 
+            checkNotNull(right, "`right` cannot be null"),
+            this.settings);
+        u.setExplain(explain);
+        u.setMeasure(measure);
+        u.setInternal(isInternal);
+        return u;
+    }
+    
+    @Override
+    public Query copyOf() {
+        if (isInit()) {
+            throw new IllegalStateException("QueryImpl cannot be cloned once initialised.");
+        }
+        
+        List<ColumnImpl> cols = newArrayList();
+        for (ColumnImpl c : columns) {
+            cols.add((ColumnImpl) copyElementAndCheckReference(c));
+        }
+                
+        QueryImpl copy = new QueryImpl(
+            this.statement, 
+            (SourceImpl) copyElementAndCheckReference(this.source),
+            this.constraint,
+            cols.toArray(new ColumnImpl[0]),
+            this.namePathMapper,
+            this.settings);
+        copy.explain = this.explain;
+        copy.distinct = this.distinct;
+        
+        return copy;        
+    }
+
+    @Override
+    public boolean isInit() {
+        return init;
+    }
+
+    @Override
+    public boolean isInternal() {
+        return isInternal;
+    }
+
+    @Override
+    public boolean containsUnfilteredFullTextCondition() {
+        return constraint.containsUnfilteredFullTextCondition();
     }
 
 }

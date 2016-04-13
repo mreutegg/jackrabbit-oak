@@ -18,9 +18,13 @@ package org.apache.jackrabbit.oak.plugins.document;
 
 import java.io.Closeable;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -31,17 +35,24 @@ import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
 import org.apache.jackrabbit.oak.spi.commit.Observer;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.junit.Rule;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.google.common.collect.ImmutableSet.of;
+import static com.google.common.collect.Sets.union;
 import static java.util.Collections.synchronizedList;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 
 /**
  * Tests for {@link CommitQueue}.
  */
 public class CommitQueueTest {
+
+    @Rule
+    public DocumentMKBuilderProvider builderProvider = new DocumentMKBuilderProvider();
 
     private static final Logger LOG = LoggerFactory.getLogger(CommitQueueTest.class);
 
@@ -53,18 +64,19 @@ public class CommitQueueTest {
 
     @Test
     public void concurrentCommits() throws Exception {
-        final DocumentNodeStore store = new DocumentMK.Builder().getNodeStore();
+        final DocumentNodeStore store = builderProvider.newBuilder().getNodeStore();
         AtomicBoolean running = new AtomicBoolean(true);
 
         Closeable observer = store.addObserver(new Observer() {
-            private Revision before = new Revision(0, 0, store.getClusterId());
+            private RevisionVector before = new RevisionVector(
+                    new Revision(0, 0, store.getClusterId()));
 
             @Override
             public void contentChanged(@Nonnull NodeState root, @Nullable CommitInfo info) {
                 DocumentNodeState after = (DocumentNodeState) root;
-                Revision r = after.getRevision();
+                RevisionVector r = after.getRevision();
                 LOG.debug("seen: {}", r);
-                if (r.compareRevisionTime(before) < 0) {
+                if (r.compareTo(before) < 0) {
                     exceptions.add(new Exception(
                             "Inconsistent revision sequence. Before: " +
                                     before + ", after: " + r));
@@ -116,12 +128,7 @@ public class CommitQueueTest {
 
     @Test
     public void concurrentCommits2() throws Exception {
-        final CommitQueue queue = new CommitQueue() {
-            @Override
-            protected Revision newRevision() {
-                return Revision.newRevision(1);
-            }
-        };
+        final CommitQueue queue = new CommitQueue(DummyRevisionContext.INSTANCE);
 
         final CommitQueue.Callback c = new CommitQueue.Callback() {
             private Revision before = Revision.newRevision(1);
@@ -178,10 +185,10 @@ public class CommitQueueTest {
     // OAK-2868
     @Test
     public void branchCommitMustNotBlockTrunkCommit() throws Exception {
-        final DocumentNodeStore ds = new DocumentMK.Builder().getNodeStore();
+        final DocumentNodeStore ds = builderProvider.newBuilder().getNodeStore();
 
         // simulate start of a branch commit
-        Commit c = ds.newCommit(ds.getHeadRevision().asBranchRevision(), null);
+        Commit c = ds.newCommit(ds.getHeadRevision().asBranchRevision(ds.getClusterId()), null);
 
         Thread t = new Thread(new Runnable() {
             @Override
@@ -201,8 +208,142 @@ public class CommitQueueTest {
         assertFalse("Commit did not succeed within 3 seconds", t.isAlive());
 
         ds.canceled(c);
-        ds.dispose();
         assertNoExceptions();
+    }
+
+    @Test
+    public void suspendUntil() throws Exception {
+        final AtomicReference<RevisionVector> headRevision = new AtomicReference<RevisionVector>();
+        RevisionContext context = new DummyRevisionContext() {
+            @Nonnull
+            @Override
+            public RevisionVector getHeadRevision() {
+                return headRevision.get();
+            }
+        };
+        headRevision.set(new RevisionVector(context.newRevision()));
+        final CommitQueue queue = new CommitQueue(context);
+
+        final Revision newHeadRev = context.newRevision();
+        final Set<Revision> revisions = queue.createRevisions(10);
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                queue.suspendUntilAll(union(of(newHeadRev), revisions));
+            }
+        });
+        t.start();
+
+        // wait until t is suspended
+        for (int i = 0; i < 100; i++) {
+            if (queue.numSuspendedThreads() > 0) {
+                break;
+            }
+            Thread.sleep(10);
+        }
+        assertEquals(1, queue.numSuspendedThreads());
+
+        queue.headRevisionChanged();
+        // must still be suspended
+        assertEquals(1, queue.numSuspendedThreads());
+
+        headRevision.set(new RevisionVector(newHeadRev));
+        queue.headRevisionChanged();
+        // must still be suspended
+        assertEquals(1, queue.numSuspendedThreads());
+
+        for (Revision rev : revisions) {
+            queue.canceled(rev);
+        }
+        // must not be suspended anymore
+        assertEquals(0, queue.numSuspendedThreads());
+    }
+
+    @Test
+    public void suspendUntilTimeout() throws Exception {
+        final AtomicReference<RevisionVector> headRevision = new AtomicReference<RevisionVector>();
+        RevisionContext context = new DummyRevisionContext() {
+            @Nonnull
+            @Override
+            public RevisionVector getHeadRevision() {
+                return headRevision.get();
+            }
+        };
+        headRevision.set(new RevisionVector(context.newRevision()));
+        final CommitQueue queue = new CommitQueue(context);
+        queue.setSuspendTimeoutMillis(0);
+
+        final Revision r = context.newRevision();
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                queue.suspendUntilAll(of(r));
+            }
+        });
+        t.start();
+
+        t.join(1000);
+        assertFalse(t.isAlive());
+    }
+
+    @Test
+    public void concurrentSuspendUntil() throws Exception {
+        final AtomicReference<RevisionVector> headRevision = new AtomicReference<RevisionVector>();
+        RevisionContext context = new DummyRevisionContext() {
+            @Nonnull
+            @Override
+            public RevisionVector getHeadRevision() {
+                return headRevision.get();
+            }
+        };
+        headRevision.set(new RevisionVector(context.newRevision()));
+
+        List<Thread> threads = new ArrayList<Thread>();
+        List<Revision> allRevisions = new ArrayList<Revision>();
+
+        final CommitQueue queue = new CommitQueue(context);
+        for (int i = 0; i < 10; i++) { // threads count
+            final Set<Revision> revisions = new HashSet<Revision>();
+            for (int j = 0; j < 10; j++) { // revisions per thread
+                Revision r = queue.createRevision();
+                revisions.add(r);
+                allRevisions.add(r);
+            }
+            Thread t = new Thread(new Runnable() {
+                public void run() {
+                    queue.suspendUntilAll(revisions);
+                }
+            });
+            threads.add(t);
+            t.start();
+        }
+
+        for (int i = 0; i < 100; i++) {
+            if (queue.numSuspendedThreads() == 10) {
+                break;
+            }
+            Thread.sleep(10);
+        }
+        assertEquals(10, queue.numSuspendedThreads());
+
+        Collections.shuffle(allRevisions);
+        for (Revision r : allRevisions) {
+            queue.canceled(r);
+            Thread.sleep(10);
+        }
+
+        for (int i = 0; i < 100; i++) {
+            if (queue.numSuspendedThreads() == 0) {
+                break;
+            }
+            Thread.sleep(10);
+        }
+        assertEquals(0, queue.numSuspendedThreads());
+
+        for (Thread t : threads) {
+            t.join(1000);
+            assertFalse(t.isAlive());
+        }
     }
 
     private void assertNoExceptions() throws Exception {

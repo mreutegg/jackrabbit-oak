@@ -157,6 +157,32 @@ public enum CacheType {
         }
     },
 
+    PREV_DOCUMENT {
+        @Override
+        public <K> String keyToString(K key) {
+            return ((StringValue) key).asString();
+        }
+        @SuppressWarnings("unchecked")
+        @Override
+        public <K> K keyFromString(String key) {
+            return (K) StringValue.fromString(key);
+        }
+        @Override
+        public <K> int compareKeys(K a, K b) {
+            return ((StringValue) a).asString().compareTo(((StringValue) b).asString());
+        }
+        @Override
+        public <V> String valueToString(V value) {
+            return ((NodeDocument) value).asString();
+        }
+        @SuppressWarnings("unchecked")
+        @Override
+        public <V> V valueFromString(
+                DocumentNodeStore store, DocumentStore docStore, String value) {
+            return (V) NodeDocument.fromString(docStore, value);
+        }
+    },
+
     LOCAL_DIFF {
         @Override
         public <K> String keyToString(K key) {
@@ -181,7 +207,39 @@ public enum CacheType {
                 DocumentNodeStore store, DocumentStore docStore, String value) {
             return (V) LocalDiffCache.Diff.fromString(value);
         }
+    },
+    
+    BLOB {
+
+        @Override
+        public <K> String keyToString(K key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <K> K keyFromString(String key) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <K> int compareKeys(K a, K b) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <V> String valueToString(V value) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public <V> V valueFromString(DocumentNodeStore store,
+                DocumentStore docStore, String value) {
+            throw new UnsupportedOperationException();
+        }
+        
     };
+    
+    public static final CacheType[] VALUES = CacheType.values();
 
     public abstract <K> String keyToString(K key);
     public abstract <K> K keyFromString(String key);

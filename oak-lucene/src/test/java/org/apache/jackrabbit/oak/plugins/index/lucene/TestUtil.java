@@ -25,9 +25,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import javax.jcr.Repository;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.jackrabbit.JcrConstants;
+import org.apache.jackrabbit.api.JackrabbitRepository;
 import org.apache.jackrabbit.oak.api.Root;
 import org.apache.jackrabbit.oak.api.Tree;
 import org.apache.jackrabbit.oak.api.Type;
@@ -59,11 +61,15 @@ public class TestUtil {
             " + * (nt:base) = oak:TestNode VERSION";
 
     static void useV2(NodeBuilder idxNb) {
-        idxNb.setProperty(LuceneIndexConstants.COMPAT_MODE, IndexFormatVersion.V2.getVersion());
+        if (!IndexFormatVersion.getDefault().isAtLeast(IndexFormatVersion.V2)) {
+            idxNb.setProperty(LuceneIndexConstants.COMPAT_MODE, IndexFormatVersion.V2.getVersion());
+        }
     }
 
     static void useV2(Tree idxTree) {
-        idxTree.setProperty(LuceneIndexConstants.COMPAT_MODE, IndexFormatVersion.V2.getVersion());
+        if (!IndexFormatVersion.getDefault().isAtLeast(IndexFormatVersion.V2)) {
+            idxTree.setProperty(LuceneIndexConstants.COMPAT_MODE, IndexFormatVersion.V2.getVersion());
+        }
     }
 
     public static NodeBuilder newLuceneIndexDefinitionV2(
@@ -175,5 +181,11 @@ public class TestUtil {
         builder = builder.child(nodeName);
         builder.setProperty(JcrConstants.JCR_PRIMARYTYPE, typeName, Type.NAME);
         return builder;
+    }
+
+    public static void shutdown(Repository repository) {
+        if (repository instanceof JackrabbitRepository) {
+            ((JackrabbitRepository) repository).shutdown();
+        }
     }
 }

@@ -37,6 +37,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.management.openmbean.TabularData;
 
@@ -53,6 +55,7 @@ import org.apache.jackrabbit.oak.commons.IOUtils;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.FilterDirectory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.IndexInput;
 import org.apache.lucene.store.IndexOutput;
@@ -66,9 +69,12 @@ import static com.google.common.collect.Sets.newHashSet;
 import static com.google.common.util.concurrent.MoreExecutors.sameThreadExecutor;
 import static org.apache.jackrabbit.oak.plugins.index.IndexConstants.REINDEX_COUNT;
 import static org.apache.jackrabbit.oak.plugins.nodetype.write.InitialContent.INITIAL_CONTENT;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import static org.junit.Assume.assumeTrue;
@@ -108,6 +114,61 @@ public class IndexCopierTest {
 
         //t1 should now be added to testDir
         assertTrue(baseDir.fileExists("t1"));
+    }
+
+    @Test
+    public void basicTestWithPrefetch() throws Exception{
+        final List<String> syncedFiles = Lists.newArrayList();
+        Directory baseDir = new RAMDirectory(){
+            @Override
+            public void sync(Collection<String> names) throws IOException {
+                syncedFiles.addAll(names);
+                super.sync(names);
+            }
+        };
+        IndexDefinition defn = new IndexDefinition(root, builder.getNodeState());
+        IndexCopier c1 = new RAMIndexCopier(baseDir, sameThreadExecutor(), getWorkDir(), true);
+
+        Directory remote = new RAMDirectory();
+
+        byte[] t1 = writeFile(remote, "t1");
+        byte[] t2 = writeFile(remote , "t2");
+
+        Directory wrapped = c1.wrapForRead("/foo", defn, remote);
+        assertEquals(2, wrapped.listAll().length);
+        assertThat(syncedFiles, containsInAnyOrder("t1", "t2"));
+
+        assertTrue(wrapped.fileExists("t1"));
+        assertTrue(wrapped.fileExists("t2"));
+
+        assertTrue(baseDir.fileExists("t1"));
+        assertTrue(baseDir.fileExists("t2"));
+
+        assertEquals(t1.length, wrapped.fileLength("t1"));
+        assertEquals(t2.length, wrapped.fileLength("t2"));
+
+        readAndAssert(wrapped, "t1", t1);
+
+    }
+
+    @Test
+    public void nonExistentFile() throws Exception{
+        Directory baseDir = new RAMDirectory();
+        IndexDefinition defn = new IndexDefinition(root, builder.getNodeState());
+        CollectingExecutor executor = new CollectingExecutor();
+        IndexCopier c1 = new RAMIndexCopier(baseDir, executor, getWorkDir(), true);
+
+        Directory remote = new RAMDirectory();
+        Directory wrapped = c1.wrapForRead("/foo", defn, remote);
+
+        try {
+            wrapped.openInput("foo.txt", IOContext.DEFAULT);
+            fail();
+        } catch(FileNotFoundException ignore){
+
+        }
+
+        assertEquals(0, executor.commands.size());
     }
 
     @Test
@@ -811,8 +872,118 @@ public class IndexCopierTest {
     }
 
     @Test
-    public void cowIndexPathNotDefined() throws Exception{
+    public void cowPoolClosedWithTaskInQueue() throws Exception{
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        Directory baseDir = new CloseSafeDir();
+        IndexDefinition defn = new IndexDefinition(root, builder.getNodeState());
+        IndexCopier copier = new RAMIndexCopier(baseDir, executorService, getWorkDir());
 
+        final Set<String> toPause = Sets.newHashSet();
+        final CountDownLatch pauseCopyLatch = new CountDownLatch(1);
+        Directory remote = new CloseSafeDir() {
+            @Override
+            public IndexOutput createOutput(String name, IOContext context) throws IOException {
+                if (toPause.contains(name)){
+                    try {
+                        pauseCopyLatch.await();
+                    } catch (InterruptedException ignore) {
+
+                    }
+                }
+                return super.createOutput(name, context);
+            }
+        };
+
+        final Directory local = copier.wrapForWrite(defn, remote, false);
+        toPause.add("t2");
+        byte[] t1 = writeFile(local, "t1");
+        byte[] t2 = writeFile(local, "t2");
+        byte[] t3 = writeFile(local, "t3");
+        byte[] t4 = writeFile(local, "t4");
+
+        final AtomicReference<Throwable> error =
+                new AtomicReference<Throwable>();
+        Thread closer = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    local.close();
+                } catch (Throwable e) {
+                    e.printStackTrace();
+                    error.set(e);
+                }
+            }
+        });
+
+        closer.start();
+
+        copier.close();
+        executorService.shutdown();
+        executorService.awaitTermination(100, TimeUnit.MILLISECONDS);
+
+        pauseCopyLatch.countDown();
+        closer.join();
+        assertNotNull("Close should have thrown an exception", error.get());
+    }
+
+    /**
+     * Test the interaction between COR and COW using same underlying directory
+     */
+    @Test
+    public void cowConcurrentAccess() throws Exception{
+        CollectingExecutor executor = new CollectingExecutor();
+        ExecutorService executorService = Executors.newFixedThreadPool(2);
+        executor.setForwardingExecutor(executorService);
+
+        Directory baseDir = new CloseSafeDir();
+        String indexPath = "/foo";
+        builder.setProperty(LuceneIndexConstants.INDEX_PATH, indexPath);
+        IndexDefinition defn = new IndexDefinition(root, builder.getNodeState());
+        IndexCopier copier = new RAMIndexCopier(baseDir, executor, getWorkDir(), true);
+
+        Directory remote = new CloseSafeDir();
+        byte[] f1 = writeFile(remote, "f1");
+
+        Directory cor1 = copier.wrapForRead(indexPath, defn, remote);
+        readAndAssert(cor1, "f1", f1);
+        cor1.close();
+
+        final CountDownLatch pauseCopyLatch = new CountDownLatch(1);
+        Directory remote2 = new FilterDirectory(remote) {
+            @Override
+            public IndexOutput createOutput(String name, IOContext context) throws IOException {
+                try {
+                    pauseCopyLatch.await();
+                } catch (InterruptedException ignore) {
+
+                }
+                return super.createOutput(name, context);
+            }
+        };
+
+        //Start copying a file to remote via COW
+        Directory cow1 = copier.wrapForWrite(defn, remote2, false);
+        byte[] f2 = writeFile(cow1, "f2");
+
+        //Before copy is done to remote lets delete f1 from remote and
+        //open a COR and close it such that it triggers delete of f1
+        remote.deleteFile("f1");
+        Directory cor2 = copier.wrapForRead(indexPath, defn, remote);
+
+        //Ensure that deletion task submitted to executor get processed immediately
+        executor.enableImmediateExecution();
+        cor2.close();
+        executor.enableDelayedExecution();
+
+        assertFalse(baseDir.fileExists("f1"));
+        assertFalse("f2 should not have been copied to remote so far", remote.fileExists("f2"));
+        assertTrue("f2 should exist", baseDir.fileExists("f2"));
+
+        pauseCopyLatch.countDown();
+        cow1.close();
+        assertTrue("f2 should exist", remote.fileExists("f2"));
+
+        executorService.shutdown();
     }
 
     private byte[] writeFile(Directory dir, String name) throws IOException {
@@ -849,9 +1020,14 @@ public class IndexCopierTest {
     private class RAMIndexCopier extends IndexCopier {
         final Directory baseDir;
 
-        public RAMIndexCopier(Directory baseDir, Executor executor, File indexRootDir) throws IOException {
-            super(executor, indexRootDir);
+        public RAMIndexCopier(Directory baseDir, Executor executor, File indexRootDir,
+                              boolean prefetchEnabled) throws IOException {
+            super(executor, indexRootDir, prefetchEnabled);
             this.baseDir = baseDir;
+        }
+
+        public RAMIndexCopier(Directory baseDir, Executor executor, File indexRootDir) throws IOException {
+            this(baseDir, executor, indexRootDir, false);
         }
 
         @Override
@@ -888,20 +1064,22 @@ public class IndexCopierTest {
 
     private static class CollectingExecutor implements Executor {
         final BlockingQueue<Runnable> commands = new LinkedBlockingQueue<Runnable>();
-        private boolean immediateExecution = false;
+        private volatile boolean immediateExecution = false;
         private volatile Executor forwardingExecutor;
 
         @Override
         public void execute(Runnable command) {
+            if (immediateExecution){
+                command.run();
+                return;
+            }
+
             if (forwardingExecutor != null){
                 forwardingExecutor.execute(command);
                 return;
             }
-            if (immediateExecution){
-                command.run();
-            } else {
-                commands.add(command);
-            }
+
+            commands.add(command);
         }
 
         void executeAll(){

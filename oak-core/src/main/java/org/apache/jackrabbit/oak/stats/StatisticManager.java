@@ -22,16 +22,17 @@ package org.apache.jackrabbit.oak.stats;
 import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.registerMBean;
 import static org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils.scheduleWithFixedDelay;
 
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.jackrabbit.api.jmx.QueryStatManagerMBean;
 import org.apache.jackrabbit.api.stats.RepositoryStatistics.Type;
 import org.apache.jackrabbit.oak.api.jmx.RepositoryStatsMBean;
 import org.apache.jackrabbit.oak.spi.whiteboard.CompositeRegistration;
 import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
+import org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils;
 import org.apache.jackrabbit.stats.QueryStatImpl;
-import org.apache.jackrabbit.stats.RepositoryStatisticsImpl;
 import org.apache.jackrabbit.stats.TimeSeriesMax;
 import org.apache.jackrabbit.stats.jmx.QueryStatManager;
 
@@ -42,9 +43,20 @@ import org.apache.jackrabbit.stats.jmx.QueryStatManager;
  */
 public class StatisticManager {
     private final QueryStatImpl queryStat = new QueryStatImpl();
-    private final RepositoryStatisticsImpl repoStats;
+    private final StatisticsProvider repoStats;
     private final TimeSeriesMax maxQueueLength;
     private final CompositeRegistration registration;
+
+    /**
+     * Types for which Metrics based stats would not be collected
+     * and only default stats would be collected
+     */
+    private static final EnumSet<Type> NOOP_METRIC_TYPES = EnumSet.of(
+            Type.SESSION_READ_COUNTER,
+            Type.SESSION_READ_DURATION,
+            Type.SESSION_WRITE_DURATION,
+            Type.QUERY_COUNT
+    );
 
     /**
      * Create a new instance of this class registering all repository wide
@@ -53,12 +65,12 @@ public class StatisticManager {
      */
     public StatisticManager(Whiteboard whiteboard, ScheduledExecutorService executor) {
         queryStat.setEnabled(true);
-        repoStats = new RepositoryStatisticsImpl(executor);
-        maxQueueLength = new TimeSeriesMax();
+        repoStats = getStatsProvider(whiteboard, executor);
+        maxQueueLength = new TimeSeriesMax(-1);
         registration = new CompositeRegistration(
             registerMBean(whiteboard, QueryStatManagerMBean.class, new QueryStatManager(queryStat),
                     "QueryStat", "Oak Query Statistics"),
-            registerMBean(whiteboard, RepositoryStatsMBean.class, new RepositoryStats(repoStats, maxQueueLength),
+            registerMBean(whiteboard, RepositoryStatsMBean.class, new RepositoryStats(repoStats.getStats(), maxQueueLength),
                     RepositoryStats.TYPE, "Oak Repository Statistics"),
             scheduleWithFixedDelay(whiteboard, new Runnable() {
                     @Override
@@ -79,15 +91,18 @@ public class StatisticManager {
         queryStat.logQuery(language, statement, millis);
     }
 
-    /**
-     * Get the counter of the specified {@code type}.
-     * @param type  type of the counter
-     * @return  counter for the given {@code type}
-     * @see org.apache.jackrabbit.stats.RepositoryStatisticsImpl#getCounter(org.apache.jackrabbit.api.stats.RepositoryStatistics.Type)
-     */
-    public AtomicLong getCounter(Type type) {
-        return repoStats.getCounter(type);
+    public MeterStats getMeter(Type type){
+        return repoStats.getMeter(type.name(), getOption(type));
     }
+
+    public CounterStats getStatsCounter(Type type){
+        return repoStats.getCounterStats(type.name(), getOption(type));
+    }
+
+    public TimerStats getTimer(Type type){
+        return repoStats.getTimer(type.name(), getOption(type));
+    }
+
 
     public TimeSeriesMax maxQueLengthRecorder() {
         return maxQueueLength;
@@ -99,6 +114,22 @@ public class StatisticManager {
      */
     public void dispose() {
         registration.unregister();
+    }
+
+    private StatisticsProvider getStatsProvider(Whiteboard wb,
+                                                ScheduledExecutorService executor) {
+        StatisticsProvider provider = WhiteboardUtils.getService(wb, StatisticsProvider.class);
+        if (provider == null){
+            provider = new DefaultStatisticsProvider(executor);
+        }
+        return provider;
+    }
+
+    private static StatsOptions getOption(Type type){
+        if (NOOP_METRIC_TYPES.contains(type)){
+            return StatsOptions.TIME_SERIES_ONLY;
+        }
+        return StatsOptions.DEFAULT;
     }
 
 }

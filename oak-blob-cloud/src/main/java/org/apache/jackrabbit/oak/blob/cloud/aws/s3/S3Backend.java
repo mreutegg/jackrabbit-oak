@@ -50,6 +50,7 @@ import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
 import com.amazonaws.event.ProgressEvent;
 import com.amazonaws.event.ProgressListener;
+import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.CopyObjectRequest;
 import com.amazonaws.services.s3.model.DeleteObjectsRequest;
@@ -63,6 +64,7 @@ import com.amazonaws.services.s3.model.S3ObjectSummary;
 import com.amazonaws.services.s3.transfer.Copy;
 import com.amazonaws.services.s3.transfer.TransferManager;
 import com.amazonaws.services.s3.transfer.Upload;
+import com.amazonaws.util.StringUtils;
 
 /**
  * A data store backend that stores data on Amazon S3.
@@ -137,12 +139,24 @@ public class S3Backend implements SharedS3Backend {
             }
             String region = prop.getProperty(S3Constants.S3_REGION);
             Region s3Region = null;
-            if (Utils.DEFAULT_AWS_BUCKET_REGION.equals(region)) {
-                s3Region =  Region.US_Standard;
-            } else if (Region.EU_Ireland.toString().equals(region)) {
-                s3Region = Region.EU_Ireland;
+            if (StringUtils.isNullOrEmpty(region)) {
+                com.amazonaws.regions.Region ec2Region = Regions.getCurrentRegion();
+                if (ec2Region != null) {
+                    s3Region = Region.fromValue(ec2Region.getName());
+                } else {
+                    throw new AmazonClientException(
+                            "parameter ["
+                                    + S3Constants.S3_REGION
+                                    + "] not configured and cannot be derived from environment");
+                }
             } else {
-                s3Region = Region.fromValue(region);
+                if (Utils.DEFAULT_AWS_BUCKET_REGION.equals(region)) {
+                    s3Region = Region.US_Standard;
+                } else if (Region.EU_Ireland.toString().equals(region)) {
+                    s3Region = Region.EU_Ireland;
+                } else {
+                    s3Region = Region.fromValue(region);
+                }
             }
 
             if (!s3service.doesBucketExist(bucket)) {
@@ -228,13 +242,13 @@ public class S3Backend implements SharedS3Backend {
             ObjectMetadata objectMetaData = s3service.getObjectMetadata(bucket,
                 key);
             if (objectMetaData != null) {
-                LOG.debug("exists [{}]: [true] took [{}] ms.",
+                LOG.trace("exists [{}]: [true] took [{}] ms.",
                     identifier, (System.currentTimeMillis() - start) );
                 return true;
             }
             return false;
         } catch (AmazonServiceException e) {
-            if (e.getStatusCode() == 404) {
+            if (e.getStatusCode() == 404 || e.getStatusCode() == 403) {
                 LOG.debug("exists [{}]: [false] took [{}] ms.",
                     identifier, (System.currentTimeMillis() - start) );
                 return false;
@@ -277,7 +291,7 @@ public class S3Backend implements SharedS3Backend {
             }
 
         } catch (AmazonServiceException e) {
-            if (e.getStatusCode() == 404) {
+            if (e.getStatusCode() == 404 || e.getStatusCode() == 403) {
                 retVal = false;
             } else {
                 throw new DataStoreException(
@@ -354,7 +368,7 @@ public class S3Backend implements SharedS3Backend {
                 LOG.debug("[{}] touched. time taken [{}] ms ", new Object[] {
                     identifier, (System.currentTimeMillis() - start) });
             } else {
-                LOG.debug("[{}] touch not required. time taken [{}] ms ",
+                LOG.trace("[{}] touch not required. time taken [{}] ms ",
                     new Object[] { identifier,
                         (System.currentTimeMillis() - start) });
             }
@@ -441,7 +455,7 @@ public class S3Backend implements SharedS3Backend {
                     (System.currentTimeMillis() - start) });
             return lastModified;
         } catch (AmazonServiceException e) {
-            if (e.getStatusCode() == 404) {
+            if (e.getStatusCode() == 404 || e.getStatusCode() == 403) {
                 LOG.info(
                     "getLastModified:Identifier [{}] not found. Took [{}] ms.",
                     identifier, (System.currentTimeMillis() - start));
@@ -526,7 +540,7 @@ public class S3Backend implements SharedS3Backend {
                             && s3service.getObjectMetadata(bucket, s3ObjSumm.getKey()).getLastModified().getTime() <
                             min) {
 
-
+                            store.deleteFromCache(identifier);
                             LOG.debug("add id [{}] to delete lists", s3ObjSumm.getKey());
                             deleteList.add(new DeleteObjectsRequest.KeyVersion(s3ObjSumm.getKey()));
                             deleteIdSet.add(identifier);
@@ -758,7 +772,7 @@ public class S3Backend implements SharedS3Backend {
             try {
                 objectMetaData = s3service.getObjectMetadata(bucket, key);
             } catch (AmazonServiceException ase) {
-                if (ase.getStatusCode() != 404) {
+                if (!(ase.getStatusCode() == 404 || ase.getStatusCode() == 403)) {
                     throw ase;
                 }
             }

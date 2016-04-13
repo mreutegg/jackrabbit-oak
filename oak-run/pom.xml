@@ -23,7 +23,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>oak-parent</artifactId>
-    <version>1.4-SNAPSHOT</version>
+    <version>1.6-SNAPSHOT</version>
     <relativePath>../oak-parent/pom.xml</relativePath>
   </parent>
 
@@ -241,8 +241,13 @@
       <version>${project.version}</version>
     </dependency>
     <dependency>
+        <groupId>org.apache.jackrabbit</groupId>
+        <artifactId>oak-remote</artifactId>
+        <version>${project.version}</version>
+    </dependency>
+    <dependency>
       <groupId>org.apache.jackrabbit</groupId>
-      <artifactId>oak-upgrade</artifactId>
+      <artifactId>oak-authorization-cug</artifactId>
       <version>${project.version}</version>
     </dependency>
     <dependency>
@@ -275,6 +280,11 @@
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>oak-tarmk-standby</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.tomcat</groupId>
+      <artifactId>tomcat-jdbc</artifactId>
+      <version>7.0.64</version>
     </dependency>
     <dependency>
       <groupId>com.h2database</groupId>
@@ -356,6 +366,46 @@
       <version>1.0.6</version>
       <scope>compile</scope>
     </dependency>
+    <dependency>
+      <groupId>com.googlecode.json-simple</groupId>
+      <artifactId>json-simple</artifactId>
+      <version>1.1.1</version>
+      <exclusions>
+        <exclusion>
+          <artifactId>junit</artifactId>
+          <groupId>junit</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.tika</groupId>
+      <artifactId>tika-parsers</artifactId>
+      <version>1.5</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.tika</groupId>
+      <artifactId>tika-core</artifactId>
+      <version>1.5</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-csv</artifactId>
+      <version>1.1</version>
+    </dependency>
+
+    <dependency>
+      <groupId>io.dropwizard.metrics</groupId>
+      <artifactId>metrics-core</artifactId>
+      <version>3.1.0</version>
+    </dependency>
+
+    <dependency>
+      <groupId>org.apache.jackrabbit</groupId>
+      <artifactId>jackrabbit-aws-ext</artifactId>
+      <version>${jackrabbit.version}</version>
+      <optional>true</optional>
+    </dependency>
 
     <!-- Findbugs annotations -->
     <dependency>
@@ -417,6 +467,11 @@
         <dependency>
           <groupId>org.apache.lucene</groupId>
           <artifactId>lucene-suggest</artifactId>
+          <version>${lucene.version}</version>
+        </dependency>
+        <dependency>
+          <groupId>org.apache.lucene</groupId>
+          <artifactId>lucene-facet</artifactId>
           <version>${lucene.version}</version>
         </dependency>
         <dependency>

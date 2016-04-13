@@ -30,24 +30,26 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import javax.annotation.Nullable;
 
 import org.apache.jackrabbit.oak.commons.PathUtils;
+import org.apache.jackrabbit.oak.plugins.index.lucene.util.SuggestHelper;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.jackrabbit.oak.spi.state.ReadOnlyBuilder;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.suggest.analyzing.AnalyzingInfixSuggester;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 
 class IndexNode {
 
-    static IndexNode open(String indexPath, NodeState root, NodeState defnNodeState,@Nullable IndexCopier cloner)
+    static IndexNode open(String indexPath, NodeState root, NodeState defnNodeState, @Nullable IndexCopier cloner)
             throws IOException {
         Directory directory = null;
         IndexDefinition definition = new IndexDefinition(root, defnNodeState, indexPath);
         NodeState data = defnNodeState.getChildNode(INDEX_DATA_CHILD_NAME);
         if (data.exists()) {
-            directory = new OakDirectory(new ReadOnlyBuilder(data), definition, true);
-            if (cloner != null){
+            directory = new OakDirectory(new ReadOnlyBuilder(defnNodeState), definition, true);
+            if (cloner != null) {
                 directory = cloner.wrapForRead(indexPath, definition, directory);
             }
         } else if (PERSISTENCE_FILE.equalsIgnoreCase(defnNodeState.getString(PERSISTENCE_NAME))) {
@@ -59,7 +61,12 @@ class IndexNode {
 
         if (directory != null) {
             try {
-                IndexNode index = new IndexNode(PathUtils.getName(indexPath), definition, directory);
+                OakDirectory suggestDirectory = null;
+                if (definition.isSuggestEnabled()) {
+                    suggestDirectory = new OakDirectory(defnNodeState.builder(), ":suggest-data", definition, false);
+                }
+
+                IndexNode index = new IndexNode(PathUtils.getName(indexPath), definition, directory, suggestDirectory);
                 directory = null; // closed in Index.close()
                 return index;
             } finally {
@@ -78,21 +85,31 @@ class IndexNode {
 
     private final Directory directory;
 
+    private final Directory suggestDirectory;
+
     private final IndexReader reader;
 
     private final IndexSearcher searcher;
 
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
+    private final AnalyzingInfixSuggester lookup;
+
     private boolean closed = false;
 
-    IndexNode(String name, IndexDefinition definition, Directory directory)
+    IndexNode(String name, IndexDefinition definition, Directory directory, final OakDirectory suggestDirectory)
             throws IOException {
         this.name = name;
         this.definition = definition;
         this.directory = directory;
         this.reader = DirectoryReader.open(directory);
         this.searcher = new IndexSearcher(reader);
+        this.suggestDirectory = suggestDirectory;
+        if (suggestDirectory != null) {
+            this.lookup = SuggestHelper.getLookup(suggestDirectory, definition.getAnalyzer());
+        } else {
+            this.lookup = null;
+        }
     }
 
     String getName() {
@@ -105,6 +122,14 @@ class IndexNode {
 
     IndexSearcher getSearcher() {
         return searcher;
+    }
+
+    Directory getSuggestDirectory() {
+        return suggestDirectory;
+    }
+
+    AnalyzingInfixSuggester getLookup() {
+        return lookup;
     }
 
     boolean acquire() {

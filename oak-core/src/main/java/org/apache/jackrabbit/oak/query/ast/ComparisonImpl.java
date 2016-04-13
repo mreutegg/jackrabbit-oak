@@ -35,7 +35,7 @@ import org.apache.jackrabbit.oak.spi.query.PropertyValues;
  * A comparison operation (including "like").
  */
 public class ComparisonImpl extends ConstraintImpl {
-
+    
     private final DynamicOperandImpl operand1;
     private final Operator operator;
     private final StaticOperandImpl operand2;
@@ -195,4 +195,8 @@ public class ComparisonImpl extends ConstraintImpl {
         }
     }
 
+    @Override
+    public AstElement copyOf() {
+        return new ComparisonImpl(operand1.createCopy(), operator, operand2);
+    }
 }

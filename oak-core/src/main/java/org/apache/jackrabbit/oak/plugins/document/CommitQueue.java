@@ -19,13 +19,21 @@ package org.apache.jackrabbit.oak.plugins.document;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 import javax.annotation.Nonnull;
+
+import com.google.common.collect.Maps;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,13 +42,29 @@ import org.slf4j.LoggerFactory;
  * <code>CommitQueue</code> ensures a sequence of commits consistent with the
  * commit revision even if commits did not complete in this sequence.
  */
-abstract class CommitQueue {
+final class CommitQueue {
 
     static final Logger LOG = LoggerFactory.getLogger(CommitQueue.class);
 
+    /**
+     * The default suspend timeout in milliseconds: 60'000.
+     */
+    static final long DEFAULT_SUSPEND_TIMEOUT = TimeUnit.MINUTES.toMillis(1);
+
     private final SortedMap<Revision, Entry> commits = new TreeMap<Revision, Entry>(StableRevisionComparator.INSTANCE);
 
-    protected abstract Revision newRevision();
+    /**
+     * Map of currently suspended commits until a given Revision is visible.
+     */
+    private final Map<Semaphore, SuspendedCommit> suspendedCommits = Maps.newIdentityHashMap();
+
+    private final RevisionContext context;
+
+    private long suspendTimeout = Long.getLong("oak.documentMK.suspendTimeoutMillis", DEFAULT_SUSPEND_TIMEOUT);
+
+    CommitQueue(@Nonnull RevisionContext context) {
+        this.context = checkNotNull(context);
+    }
 
     @Nonnull
     Revision createRevision() {
@@ -54,7 +78,7 @@ abstract class CommitQueue {
         Revision rev = null;
         synchronized (this) {
             for (int i = 0; i < num; i++) {
-                rev = newRevision();
+                rev = context.newRevision();
                 revs.add(rev);
             }
             commits.put(rev, new Entry(rev));
@@ -70,6 +94,7 @@ abstract class CommitQueue {
 
     void canceled(@Nonnull Revision rev) {
         removeCommit(rev);
+        notifySuspendedCommits(rev);
     }
 
     boolean contains(@Nonnull Revision revision) {
@@ -78,12 +103,109 @@ abstract class CommitQueue {
         }
     }
 
+    /**
+     * Suspends until for each of given revisions one of the following happens:
+     * <ul>
+     *     <li>the given revision is visible from the current headRevision</li>
+     *     <li>the given revision is canceled from the commit queue</li>
+     *     <li>the suspend timeout is reached. See {@link #setSuspendTimeoutMillis(long)}</li>
+     *     <li>the thread is interrupted</li>
+     * </ul>
+     *
+     * @param conflictRevisions the revisions to become visible.
+     */
+    void suspendUntilAll(@Nonnull Set<Revision> conflictRevisions) {
+        Semaphore s;
+        int addedRevisions;
+        synchronized (suspendedCommits) {
+            RevisionVector headRevision = context.getHeadRevision();
+            Set<Revision> afterHead = new HashSet<Revision>(conflictRevisions.size());
+            for (Revision r : conflictRevisions) {
+                if (headRevision.isRevisionNewer(r)) {
+                    afterHead.add(r);
+                }
+            }
+
+            s = new Semaphore(0);
+            suspendedCommits.put(s, new SuspendedCommit(s, afterHead));
+            addedRevisions = afterHead.size();
+        }
+        try {
+            s.tryAcquire(addedRevisions, suspendTimeout, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            LOG.debug("The suspended thread has been interrupted", e);
+        } finally {
+            synchronized (suspendedCommits) {
+                suspendedCommits.remove(s);
+            }
+        }
+    }
+
+    /**
+     * Called when the head revision accessible via the {@link RevisionContext}
+     * passed to constructor changed.
+     */
+    void headRevisionChanged() {
+        notifySuspendedCommits();
+    }
+
+    /**
+     * @return the number of suspended threads on this commit queue.
+     */
+    int numSuspendedThreads() {
+        synchronized (suspendedCommits) {
+            return suspendedCommits.size();
+        }
+    }
+
+    /**
+     * Sets the suspend timeout in milliseconds.
+     * See also {@link #suspendUntilAll(Set)}.
+     *
+     * @param timeout the timeout to set.
+     */
+    void setSuspendTimeoutMillis(long timeout) {
+        this.suspendTimeout = timeout;
+    }
+
     interface Callback {
 
         void headOfQueue(@Nonnull Revision revision);
     }
 
     //------------------------< internal >--------------------------------------
+
+    private void notifySuspendedCommits() {
+        synchronized (suspendedCommits) {
+            if (suspendedCommits.isEmpty()) {
+                return;
+            }
+            RevisionVector headRevision = context.getHeadRevision();
+            Iterator<SuspendedCommit> it = suspendedCommits.values().iterator();
+            while (it.hasNext()) {
+                SuspendedCommit suspended = it.next();
+                if (suspended.removeRevisionsVisibleFrom(headRevision) && suspended.revisions.isEmpty()) {
+                    it.remove();
+                }
+            }
+        }
+    }
+
+    private void notifySuspendedCommits(@Nonnull Revision revision) {
+        checkNotNull(revision);
+        synchronized (suspendedCommits) {
+            if (suspendedCommits.isEmpty()) {
+                return;
+            }
+            Iterator<SuspendedCommit> it = suspendedCommits.values().iterator();
+            while (it.hasNext()) {
+                SuspendedCommit suspended = it.next();
+                if (suspended.removeRevision(revision) && suspended.revisions.isEmpty()) {
+                    it.remove();
+                }
+            }
+        }
+    }
 
     private void removeCommit(@Nonnull Revision rev) {
         // simply remove and notify next head if any
@@ -169,6 +291,40 @@ abstract class CommitQueue {
                 } catch (InterruptedException e) {
                     // retry
                 }
+            }
+        }
+    }
+
+    private class SuspendedCommit {
+
+        private final Semaphore semaphore;
+
+        private final Set<Revision> revisions;
+
+        private SuspendedCommit(Semaphore semaphore, Set<Revision> revisions) {
+            this.semaphore = semaphore;
+            this.revisions = revisions;
+        }
+
+        private boolean removeRevisionsVisibleFrom(RevisionVector revision) {
+            Iterator<Revision> it = revisions.iterator();
+            boolean removed = false;
+            while (it.hasNext()) {
+                if (!revision.isRevisionNewer(it.next())) {
+                    it.remove();
+                    semaphore.release();
+                    removed = true;
+                }
+            }
+            return removed;
+        }
+
+        private boolean removeRevision(Revision r) {
+            if (revisions.remove(r)) {
+                semaphore.release();
+                return true;
+            } else {
+                return false;
             }
         }
     }

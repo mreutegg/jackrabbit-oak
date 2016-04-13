@@ -52,7 +52,9 @@ import org.apache.jackrabbit.oak.plugins.name.NamespaceEditorProvider;
 import org.apache.jackrabbit.oak.plugins.nodetype.TypeEditorProvider;
 import org.apache.jackrabbit.oak.plugins.nodetype.write.InitialContent;
 import org.apache.jackrabbit.oak.plugins.value.ValueFactoryImpl;
+import org.apache.jackrabbit.oak.plugins.version.VersionEditorProvider;
 import org.apache.jackrabbit.oak.security.SecurityProviderImpl;
+import org.apache.jackrabbit.oak.spi.commit.EditorHook;
 import org.apache.jackrabbit.oak.spi.security.ConfigurationParameters;
 import org.apache.jackrabbit.oak.spi.security.SecurityProvider;
 import org.apache.jackrabbit.oak.spi.security.authentication.ConfigurationUtil;
@@ -72,7 +74,6 @@ public abstract class AbstractSecurityTest {
     private ContentRepository contentRepository;
     private UserManager userManager;
     private User testUser;
-    private PrivilegeManager privMgr;
 
     protected NamePathMapper namePathMapper = NamePathMapper.DEFAULT;
     protected SecurityProvider securityProvider;
@@ -83,6 +84,7 @@ public abstract class AbstractSecurityTest {
     public void before() throws Exception {
         Oak oak = new Oak()
                 .with(new InitialContent())
+                .with(new EditorHook(new VersionEditorProvider()))
                 .with(JcrConflictHandler.createJcrConflictHandler())
                 .with(new NamespaceEditorProvider())
                 .with(new ReferenceEditorProvider())
@@ -154,10 +156,14 @@ public abstract class AbstractSecurityTest {
     }
 
     protected UserManager getUserManager(Root root) {
-        if (userManager == null) {
-            userManager = getConfig(UserConfiguration.class).getUserManager(root, getNamePathMapper());
+        if (this.root == root) {
+            if (userManager == null) {
+                userManager = getConfig(UserConfiguration.class).getUserManager(root, getNamePathMapper());
+            }
+            return userManager;
+        } else {
+            return getConfig(UserConfiguration.class).getUserManager(root, getNamePathMapper());
         }
-        return userManager;
     }
 
     protected PrincipalManager getPrincipalManager(Root root) {
@@ -187,10 +193,7 @@ public abstract class AbstractSecurityTest {
     }
 
     protected PrivilegeManager getPrivilegeManager(Root root) {
-        if (privMgr == null) {
-            privMgr = getConfig(PrivilegeConfiguration.class).getPrivilegeManager(root, getNamePathMapper());
-        }
-        return privMgr;
+        return getConfig(PrivilegeConfiguration.class).getPrivilegeManager(root, getNamePathMapper());
     }
 
     protected ValueFactory getValueFactory() {

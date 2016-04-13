@@ -45,6 +45,7 @@ import org.apache.jackrabbit.api.security.user.Group;
 import org.apache.jackrabbit.api.security.user.User;
 import org.apache.jackrabbit.api.security.user.UserManager;
 import org.apache.jackrabbit.commons.jackrabbit.authorization.AccessControlUtils;
+import org.apache.jackrabbit.oak.spi.security.principal.EveryonePrincipal;
 import org.apache.jackrabbit.test.NotExecutableException;
 import org.apache.jackrabbit.test.api.security.AbstractAccessControlTest;
 import org.junit.After;
@@ -175,6 +176,15 @@ public abstract class AbstractEvaluationTest extends AbstractAccessControlTest {
 
     protected static String generateId(@Nonnull String hint) {
         return hint + UUID.randomUUID();
+    }
+
+    protected static boolean canReadNode(Session session, String nodePath) throws RepositoryException {
+        try {
+            session.getNode(nodePath);
+            return session.nodeExists(nodePath);
+        } catch (PathNotFoundException e) {
+            return session.nodeExists(nodePath);
+        }
     }
 
     protected Group getTestGroup() throws Exception {

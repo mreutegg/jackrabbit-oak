@@ -115,7 +115,7 @@ public class ACLTest extends AbstractAccessControlListTest implements PrivilegeC
 
             @Override
             boolean checkValidPrincipal(Principal principal) throws AccessControlException {
-                Util.checkValidPrincipal(principal, principalManager, true);
+                Util.checkValidPrincipal(principal, principalManager);
                 return true;
             }
 
@@ -452,6 +452,19 @@ public class ACLTest extends AbstractAccessControlListTest implements PrivilegeC
     }
 
     @Test
+    public void testComplementaryEntry3() throws Exception {
+        Privilege[] readPriv = privilegesFromNames(JCR_READ);
+
+        acl.addAccessControlEntry(testPrincipal, privilegesFromNames(JCR_WRITE));
+        acl.addEntry(testPrincipal, readPriv, false);
+
+        acl.addAccessControlEntry(testPrincipal, readPriv);
+
+        List<? extends JackrabbitAccessControlEntry> entries = acl.getEntries();
+        assertEquals(1, entries.size());
+    }
+
+    @Test
     public void testMultiplePrincipals() throws Exception {
         Principal everyone = principalManager.getEveryone();
         Privilege[] privs = privilegesFromNames(JCR_READ);
@@ -648,11 +661,12 @@ public class ACLTest extends AbstractAccessControlListTest implements PrivilegeC
     public void testRestrictions() throws Exception {
         String[] names = acl.getRestrictionNames();
         assertNotNull(names);
-        assertEquals(3, names.length);
-        assertArrayEquals(new String[] {REP_GLOB, REP_NT_NAMES, REP_PREFIXES}, names);
+        assertEquals(4, names.length);
+        assertArrayEquals(new String[] {REP_GLOB, REP_NT_NAMES, REP_PREFIXES, REP_ITEM_NAMES}, names);
         assertEquals(PropertyType.STRING, acl.getRestrictionType(names[0]));
         assertEquals(PropertyType.NAME, acl.getRestrictionType(names[1]));
         assertEquals(PropertyType.STRING, acl.getRestrictionType(names[2]));
+        assertEquals(PropertyType.NAME, acl.getRestrictionType(names[3]));
 
         Privilege[] writePriv = privilegesFromNames(JCR_WRITE);
 

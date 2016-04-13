@@ -17,12 +17,11 @@
 package org.apache.jackrabbit.oak.plugins.index.reference;
 
 import static com.google.common.collect.ImmutableSet.of;
-import static com.google.common.collect.Iterables.addAll;
 import static com.google.common.collect.Maps.newHashMap;
 import static com.google.common.collect.Sets.newHashSet;
+import static java.util.Collections.emptySet;
 import static javax.jcr.PropertyType.REFERENCE;
 import static javax.jcr.PropertyType.WEAKREFERENCE;
-import static org.apache.jackrabbit.JcrConstants.JCR_SYSTEM;
 import static org.apache.jackrabbit.JcrConstants.JCR_UUID;
 import static org.apache.jackrabbit.oak.api.CommitFailedException.INTEGRITY;
 import static org.apache.jackrabbit.oak.api.Type.STRING;
@@ -31,11 +30,14 @@ import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
 import static org.apache.jackrabbit.oak.commons.PathUtils.isAbsolute;
 import static org.apache.jackrabbit.oak.plugins.index.reference.NodeReferenceConstants.REF_NAME;
 import static org.apache.jackrabbit.oak.plugins.index.reference.NodeReferenceConstants.WEAK_REF_NAME;
-import static org.apache.jackrabbit.oak.plugins.version.VersionConstants.SYSTEM_PATHS;
+import static org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState.MISSING_NODE;
+import static org.apache.jackrabbit.oak.plugins.version.VersionConstants.VERSION_STORE_PATH;
 
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+
+import com.google.common.collect.Sets;
 
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.PropertyState;
@@ -68,12 +70,6 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
     private final NodeBuilder definition;
 
     /**
-     * the uuid of the current node, null if the node doesn't have this
-     * property.
-     */
-    private final String uuid;
-
-    /**
      * <UUID, Set<paths-pointing-to-the-uuid>>
      */
     private final Map<String, Set<String>> newRefs;
@@ -100,20 +96,16 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
     private final Set<String> rmIds;
 
     /**
-     * set of ids that changed. This can happen when a node with the same name
-     * is deleted and added again
-     * 
-     */
-    private final Set<String> discardedIds;
-
-    private final Set<String> versionStoreIds;
-
-    /**
      * set of ids that were added during this commit. we need it to reconcile
      * moves
-     * 
      */
     private final Set<String> newIds;
+
+    /**
+     * flag marking a reindex, case in which we don't need to keep track of the
+     * newIds set
+     */
+    private boolean isReindex;
 
     public ReferenceEditor(NodeBuilder definition, NodeState root) {
         this.parent = null;
@@ -121,32 +113,27 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
         this.path = "/";
         this.definition = definition;
         this.root = root;
-        this.uuid = null;
         this.newRefs = newHashMap();
         this.rmRefs = newHashMap();
         this.newWeakRefs = newHashMap();
         this.rmWeakRefs = newHashMap();
         this.rmIds = newHashSet();
-        this.discardedIds = newHashSet();
-        this.versionStoreIds = newHashSet();
         this.newIds = newHashSet();
     }
 
-    private ReferenceEditor(ReferenceEditor parent, String name, String uuid) {
+    private ReferenceEditor(ReferenceEditor parent, String name) {
         this.parent = parent;
         this.name = name;
         this.path = null;
         this.definition = parent.definition;
         this.root = parent.root;
-        this.uuid = uuid;
         this.newRefs = parent.newRefs;
         this.rmRefs = parent.rmRefs;
         this.newWeakRefs = parent.newWeakRefs;
         this.rmWeakRefs = parent.rmWeakRefs;
         this.rmIds = parent.rmIds;
-        this.discardedIds = parent.discardedIds;
-        this.versionStoreIds = parent.versionStoreIds;
         this.newIds = parent.newIds;
+        this.isReindex = parent.isReindex;
     }
 
     /**
@@ -162,33 +149,20 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
     @Override
     public void enter(NodeState before, NodeState after)
             throws CommitFailedException {
+        if (MISSING_NODE == before && parent == null) {
+            isReindex = true;
+        }
     }
 
     @Override
     public void leave(NodeState before, NodeState after)
             throws CommitFailedException {
         if (parent == null) {
-            Set<String> offending = newHashSet(rmIds);
-            offending.removeAll(rmRefs.keySet());
-            offending.removeAll(newIds);
-            if (!offending.isEmpty()) {
-                throw new CommitFailedException(INTEGRITY, 1,
-                        "Unable to delete referenced node");
-            }
-            rmIds.addAll(discardedIds);
-
-            // remove ids that are actually deleted (that exist in the rmRefs.keySet())
-            versionStoreIds.removeAll(rmRefs.keySet());
-            rmIds.addAll(versionStoreIds);
-
             // update references
             for (Entry<String, Set<String>> ref : rmRefs.entrySet()) {
                 String uuid = ref.getKey();
-                if (rmIds.contains(uuid)) {
-                    continue;
-                }
                 Set<String> rm = ref.getValue();
-                Set<String> add = newHashSet();
+                Set<String> add = emptySet();
                 if (newRefs.containsKey(uuid)) {
                     add = newRefs.remove(uuid);
                 }
@@ -200,18 +174,18 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
                     continue;
                 }
                 Set<String> add = ref.getValue();
-                Set<String> rm = newHashSet();
+                Set<String> rm = emptySet();
                 update(definition, REF_NAME, uuid, add, rm);
             }
+
+            checkReferentialIntegrity(root, definition.getNodeState(),
+                    Sets.difference(rmIds, newIds));
 
             // update weak references
             for (Entry<String, Set<String>> ref : rmWeakRefs.entrySet()) {
                 String uuid = ref.getKey();
-                if (rmIds.contains(uuid)) {
-                    continue;
-                }
                 Set<String> rm = ref.getValue();
-                Set<String> add = newHashSet();
+                Set<String> add = emptySet();
                 if (newWeakRefs.containsKey(uuid)) {
                     add = newWeakRefs.remove(uuid);
                 }
@@ -219,11 +193,8 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
             }
             for (Entry<String, Set<String>> ref : newWeakRefs.entrySet()) {
                 String uuid = ref.getKey();
-                if (rmIds.contains(uuid)) {
-                    continue;
-                }
                 Set<String> add = ref.getValue();
-                Set<String> rm = newHashSet();
+                Set<String> rm = emptySet();
                 update(definition, WEAK_REF_NAME, uuid, add, rm);
             }
         }
@@ -239,9 +210,7 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
 
         if (before != null) {
             if (before.getType().tag() == REFERENCE) {
-                if (isVersionStorePath(getPath())) {
-                    addAll(versionStoreIds, before.getValue(STRINGS));
-                } else {
+                if (!isVersionStorePath(getPath())) {
                     put(rmRefs, before.getValue(STRINGS),
                             concat(getPath(), before.getName()));
                 }
@@ -252,17 +221,12 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
             }
             if (JCR_UUID.equals(before.getName())) {
                 // node remove + add -> changed uuid
-                String beforeUuid = before.getValue(STRING);
-                if (beforeUuid != null && !beforeUuid.equals(uuid)) {
-                    discardedIds.add(beforeUuid);
-                }
+                rmIds.add(before.getValue(STRING));
             }
         }
         if (after != null) {
             if (after.getType().tag() == REFERENCE) {
-                if (isVersionStorePath(getPath())) {
-                    addAll(versionStoreIds, after.getValue(STRINGS));
-                } else {
+                if (!isVersionStorePath(getPath())) {
                     put(newRefs, after.getValue(STRINGS),
                             concat(getPath(), after.getName()));
                 }
@@ -270,6 +234,10 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
             if (after.getType().tag() == WEAKREFERENCE) {
                 put(newWeakRefs, after.getValue(STRINGS),
                         concat(getPath(), after.getName()));
+            }
+            if (JCR_UUID.equals(after.getName())) {
+                // node remove + add -> changed uuid
+                newIds.add(after.getValue(STRING));
             }
         }
     }
@@ -282,42 +250,33 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
     @Override
     public Editor childNodeAdded(String name, NodeState after) {
         String uuid = after.getString(JCR_UUID);
-        if (uuid != null) {
+        if (!isReindex && uuid != null) {
             newIds.add(uuid);
         }
-        return new ReferenceEditor(this, name, uuid);
+        return new ReferenceEditor(this, name);
     }
 
     @Override
     public Editor childNodeChanged(String name, NodeState before,
             NodeState after) {
-        return new ReferenceEditor(this, name, after.getString(JCR_UUID));
+        return new ReferenceEditor(this, name);
     }
 
     @Override
     public Editor childNodeDeleted(String name, NodeState before)
             throws CommitFailedException {
         String uuid = before.getString(JCR_UUID);
-        if (uuid != null && check(root, definition.getNodeState(), REF_NAME, uuid)) {
+        if (uuid != null) {
             rmIds.add(uuid);
         }
-        return new ReferenceEditor(this, name, uuid);
+        return new ReferenceEditor(this, name);
     }
 
     // ---------- Utils -----------------------------------------
 
     private static boolean isVersionStorePath(String oakPath) {
-        if (oakPath == null) {
-            return false;
-        }
-        if (oakPath.indexOf(JCR_SYSTEM) == 1) {
-            for (String p : SYSTEM_PATHS) {
-                if (oakPath.startsWith(p)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return oakPath != null
+                && oakPath.startsWith(VERSION_STORE_PATH);
     }
 
     private static void put(Map<String, Set<String>> map,
@@ -346,9 +305,23 @@ class ReferenceEditor extends DefaultEditor implements IndexEditor {
         }
     }
 
-    private static boolean check(NodeState root, NodeState definition, String name, String key) {
+    private static boolean hasReferences(NodeState root,
+                                         NodeState definition,
+                                         String name,
+                                         String key) {
         return definition.hasChildNode(name)
                 && STORE.count(root, definition, name, of(key), 1) > 0;
     }
 
+    private static void checkReferentialIntegrity(NodeState root,
+                                                  NodeState definition,
+                                                  Set<String> idsOfRemovedNodes)
+            throws CommitFailedException {
+        for (String id : idsOfRemovedNodes) {
+            if (hasReferences(root, definition, REF_NAME, id)) {
+                throw new CommitFailedException(INTEGRITY, 1,
+                        "Unable to delete referenced node");
+            }
+        }
+    }
 }

@@ -30,7 +30,6 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.plugins.index.lucene.util.ConfigUtil;
@@ -78,8 +77,8 @@ class Aggregate {
         return includes;
     }
 
-    public void collectAggregates(NodeState root, ResultCollector collector) throws CommitFailedException {
-        if (nodeTypeName.equals(ConfigUtil.getPrimaryTypeName(root))) {
+    public void collectAggregates(NodeState root, ResultCollector collector) {
+        if (matchingType(nodeTypeName, root)) {
             List<Matcher> matchers = createMatchers();
             collectAggregates(root, matchers, collector);
         }
@@ -111,8 +110,21 @@ class Aggregate {
         return nodeTypeName;
     }
 
+    private static boolean matchingType(String nodeTypeName, NodeState nodeState) {
+        if (nodeTypeName.equals(ConfigUtil.getPrimaryTypeName(nodeState))) {
+            return true;
+        }
+
+        for (String mixin : ConfigUtil.getMixinNames(nodeState)) {
+            if (nodeTypeName.equals(mixin)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void collectAggregates(NodeState nodeState, List<Matcher> matchers,
-                                          ResultCollector collector) throws CommitFailedException {
+                                          ResultCollector collector) {
         for (ChildNodeEntry cne : nodeState.getChildNodeEntries()) {
             List<Matcher> nextSet = newArrayListWithCapacity(matchers.size());
             for (Matcher m : matchers) {
@@ -190,13 +202,12 @@ class Aggregate {
         }
 
         public void collectResults(T rootInclude, String rootIncludePath,
-                                   String nodePath, NodeState nodeState,  ResultCollector results)
-                throws CommitFailedException {
+                                   String nodePath, NodeState nodeState,  ResultCollector results) {
             collectResults(nodePath, nodeState, results);
         }
 
         public void collectResults(String nodePath, NodeState nodeState,
-                                            ResultCollector results) throws CommitFailedException {
+                                            ResultCollector results) {
 
         }
 
@@ -232,7 +243,7 @@ class Aggregate {
             //last segment -> add to collector if node type matches
             if (depth == maxDepth() - 1
                     && primaryType != null
-                    && !primaryType.equals(ConfigUtil.getPrimaryTypeName(nodeState))) {
+                    && !matchingType(primaryType, nodeState)) {
                 return false;
             }
             return super.match(name, nodeState, depth);
@@ -240,7 +251,7 @@ class Aggregate {
 
         @Override
         public void collectResults(NodeInclude rootInclude, String rootIncludePath, String nodePath,
-                                   NodeState nodeState, ResultCollector results) throws CommitFailedException {
+                                   NodeState nodeState, ResultCollector results) {
             //For supporting jcr:contains(jcr:content, 'foo')
             if (rootInclude.relativeNode){
                 results.onResult(new NodeIncludeResult(nodePath, rootIncludePath, nodeState));
@@ -257,7 +268,19 @@ class Aggregate {
 
         @Override
         public Aggregate getAggregate(NodeState matchedNodeState) {
-            return aggMapper.getAggregate(ConfigUtil.getPrimaryTypeName(matchedNodeState));
+            //Check agg defn for primaryType first
+            Aggregate agg = aggMapper.getAggregate(ConfigUtil.getPrimaryTypeName(matchedNodeState));
+
+            //If not found then look for defn for mixins
+            if (agg == null) {
+                for (String mixin : ConfigUtil.getMixinNames(matchedNodeState)) {
+                    agg = aggMapper.getAggregate(mixin);
+                    if (agg != null) {
+                        break;
+                    }
+                }
+            }
+            return agg;
         }
 
         @Override
@@ -309,8 +332,7 @@ class Aggregate {
         }
 
         @Override
-        public void collectResults(String nodePath, NodeState nodeState, ResultCollector results)
-                throws CommitFailedException {
+        public void collectResults(String nodePath, NodeState nodeState, ResultCollector results) {
             if (pattern != null) {
                 for (PropertyState ps : nodeState.getProperties()) {
                     if (pattern.matcher(ps.getName()).matches()) {
@@ -340,9 +362,9 @@ class Aggregate {
     }
 
     public static interface ResultCollector {
-        void onResult(NodeIncludeResult result) throws CommitFailedException;
+        void onResult(NodeIncludeResult result);
 
-        void onResult(PropertyIncludeResult result) throws CommitFailedException;
+        void onResult(PropertyIncludeResult result);
     }
 
     public static class NodeIncludeResult {
@@ -508,8 +530,7 @@ class Aggregate {
                     null, currentPath));
         }
 
-        public void collectResults(ResultCollector results)
-                throws CommitFailedException {
+        public void collectResults(ResultCollector results) {
             checkArgument(status == Status.MATCH_FOUND);
 
             //If result being collected as part of reaggregation then take path
