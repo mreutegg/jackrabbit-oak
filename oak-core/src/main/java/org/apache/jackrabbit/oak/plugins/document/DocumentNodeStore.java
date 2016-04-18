@@ -1986,7 +1986,7 @@ public final class DocumentNodeStore
     //----------------------< background sweep operation >----------------------
 
     void runBackgroundSweepOperations() {
-        if (isDisposed.get()) {
+        if (readOnlyMode || isDisposed.get()) {
             return;
         }
         try {
