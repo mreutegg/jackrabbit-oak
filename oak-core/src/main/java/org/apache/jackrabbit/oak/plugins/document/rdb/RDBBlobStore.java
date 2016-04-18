@@ -167,7 +167,7 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
         RDBBlobStoreDB db = RDBBlobStoreDB.getValue(md.getDatabaseProductName());
         String versionDiags = db.checkVersion(md);
         if (!versionDiags.isEmpty()) {
-            LOG.info(versionDiags);
+            LOG.error(versionDiags);
         }
 
         String dbDesc = String.format("%s %s (%d.%d)", md.getDatabaseProductName(), md.getDatabaseProductVersion(),
@@ -277,7 +277,11 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                     try {
                         prep.setString(1, id);
                         prep.setBytes(2, data);
-                        prep.execute();
+                        int rows = prep.executeUpdate();
+                        LOG.trace("insert-data id={} rows={}", id, rows);
+                        if (rows != 1) {
+                            throw new SQLException("Insert of id " + id + " into " + this.tnData + " failed with result " + rows);
+                        }
                     } finally {
                         prep.close();
                     }
@@ -319,7 +323,11 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                         prep.setString(1, id);
                         prep.setInt(2, level);
                         prep.setLong(3, now);
-                        prep.execute();
+                        int rows = prep.executeUpdate();
+                        LOG.trace("insert-meta id={} rows={}", id, rows);
+                        if (rows != 1) {
+                            throw new SQLException("Insert of id " + id + " into " + this.tnMeta + " failed with result " + rows);
+                        }
                     } finally {
                         prep.close();
                     }
@@ -467,9 +475,11 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
 
             for (String id : ids) {
                 prepDelMeta.setString(1, id);
-                prepDelMeta.execute();
+                int mrows = prepDelMeta.executeUpdate();
+                LOG.trace("delete-meta id={} rows={}", id, mrows);
                 prepDelData.setString(1, id);
-                prepDelData.execute();
+                int drows = prepDelData.executeUpdate();
+                LOG.trace("delete-data id={} rows={}", id, drows);
                 count++;
             }
             prepDelMeta.close();
@@ -508,8 +518,10 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                 if (maxLastModifiedTime > 0) {
                     // delete only if the last modified is OLDER than x
                     metaStatement.append(" and LASTMOD <= ?");
-                    // delete if there is NO entry where the last modified of the meta is YOUNGER than x
-                    dataStatement.append(" and not exists(select * from " + this.tnMeta + " m where ID = m.ID and m.LASTMOD > ?)");
+                    // delete if there is NO entry where the last modified of
+                    // the meta is YOUNGER than x
+                    dataStatement.append(" and not exists(select * from " + this.tnMeta + " where " + this.tnMeta + ".ID = "
+                            + this.tnData + ".ID and LASTMOD > ?)");
                 }
 
                 prepMeta = con.prepareStatement(metaStatement.toString());
@@ -525,12 +537,14 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                 }
 
                 int deletedMeta = prepMeta.executeUpdate();
+                LOG.trace("delete-meta rows={}", deletedMeta);
                 int deletedData = prepData.executeUpdate();
+                LOG.trace("delete-data rows={}", deletedData);
 
                 if (deletedMeta != deletedData) {
                     String message = String.format(
-                            "chunk deletion affected different numbers of DATA records (%s) and META records (%s)", deletedMeta,
-                            deletedData);
+                            "chunk deletion affected different numbers of DATA records (%s) and META records (%s)", deletedData,
+                            deletedMeta);
                     LOG.info(message);
                 }
 

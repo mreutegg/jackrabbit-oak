@@ -315,11 +315,11 @@ public class OakDirectoryTest {
 
     @Test
     public void largeFile() throws Exception{
-        FileStore store = FileStore.newFileStore(tempFolder.getRoot())
+        FileStore store = FileStore.builder(tempFolder.getRoot())
                 .withMemoryMapping(false)
                 .withBlobStore(new BlackHoleBlobStore())
-                .create();
-        SegmentNodeStore nodeStore = SegmentNodeStore.newSegmentNodeStore(store).create();
+                .build();
+        SegmentNodeStore nodeStore = SegmentNodeStore.builder(store).build();
         IndexDefinition defn = new IndexDefinition(INITIAL_CONTENT, EmptyNodeState.EMPTY_NODE);
         Directory directory = new OakDirectory(nodeStore.getRoot().builder(), defn, false);
 
@@ -370,11 +370,11 @@ public class OakDirectoryTest {
     @Test
     public void dirNameInException_Writes() throws Exception{
         FailOnDemandBlobStore blobStore = new FailOnDemandBlobStore();
-        FileStore store = FileStore.newFileStore(tempFolder.getRoot())
+        FileStore store = FileStore.builder(tempFolder.getRoot())
                 .withMemoryMapping(false)
                 .withBlobStore(blobStore)
-                .create();
-        SegmentNodeStore nodeStore = SegmentNodeStore.newSegmentNodeStore(store).create();
+                .build();
+        SegmentNodeStore nodeStore = SegmentNodeStore.builder(store).build();
 
         String indexPath = "/foo/bar";
 

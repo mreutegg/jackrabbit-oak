@@ -41,6 +41,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -158,12 +159,32 @@ public class LuceneIndexProviderServiceTest {
         LuceneIndexEditorProvider editorProvider =
                 (LuceneIndexEditorProvider) context.getService(IndexEditorProvider.class);
         assertNull(editorProvider.getExtractedTextCache().getExtractedTextProvider());
+        assertFalse(editorProvider.getExtractedTextCache().isAlwaysUsePreExtractedCache());
 
         //Mock OSGi does not support components
         //context.registerService(PreExtractedTextProvider.class, new DummyProvider());
         service.bindExtractedTextProvider(new DummyProvider());
 
         assertNotNull(editorProvider.getExtractedTextCache().getExtractedTextProvider());
+    }
+
+    @Test
+    public void preExtractedProviderBindBeforeActivate() throws Exception{
+        service.bindExtractedTextProvider(new DummyProvider());
+        MockOsgi.activate(service, context.bundleContext(), getDefaultConfig());
+        LuceneIndexEditorProvider editorProvider =
+                (LuceneIndexEditorProvider) context.getService(IndexEditorProvider.class);
+        assertNotNull(editorProvider.getExtractedTextCache().getExtractedTextProvider());
+    }
+
+    @Test
+    public void alwaysUsePreExtractedCache() throws Exception{
+        Map<String,Object> config = getDefaultConfig();
+        config.put("alwaysUsePreExtractedCache", "true");
+        MockOsgi.activate(service, context.bundleContext(), config);
+        LuceneIndexEditorProvider editorProvider =
+                (LuceneIndexEditorProvider) context.getService(IndexEditorProvider.class);
+        assertTrue(editorProvider.getExtractedTextCache().isAlwaysUsePreExtractedCache());
     }
 
     @Test

@@ -112,15 +112,20 @@ public class LastRevRecoveryAgent {
 
                 // start time is the _lastRev timestamp of the cluster node
                 final long startTime;
+                final String reason;
                 //lastRev can be null if other cluster node did not got
                 //chance to perform lastRev rollup even once
                 if (lastRev != null) {
                     startTime = lastRev.getTimestamp();
+                    reason = "lastRev: " + lastRev.toString();
                 } else {
                     startTime = leaseEnd - leaseTime - asyncDelay;
+                    reason = String.format(
+                            "no lastRev for root, using timestamp based on leaseEnd %d - leaseTime %d - asyncDelay %d", leaseEnd,
+                            leaseTime, asyncDelay);
                 }
 
-                return recoverCandidates(nodeInfo, startTime, waitUntil);
+                return recoverCandidates(nodeInfo, startTime, waitUntil, reason);
             }
         }
 
@@ -307,13 +312,15 @@ public class LastRevRecoveryAgent {
      * @param startTime the start time
      * @param waitUntil wait at most until this time for an ongoing recovery
      *                  done by another cluster node.
+     * @param info a string with additional information how recovery is run.
      * @return the number of restored nodes or {@code -1} if recovery is still
      *      ongoing by another process even when {@code waitUntil} time was
      *      reached.
      */
     private int recoverCandidates(final ClusterNodeInfoDocument nodeInfo,
                                   final long startTime,
-                                  final long waitUntil) {
+                                  final long waitUntil,
+                                  final String info) {
         ClusterNodeInfoDocument infoDoc = nodeInfo;
         int clusterId = infoDoc.getClusterId();
         for (;;) {
@@ -353,8 +360,8 @@ public class LastRevRecoveryAgent {
         // if we get here, the recovery lock was acquired successfully
         boolean success = false;
         try {
-            log.info("Recovering candidates modified after: [{}] for clusterId [{}]",
-                    Utils.timestampToString(startTime), clusterId);
+            log.info("Recovering candidates modified after: [{}] for clusterId [{}] [{}]",
+                    Utils.timestampToString(startTime), clusterId, info);
 
             Iterable<NodeDocument> suspects = missingLastRevUtil.getCandidates(startTime);
             try {

@@ -30,7 +30,7 @@
   <groupId>org.apache.jackrabbit</groupId>
   <artifactId>oak-parent</artifactId>
   <name>Oak Parent POM</name>
-  <version>1.4-SNAPSHOT</version>
+  <version>1.6-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <properties>
@@ -42,7 +42,7 @@
     <project.reporting.outputEncoding>
       ${project.build.sourceEncoding}
     </project.reporting.outputEncoding>
-    <jackrabbit.version>2.12.0</jackrabbit.version>
+    <jackrabbit.version>2.12.1</jackrabbit.version>
     <mongo.host>127.0.0.1</mongo.host>
     <mongo.port>27017</mongo.port>
     <mongo.db>MongoMKDB</mongo.db>
@@ -61,7 +61,8 @@
     <logback.version>1.1.0</logback.version>
     <h2.version>1.4.190</h2.version>
     <findbugs.version>3.0.0</findbugs.version>
-
+    <derby.version>10.12.1.1</derby.version>
+    
    <!-- specifies on which fixture to run the integration testing tests. 
       override in profiles or provide from command line to change behaviour. Provide 
       more fixtures space separated. See org.apache.jackrabbit.oak.jcr.FixturesHelper#AVAILABLE_FIXTURES 
@@ -93,8 +94,8 @@
         <plugin>
           <artifactId>maven-compiler-plugin</artifactId>
           <configuration>
-            <target>1.6</target>
-            <source>1.6</source>
+            <target>1.7</target>
+            <source>1.7</source>
           </configuration>
         </plugin>
         <plugin>
@@ -266,6 +267,7 @@
               <mongo.url>${mongo.url}</mongo.url>
               <segment.db>${segment.db}</segment.db>
               <nsfixtures>${fixtures}</nsfixtures>
+              <derby.stream.error.file>${project.build.directory}/derby.log</derby.stream.error.file>
             </systemPropertyVariables>
             <redirectTestOutputToFile>true</redirectTestOutputToFile>
           </configuration>
@@ -281,6 +283,7 @@
               <mongo.db>${mongo.db}</mongo.db>
               <mongo.db2>${mongo.db2}</mongo.db2>
               <nsfixtures>${fixtures}</nsfixtures>
+              <derby.stream.error.file>${project.build.directory}/derby.log</derby.stream.error.file>
             </systemPropertyVariables>
           </configuration>
         </plugin>
@@ -589,6 +592,91 @@
       </build>
     </profile>
 
+   <!--  - - - - - - - - - - - - - - - - - - - will run all the required tests before a release -->
+   <profile>
+      <id>release</id>
+      <properties>
+         <nsfixtures />
+         <rdb.jdbc-url>jdbc:derby:./target/derby-release-test;create=true</rdb.jdbc-url>
+         <derby.stream.error.file>${project.build.directory}/derby.log</derby.stream.error.file>
+      </properties>
+      <build>
+         <plugins>
+            <plugin>
+               <artifactId>maven-surefire-plugin</artifactId>
+               <configuration>
+                    <systemProperties>
+                        <derby.stream.error.file>${project.build.directory}/derby.log</derby.stream.error.file>
+                    </systemProperties>
+               </configuration>
+            </plugin>
+             <plugin>
+               <artifactId>maven-failsafe-plugin</artifactId>
+               <executions>
+                  <execution>
+                     <goals>
+                        <goal>integration-test</goal>
+                        <goal>verify</goal>
+                     </goals>
+                     <configuration>
+                        <systemProperties>
+                            <derby.stream.error.file>${project.build.directory}/derby.log</derby.stream.error.file>
+                        </systemProperties>
+                     </configuration>
+                  </execution>
+               </executions>
+            </plugin>
+            <plugin>
+               <groupId>org.apache.rat</groupId>
+               <artifactId>apache-rat-plugin</artifactId>
+               <executions>
+                  <execution>
+                     <phase>verify</phase>
+                     <goals>
+                        <goal>check</goal>
+                     </goals>
+                  </execution>
+               </executions>
+            </plugin>
+            <plugin>
+               <artifactId>maven-checkstyle-plugin</artifactId>
+               <configuration>
+                  <failOnViolation>false</failOnViolation>
+               </configuration>
+               <executions>
+                  <execution>
+                     <goals>
+                        <goal>check</goal>
+                     </goals>
+                  </execution>
+               </executions>
+            </plugin>
+            <plugin>
+               <groupId>org.codehaus.mojo</groupId>
+               <artifactId>findbugs-maven-plugin</artifactId>
+               <version>${findbugs.version}</version>
+               <configuration>
+                  <failOnError>false</failOnError>
+               </configuration>
+               <executions>
+                  <execution>
+                     <goals>
+                        <goal>check</goal>
+                     </goals>
+                  </execution>
+               </executions>
+            </plugin>
+         </plugins>
+      </build>
+      <dependencies>
+         <dependency>
+            <groupId>org.apache.derby</groupId>
+            <artifactId>derby</artifactId>
+            <version>${derby.version}</version>
+         </dependency>
+      </dependencies>
+   </profile>
+   
     <!-- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - other profiles -->
 
    <profile>
@@ -692,6 +780,12 @@
               </execution>
             </executions>
           </plugin>
+           <plugin>
+             <artifactId>maven-surefire-plugin</artifactId>
+             <configuration>
+               <skipTests>${surefire.skip.ut}</skipTests>
+             </configuration>
+           </plugin>
         </plugins>
       </build>
     </profile>
@@ -701,7 +795,7 @@
         <dependency>
           <groupId>org.apache.derby</groupId>
           <artifactId>derby</artifactId>
-          <version>10.12.1.1</version>
+          <version>${derby.version}</version>
         </dependency>
       </dependencies>
     </profile>
@@ -721,7 +815,7 @@
         <dependency>
           <groupId>org.postgresql</groupId>
           <artifactId>postgresql</artifactId>
-          <version>9.4.1207</version>
+          <version>9.4.1208.jre6</version>
         </dependency>
       </dependencies>
     </profile>
@@ -754,14 +848,14 @@
       <!-- requires local copy of Oracle JDBC driver deployed to Maven repo-->
       <!-- for instance:
         mvn install:install-file -Dfile=ojdbc6.jar -Dpackaging=jar\
-          -DgroupId=com.oracle -DartifactId=ojdbc6 -Dversion=11.2.0.3.0
+          -DgroupId=com.oracle -DartifactId=ojdbc6 -Dversion=12.1.0.1.0
        -->
       <id>rdb-oracle</id>
       <dependencies>
         <dependency>
           <groupId>com.oracle</groupId>
           <artifactId>ojdbc6</artifactId>
-          <version>11.2.0.3.0</version>
+          <version>12.1.0.1.0</version>
         </dependency>
       </dependencies>
     </profile>

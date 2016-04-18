@@ -56,7 +56,7 @@ public class LargeLdapProviderTest {
 
     protected static String[] TEST_MEMBERS;
 
-    protected static int NUM_USERS = 100;
+    protected static int NUM_USERS = 2222;
 
     protected static int SIZE_LIMIT = 50;
 
@@ -135,12 +135,14 @@ public class LargeLdapProviderTest {
         GROUP_DN = server.addGroup(GROUP_NAME, USER_DN);
         members.add(USER_DN);
 
+        List<String> userDNs = new ArrayList<String>();
         for (int i = 0; i < NUM_USERS; i++) {
             final String userId = "user-" + i;
             String userDN = server.addUser(userId, "test", userId, "test");
-            LDAP_SERVER.addMember(GROUP_DN, userDN);
+            userDNs.add(userDN);
             members.add(userDN);
         }
+        LDAP_SERVER.addMembers(GROUP_DN, userDNs);
         TEST_MEMBERS = members.toArray(new String[members.size()]);
     }
 

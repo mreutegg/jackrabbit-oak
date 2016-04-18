@@ -171,6 +171,15 @@ public class LuceneIndexProviderService {
     )
     private static final String PROP_EXTRACTED_TEXT_CACHE_EXPIRY = "extractedTextCacheExpiryInSecs";
 
+    private static final boolean PROP_PRE_EXTRACTED_TEXT_ALWAYS_USE_DEFAULT = false;
+    @Property(
+            boolValue = PROP_PRE_EXTRACTED_TEXT_ALWAYS_USE_DEFAULT,
+            label = "Always use pre-extracted text cache",
+            description = "By default pre extracted text cache would only be used for reindex case. If this setting " +
+                    "is enabled then it would also be used in normal incremental indexing"
+    )
+    private static final String PROP_PRE_EXTRACTED_TEXT_ALWAYS_USE = "alwaysUsePreExtractedCache";
+
     private static final int PROP_BOOLEAN_CLAUSE_LIMIT_DEFAULT = 1024;
     @Property(
             intValue = PROP_BOOLEAN_CLAUSE_LIMIT_DEFAULT,
@@ -190,7 +199,7 @@ public class LuceneIndexProviderService {
     private IndexAugmentorFactory augmentorFactory;
 
     @Reference(policy = ReferencePolicy.DYNAMIC,
-            cardinality = ReferenceCardinality.OPTIONAL_MULTIPLE,
+            cardinality = ReferenceCardinality.OPTIONAL_UNARY,
             policyOption = ReferencePolicyOption.GREEDY
     )
     private volatile PreExtractedTextProvider extractedTextProvider;
@@ -439,9 +448,13 @@ public class LuceneIndexProviderService {
                 PROP_EXTRACTED_TEXT_CACHE_SIZE_DEFAULT);
         int cacheExpiryInSecs = PropertiesUtil.toInteger(config.get(PROP_EXTRACTED_TEXT_CACHE_EXPIRY),
                 PROP_EXTRACTED_TEXT_CACHE_EXPIRY_DEFAULT);
+        boolean alwaysUsePreExtractedCache = PropertiesUtil.toBoolean(config.get(PROP_PRE_EXTRACTED_TEXT_ALWAYS_USE),
+                PROP_PRE_EXTRACTED_TEXT_ALWAYS_USE_DEFAULT);
 
-        extractedTextCache = new ExtractedTextCache(cacheSizeInMB * ONE_MB, cacheExpiryInSecs);
-
+        extractedTextCache = new ExtractedTextCache(cacheSizeInMB * ONE_MB, cacheExpiryInSecs, alwaysUsePreExtractedCache);
+        if (extractedTextProvider != null){
+            registerExtractedTextProvider(extractedTextProvider);
+        }
         CacheStats stats = extractedTextCache.getCacheStats();
         if (stats != null){
             oakRegs.add(registerMBean(whiteboard,
@@ -455,7 +468,10 @@ public class LuceneIndexProviderService {
     private void registerExtractedTextProvider(PreExtractedTextProvider provider){
         if (extractedTextCache != null){
             if (provider != null){
-                log.info("Registering PreExtractedTextProvider {} with extracted text cache", provider);
+                String usage = extractedTextCache.isAlwaysUsePreExtractedCache() ?
+                        "always" : "only during reindexing phase";
+                log.info("Registering PreExtractedTextProvider {} with extracted text cache. " +
+                        "It would be used {}",  provider, usage);
             } else {
                 log.info("Unregistering PreExtractedTextProvider with extracted text cache");
             }

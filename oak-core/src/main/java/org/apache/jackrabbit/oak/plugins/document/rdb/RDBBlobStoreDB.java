@@ -83,7 +83,7 @@ public enum RDBBlobStoreDB {
     ORACLE("Oracle") {
         @Override
         public String checkVersion(DatabaseMetaData md) throws SQLException {
-            return RDBJDBCTools.versionCheck(md, 12, 1, description);
+            return RDBJDBCTools.versionCheck(md, 12, 1, 12, 1, description);
         }
 
         @Override
@@ -96,7 +96,7 @@ public enum RDBBlobStoreDB {
     POSTGRES("PostgreSQL") {
         @Override
         public String checkVersion(DatabaseMetaData md) throws SQLException {
-            return RDBJDBCTools.versionCheck(md, 9, 3, description);
+            return RDBJDBCTools.versionCheck(md, 9, 5, 9, 4, description);
         }
 
         @Override

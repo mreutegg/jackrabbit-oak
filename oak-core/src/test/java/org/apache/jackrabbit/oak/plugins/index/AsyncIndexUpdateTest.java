@@ -27,7 +27,6 @@ import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
@@ -1186,11 +1185,12 @@ public class AsyncIndexUpdateTest {
         //Wait for both threads
         t.join();
 
-        //Async run would have failed with exception
-        assertNotNull(async.getIndexStats().getLatestError());
+        //Async run would have exited with log message logged
+        assertLogPhrase(lc.getLogs(), "The index update interrupted");
 
         //Wait for close call to complete
         closer.join();
+        lc.finished();
     }
 
 

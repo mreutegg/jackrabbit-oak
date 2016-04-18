@@ -19,13 +19,36 @@
 
 package org.apache.jackrabbit.oak.plugins.segment.file;
 
-import static org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState.EMPTY_NODE;
-
 import java.io.File;
 import java.io.IOException;
 
-public class NonCachingFileStore extends FileStore {
-    public NonCachingFileStore(File directory, int maxFileSizeMB) throws IOException {
-        super(directory, EMPTY_NODE, maxFileSizeMB);
+import org.apache.jackrabbit.oak.plugins.segment.SegmentId;
+import org.junit.Ignore;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+
+public class FileStoreTest {
+
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
+
+    private File getFileStoreFolder() {
+        return folder.getRoot();
     }
+
+    @Ignore("OAK-4054")  // FIXME OAK-4054
+    @Test
+    public void containsSegment() throws IOException {
+        FileStore fileStore = FileStore.builder(getFileStoreFolder()).build();
+        try {
+            SegmentId id = new SegmentId(fileStore.getTracker(), 0, 0);
+            if (fileStore.containsSegment(id)) {
+                fileStore.readSegment(id);
+            }
+        } finally {
+            fileStore.close();
+        }
+    }
+
 }

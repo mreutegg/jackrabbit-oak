@@ -37,6 +37,7 @@ import org.apache.jackrabbit.oak.plugins.index.lucene.util.FacetHelper;
 import org.apache.jackrabbit.oak.plugins.index.lucene.util.SuggestHelper;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.apache.jackrabbit.oak.stats.Clock;
 import org.apache.jackrabbit.oak.util.PerfLogger;
 import org.apache.jackrabbit.util.ISO8601;
 import org.apache.lucene.analysis.Analyzer;
@@ -125,7 +126,7 @@ public class LuceneIndexEditorContext {
 
     private static final Parser defaultParser = createDefaultParser();
 
-    private final IndexDefinition definition;
+    private IndexDefinition definition;
 
     private final NodeBuilder definitionBuilder;
 
@@ -149,14 +150,21 @@ public class LuceneIndexEditorContext {
     private final ExtractedTextCache extractedTextCache;
 
     private final IndexAugmentorFactory augmentorFactory;
+
+    private final NodeState root;
     /**
      * The media types supported by the parser used.
      */
     private Set<MediaType> supportedMediaTypes;
 
+    //Intentionally static, so that it can be set without passing around clock objects
+    //Set for testing ONLY
+    private static Clock clock = Clock.SIMPLE;
+
     LuceneIndexEditorContext(NodeState root, NodeBuilder definition, IndexUpdateCallback updateCallback,
                              @Nullable IndexCopier indexCopier, ExtractedTextCache extractedTextCache,
                              IndexAugmentorFactory augmentorFactory) {
+        this.root = root;
         this.definitionBuilder = definition;
         this.indexCopier = indexCopier;
         this.definition = new IndexDefinition(root, definition);
@@ -237,6 +245,12 @@ public class LuceneIndexEditorContext {
             getWriter();
         }
 
+        boolean updateSuggestions = shouldUpdateSuggestions();
+        if (writer == null && updateSuggestions) {
+            log.debug("Would update suggester dictionary although no index changes were detected in current cycle");
+            getWriter();
+        }
+
         if (writer != null) {
             if (log.isTraceEnabled()) {
                 trackIndexSizeInfo(writer, definition, directory);
@@ -244,8 +258,14 @@ public class LuceneIndexEditorContext {
 
             final long start = PERF_LOGGER.start();
 
-            updateSuggester(writer.getAnalyzer());
-            PERF_LOGGER.end(start, -1, "Completed suggester for directory {}", definition);
+            Calendar lastUpdated = null;
+            if (updateSuggestions) {
+                lastUpdated = updateSuggester(writer.getAnalyzer());
+                PERF_LOGGER.end(start, -1, "Completed suggester for directory {}", definition);
+            }
+            if (lastUpdated == null) {
+                lastUpdated = getCalendar();
+            }
 
             writer.close();
             PERF_LOGGER.end(start, -1, "Closed writer for directory {}", definition);
@@ -257,8 +277,9 @@ public class LuceneIndexEditorContext {
             //as to make IndexTracker detect changes when index
             //is stored in file system
             NodeBuilder status = definitionBuilder.child(":status");
-            status.setProperty("lastUpdated", ISO8601.format(Calendar.getInstance()), Type.DATE);
-            status.setProperty("indexedNodes",indexedNodes);
+            status.setProperty("lastUpdated", ISO8601.format(lastUpdated), Type.DATE);
+            status.setProperty("indexedNodes", indexedNodes);
+
             PERF_LOGGER.end(start, -1, "Overall Closed IndexWriter for directory {}", definition);
 
             textExtractionStats.log(reindex);
@@ -270,45 +291,91 @@ public class LuceneIndexEditorContext {
      * eventually update suggest dictionary
      * @throws IOException if suggest dictionary update fails
      * @param analyzer the analyzer used to update the suggester
+     * @return {@link Calendar} object representing the lastUpdated value written by suggestions
      */
-    private void updateSuggester(Analyzer analyzer) throws IOException {
+    private Calendar updateSuggester(Analyzer analyzer) throws IOException {
+        Calendar ret = null;
+        NodeBuilder suggesterStatus = definitionBuilder.child(":suggesterStatus");
+        DirectoryReader reader = DirectoryReader.open(writer, false);
+        final OakDirectory suggestDirectory = new OakDirectory(definitionBuilder, ":suggest-data", definition, false);
+        try {
+            SuggestHelper.updateSuggester(suggestDirectory, analyzer, reader);
+            ret = getCalendar();
+            suggesterStatus.setProperty("lastUpdated", ISO8601.format(ret), Type.DATE);
+        } catch (Throwable e) {
+            log.warn("could not update suggester", e);
+        } finally {
+            suggestDirectory.close();
+            reader.close();
+        }
+
+        return ret;
+    }
+
+    /**
+     * Checks if last suggestion build time was done sufficiently in the past AND that there were non-zero indexedNodes
+     * stored in the last run. Note, if index is updated only to rebuild suggestions, even then we update indexedNodes,
+     * which would be zero in case it was a forced update of suggestions.
+     * @return is suggest dict should be updated
+     */
+    private boolean shouldUpdateSuggestions() {
+        boolean updateSuggestions = false;
 
         if (definition.isSuggestEnabled()) {
-
-            boolean updateSuggester = false;
             NodeBuilder suggesterStatus = definitionBuilder.child(":suggesterStatus");
-            if (suggesterStatus.hasProperty("lastUpdated")) {
-                PropertyState suggesterLastUpdatedValue = suggesterStatus.getProperty("lastUpdated");
+
+            PropertyState suggesterLastUpdatedValue = suggesterStatus.getProperty("lastUpdated");
+
+            if (suggesterLastUpdatedValue != null) {
                 Calendar suggesterLastUpdatedTime = ISO8601.parse(suggesterLastUpdatedValue.getValue(Type.DATE));
+
                 int updateFrequency = definition.getSuggesterUpdateFrequencyMinutes();
-                suggesterLastUpdatedTime.add(Calendar.MINUTE, updateFrequency);
-                if (Calendar.getInstance().after(suggesterLastUpdatedTime)) {
-                    updateSuggester = true;
+                Calendar nextSuggestUpdateTime = (Calendar)suggesterLastUpdatedTime.clone();
+                nextSuggestUpdateTime.add(Calendar.MINUTE, updateFrequency);
+                if (getCalendar().after(nextSuggestUpdateTime)) {
+                    updateSuggestions = (writer != null || isIndexUpdatedAfter(suggesterLastUpdatedTime));
                 }
             } else {
-                updateSuggester = true;
-            }
-
-            if (updateSuggester) {
-                DirectoryReader reader = DirectoryReader.open(writer, false);
-                final OakDirectory suggestDirectory = new OakDirectory(definitionBuilder, ":suggest-data", definition, false);
-                try {
-                    SuggestHelper.updateSuggester(suggestDirectory, analyzer, reader);
-                    suggesterStatus.setProperty("lastUpdated", ISO8601.format(Calendar.getInstance()), Type.DATE);
-                } catch (Throwable e) {
-                    log.warn("could not update suggester", e);
-                } finally {
-                    suggestDirectory.close();
-                    reader.close();
-                }
+                updateSuggestions = true;
             }
         }
+
+        return updateSuggestions;
+    }
+
+    /**
+     * @return {@code false} if persisted lastUpdated time for index is after {@code calendar}. {@code true} otherwise
+     */
+    private boolean isIndexUpdatedAfter(Calendar calendar) {
+        NodeBuilder indexStats = definitionBuilder.child(":status");
+        PropertyState indexLastUpdatedValue = indexStats.getProperty("lastUpdated");
+        if (indexLastUpdatedValue != null) {
+            Calendar indexLastUpdatedTime = ISO8601.parse(indexLastUpdatedValue.getValue(Type.DATE));
+            return indexLastUpdatedTime.after(calendar);
+        } else {
+            return true;
+        }
+    }
+
+    /** Only set for testing */
+    static void setClock(Clock c) {
+        checkNotNull(c);
+        clock = c;
+    }
+
+    static private Calendar getCalendar() {
+        Calendar ret = Calendar.getInstance();
+        ret.setTime(clock.getDate());
+        return ret;
     }
 
     public void enableReindexMode(){
         reindex = true;
         IndexFormatVersion version = IndexDefinition.determineVersionForFreshIndex(definitionBuilder);
         definitionBuilder.setProperty(IndexDefinition.INDEX_VERSION, version.getVersion());
+
+        //Refresh the index definition based on update builder state
+        definition = new IndexDefinition(root, definitionBuilder);
     }
 
     public long incIndexedNodes() {

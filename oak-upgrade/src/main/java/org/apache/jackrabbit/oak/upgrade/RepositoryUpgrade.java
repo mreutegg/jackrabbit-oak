@@ -31,6 +31,7 @@ import static org.apache.jackrabbit.oak.plugins.nodetype.NodeTypeConstants.NODE_
 import static org.apache.jackrabbit.oak.spi.security.privilege.PrivilegeConstants.JCR_ALL;
 import static org.apache.jackrabbit.oak.upgrade.nodestate.FilteringNodeState.ALL;
 import static org.apache.jackrabbit.oak.upgrade.nodestate.FilteringNodeState.NONE;
+import static org.apache.jackrabbit.oak.upgrade.nodestate.NodeStateCopier.copyProperties;
 
 import java.io.File;
 import java.io.IOException;
@@ -116,6 +117,7 @@ import org.apache.jackrabbit.oak.upgrade.security.GroupEditorProvider;
 import org.apache.jackrabbit.oak.upgrade.security.RestrictionEditorProvider;
 import org.apache.jackrabbit.oak.upgrade.version.VersionCopyConfiguration;
 import org.apache.jackrabbit.oak.upgrade.version.VersionableEditor;
+import org.apache.jackrabbit.oak.upgrade.version.VersionablePropertiesEditor;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.spi.QNodeDefinition;
 import org.apache.jackrabbit.spi.QNodeTypeDefinition;
@@ -177,6 +179,8 @@ public class RepositoryUpgrade {
     private List<CommitHook> customCommitHooks = null;
 
     private boolean skipLongNames = true;
+
+    private boolean skipInitialization = false;
 
     VersionCopyConfiguration versionCopyConfiguration = new VersionCopyConfiguration();
 
@@ -254,6 +258,14 @@ public class RepositoryUpgrade {
 
     public void setSkipLongNames(boolean skipLongNames) {
         this.skipLongNames = skipLongNames;
+    }
+
+    public boolean isSkipInitialization() {
+        return skipInitialization;
+    }
+
+    public void setSkipInitialization(boolean skipInitialization) {
+        this.skipInitialization = skipInitialization;
     }
 
     /**
@@ -367,23 +379,27 @@ public class RepositoryUpgrade {
             SecurityProviderImpl security = new SecurityProviderImpl(
                     mapSecurityConfig(config.getSecurityConfig()));
 
-            // init target repository first
-            logger.info("Initializing initial repository content from {}", config.getHomeDir());
-            new InitialContent().initialize(targetBuilder);
-            if (initializer != null) {
-                initializer.initialize(targetBuilder);
-            }
-            logger.debug("InitialContent completed from {}", config.getHomeDir());
+            if (skipInitialization) {
+                logger.info("Skipping the repository initialization");
+            } else {
+                // init target repository first
+                logger.info("Initializing initial repository content from {}", config.getHomeDir());
+                new InitialContent().initialize(targetBuilder);
+                if (initializer != null) {
+                    initializer.initialize(targetBuilder);
+                }
+                logger.debug("InitialContent completed from {}", config.getHomeDir());
 
-            for (SecurityConfiguration sc : security.getConfigurations()) {
-                RepositoryInitializer ri = sc.getRepositoryInitializer();
-                ri.initialize(targetBuilder);
-                logger.debug("Repository initializer '" + ri.getClass().getName() + "' completed", config.getHomeDir());
-            }
-            for (SecurityConfiguration sc : security.getConfigurations()) {
-                WorkspaceInitializer wi = sc.getWorkspaceInitializer();
-                wi.initialize(targetBuilder, workspaceName);
-                logger.debug("Workspace initializer '" + wi.getClass().getName() + "' completed", config.getHomeDir());
+                for (SecurityConfiguration sc : security.getConfigurations()) {
+                    RepositoryInitializer ri = sc.getRepositoryInitializer();
+                    ri.initialize(targetBuilder);
+                    logger.debug("Repository initializer '" + ri.getClass().getName() + "' completed", config.getHomeDir());
+                }
+                for (SecurityConfiguration sc : security.getConfigurations()) {
+                    WorkspaceInitializer wi = sc.getWorkspaceInitializer();
+                    wi.initialize(targetBuilder, workspaceName);
+                    logger.debug("Workspace initializer '" + wi.getClass().getName() + "' completed", config.getHomeDir());
+                }
             }
 
             HashBiMap<String, String> uriToPrefix = HashBiMap.create();
@@ -391,32 +407,36 @@ public class RepositoryUpgrade {
             copyNamespaces(targetBuilder, uriToPrefix);
             logger.debug("Namespace registration completed.");
 
-            logger.info("Copying registered node types");
-            NodeTypeManager ntMgr = new ReadWriteNodeTypeManager() {
-                @Override
-                protected Tree getTypes() {
-                    return upgradeRoot.getTree(NODE_TYPES_PATH);
-                }
+            if (skipInitialization) {
+                logger.info("Skipping registering node types and privileges");
+            } else {
+                logger.info("Copying registered node types");
+                NodeTypeManager ntMgr = new ReadWriteNodeTypeManager() {
+                    @Override
+                    protected Tree getTypes() {
+                        return upgradeRoot.getTree(NODE_TYPES_PATH);
+                    }
 
-                @Nonnull
-                @Override
-                protected Root getWriteRoot() {
-                    return upgradeRoot;
-                }
-            };
-            copyNodeTypes(ntMgr, new ValueFactoryImpl(upgradeRoot, NamePathMapper.DEFAULT));
-            logger.debug("Node type registration completed.");
+                    @Nonnull
+                    @Override
+                    protected Root getWriteRoot() {
+                        return upgradeRoot;
+                    }
+                };
+                copyNodeTypes(ntMgr, new ValueFactoryImpl(upgradeRoot, NamePathMapper.DEFAULT));
+                logger.debug("Node type registration completed.");
 
-            // migrate privileges
-            logger.info("Copying registered privileges");
-            PrivilegeConfiguration privilegeConfiguration = security.getConfiguration(PrivilegeConfiguration.class);
-            copyCustomPrivileges(privilegeConfiguration.getPrivilegeManager(upgradeRoot, NamePathMapper.DEFAULT));
-            logger.debug("Privilege registration completed.");
+                // migrate privileges
+                logger.info("Copying registered privileges");
+                PrivilegeConfiguration privilegeConfiguration = security.getConfiguration(PrivilegeConfiguration.class);
+                copyCustomPrivileges(privilegeConfiguration.getPrivilegeManager(upgradeRoot, NamePathMapper.DEFAULT));
+                logger.debug("Privilege registration completed.");
 
-            // Triggers compilation of type information, which we need for
-            // the type predicates used by the bulk  copy operations below.
-            new TypeEditorProvider(false).getRootEditor(
-                    targetBuilder.getBaseState(), targetBuilder.getNodeState(), targetBuilder, null);
+                // Triggers compilation of type information, which we need for
+                // the type predicates used by the bulk  copy operations below.
+                new TypeEditorProvider(false).getRootEditor(
+                        targetBuilder.getBaseState(), targetBuilder.getNodeState(), targetBuilder, null);
+            }
 
             final NodeState reportingSourceRoot = ReportingNodeState.wrap(
                     JackrabbitNodeState.createRootNodeState(
@@ -465,8 +485,13 @@ public class RepositoryUpgrade {
                     new RestrictionEditorProvider(),
                     new GroupEditorProvider(groupsPath),
                     // copy referenced version histories
-                    new VersionableEditor.Provider(sourceRoot, workspaceName, versionCopyConfiguration)
+                    new VersionableEditor.Provider(sourceRoot, workspaceName, versionCopyConfiguration),
+                    new SameNameSiblingsEditor.Provider()
             )));
+
+            // this editor works on the VersionableEditor output, so it can't be
+            // a part of the same EditorHook
+            hooks.add(new EditorHook(new VersionablePropertiesEditor.Provider()));
 
             // security-related hooks
             for (SecurityConfiguration sc : security.getConfigurations()) {
@@ -868,6 +893,10 @@ public class RepositoryUpgrade {
                 .exclude(excludes)
                 .merge(merges)
                 .copy(sourceRoot, targetRoot);
+
+        if (includePaths.contains("/")) {
+            copyProperties(sourceRoot, targetRoot);
+        }
 
         return workspaceName;
     }

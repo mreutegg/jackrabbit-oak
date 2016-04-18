@@ -182,11 +182,41 @@ public class RDBBlobStoreTest extends AbstractBlobStoreTest {
             }
         }
         // Force update to update timestamp
+        long beforeUpdateTs = System.currentTimeMillis() - 100;
         RDBBlobStoreFriend.storeBlock(blobStore, digest, 0, data);
         // Metadata row should not have been touched
-        Assert.assertFalse(blobStore.deleteChunks(ImmutableList.of(id), System.currentTimeMillis() - 100));
+        Assert.assertFalse("entry was cleaned although it shouldn't have",
+                blobStore.deleteChunks(ImmutableList.of(id), beforeUpdateTs));
         // Actual data row should still be present
         Assert.assertNotNull(RDBBlobStoreFriend.readBlockFromBackend(blobStore, digest));
+    }
+
+    @Test
+    public void testDeleteChunks() throws Exception {
+        byte[] data1 = new byte[256];
+        Random r = new Random(0);
+        r.nextBytes(data1);
+        byte[] digest1 = getDigest(data1);
+        RDBBlobStoreFriend.storeBlock(blobStore, digest1, 0, data1);
+        String id1 = StringUtils.convertBytesToHex(digest1);
+
+        long now = System.currentTimeMillis();
+
+        long until = System.currentTimeMillis() + 10;
+        while (System.currentTimeMillis() < until) {
+            try {
+                Thread.sleep(5);
+            } catch (InterruptedException e) {
+            }
+        }
+
+        byte[] data2 = new byte[256];
+        r.nextBytes(data2);
+        byte[] digest2 = getDigest(data2);
+        RDBBlobStoreFriend.storeBlock(blobStore, digest2, 0, data2);
+
+        Assert.assertEquals("meta entry was not removed", 1, blobStore.countDeleteChunks(ImmutableList.of(id1), now));
+        Assert.assertFalse("data entry was not removed", RDBBlobStoreFriend.isDataEntryPresent(blobStore, digest1));
     }
 
     @Test

@@ -62,12 +62,12 @@ public class DataStoreTestBase extends TestBase {
         fds.setMinRecordLength(4092);
         fds.init(path);
         DataStoreBlobStore blobStore = new DataStoreBlobStore(fds);
-        return FileStore.newFileStore(d)
+        return FileStore.builder(d)
             .withMaxFileSize(1)
             .withMemoryMapping(false)
             .withNoCache()
             .withBlobStore(blobStore)
-            .create();
+            .build();
     }
 
     protected byte[] addTestContent(NodeStore store, String child, int size)
@@ -92,7 +92,7 @@ public class DataStoreTestBase extends TestBase {
         FileStore primary = getPrimary();
         FileStore secondary = getSecondary();
 
-        NodeStore store = new SegmentNodeStore(primary);
+        NodeStore store = SegmentNodeStore.builder(primary).build();
         final StandbyServer server = new StandbyServer(port, primary);
         server.start();
         byte[] data = addTestContent(store, "server", blobSize);
@@ -168,7 +168,7 @@ public class DataStoreTestBase extends TestBase {
         p.flipByte(flipPosition);
         p.run();
 
-        NodeStore store = new SegmentNodeStore(primary);
+        NodeStore store = SegmentNodeStore.builder(primary).build();
         final StandbyServer server = new StandbyServer(port, primary);
         server.start();
         byte[] data = addTestContent(store, "server", blobSize);
