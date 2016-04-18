@@ -518,8 +518,10 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
                 if (maxLastModifiedTime > 0) {
                     // delete only if the last modified is OLDER than x
                     metaStatement.append(" and LASTMOD <= ?");
-                    // delete if there is NO entry where the last modified of the meta is YOUNGER than x
-                    dataStatement.append(" and not exists(select * from " + this.tnMeta + " m where ID = m.ID and m.LASTMOD > ?)");
+                    // delete if there is NO entry where the last modified of
+                    // the meta is YOUNGER than x
+                    dataStatement.append(" and not exists(select * from " + this.tnMeta + " where " + this.tnMeta + ".ID = "
+                            + this.tnData + ".ID and LASTMOD > ?)");
                 }
 
                 prepMeta = con.prepareStatement(metaStatement.toString());
@@ -541,8 +543,8 @@ public class RDBBlobStore extends CachingBlobStore implements Closeable {
 
                 if (deletedMeta != deletedData) {
                     String message = String.format(
-                            "chunk deletion affected different numbers of DATA records (%s) and META records (%s)", deletedMeta,
-                            deletedData);
+                            "chunk deletion affected different numbers of DATA records (%s) and META records (%s)", deletedData,
+                            deletedMeta);
                     LOG.info(message);
                 }
 

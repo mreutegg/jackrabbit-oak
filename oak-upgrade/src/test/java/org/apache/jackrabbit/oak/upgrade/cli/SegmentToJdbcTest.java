@@ -21,6 +21,7 @@ import java.io.IOException;
 import org.apache.jackrabbit.oak.upgrade.cli.container.JdbcNodeStoreContainer;
 import org.apache.jackrabbit.oak.upgrade.cli.container.NodeStoreContainer;
 import org.apache.jackrabbit.oak.upgrade.cli.container.SegmentNodeStoreContainer;
+import org.junit.Ignore;
 
 public class SegmentToJdbcTest extends AbstractOak2OakTest {
 

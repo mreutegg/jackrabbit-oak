@@ -53,6 +53,7 @@ import org.apache.jackrabbit.oak.api.Result;
 import org.apache.jackrabbit.oak.api.ResultRow;
 import org.apache.jackrabbit.oak.api.Tree;
 import org.apache.jackrabbit.oak.api.Type;
+import org.apache.jackrabbit.oak.commons.concurrent.ExecutorCloser;
 import org.apache.jackrabbit.oak.plugins.index.IndexConstants;
 import org.apache.jackrabbit.oak.plugins.index.fulltext.ExtractedText;
 import org.apache.jackrabbit.oak.plugins.index.fulltext.ExtractedText.ExtractionResult;
@@ -131,6 +132,11 @@ public class LucenePropertyIndexTest extends AbstractQueryTest {
     private String cowDir = null;
 
     private LuceneIndexEditorProvider editorProvider;
+
+    @After
+    public void after() {
+        new ExecutorCloser(executorService).close();
+    }
 
     @Override
     protected void createTestIndexNode() throws Exception {
@@ -2072,6 +2078,23 @@ public class LucenePropertyIndexTest extends AbstractQueryTest {
         String query2 = "select * from [nt:base] where CONTAINS(tag, 'foo!')";
         assertPlanAndQuery(query2, "lucene:test1(/oak:index/test1)", asList("/test2"));
 
+    }
+
+    @Test
+    public void fulltextQueryWithRelativeProperty() throws Exception{
+        Tree idx = createIndex("test1", of("propa", "propb"));
+        Tree props = TestUtil.newRulePropTree(idx, "nt:base");
+        Tree prop1 = props.addChild(TestUtil.unique("prop"));
+        prop1.setProperty(LuceneIndexConstants.PROP_NAME, "jcr:content/metadata/comment");
+        prop1.setProperty(LuceneIndexConstants.PROP_ANALYZED, true);
+        root.commit();
+
+        Tree test = root.getTree("/").addChild("test");
+        test.addChild("jcr:content").addChild("metadata").setProperty("comment", "taken in december");
+        root.commit();
+
+        String propabQuery = "select * from [nt:base] where CONTAINS([jcr:content/metadata/comment], 'december')";
+        assertPlanAndQuery(propabQuery, "lucene:test1(/oak:index/test1)", asList("/test"));
     }
 
     @Test

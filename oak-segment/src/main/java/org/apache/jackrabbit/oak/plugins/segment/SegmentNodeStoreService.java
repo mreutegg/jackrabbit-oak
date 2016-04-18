@@ -107,7 +107,7 @@ import org.slf4j.LoggerFactory;
 @Component(policy = ConfigurationPolicy.REQUIRE,
         metatype = true,
         label = "Apache Jackrabbit Oak Segment NodeStore Service",
-        description = "NodeStore implementation based on Document model. For configuration option refer " +
+        description = "NodeStore implementation based on Segment model. For configuration option refer " +
                 "to http://jackrabbit.apache.org/oak/docs/osgi_config.html#SegmentNodeStore. Note that for system " +
                 "stability purpose it is advisable to not change these settings at runtime. Instead the config change " +
                 "should be done via file system based config file and this view should ONLY be used to determine which " +
@@ -371,7 +371,7 @@ public class SegmentNodeStoreService extends ProxyNodeStore
 
         // Build the FileStore
 
-        Builder builder = FileStore.newFileStore(getDirectory())
+        Builder builder = FileStore.builder(getDirectory())
                 .withCacheSize(getCacheSize())
                 .withMaxFileSize(getMaxFileSize())
                 .withMemoryMapping(getMode().equals("64"))
@@ -383,7 +383,7 @@ public class SegmentNodeStoreService extends ProxyNodeStore
             builder.withBlobStore(blobStore);
         }
 
-        store = builder.create();
+        store = builder.build();
 
         // Create a compaction strategy
 
@@ -530,9 +530,9 @@ public class SegmentNodeStoreService extends ProxyNodeStore
 
         OsgiWhiteboard whiteboard = new OsgiWhiteboard(context.getBundleContext());
 
-        SegmentNodeStoreBuilder nodeStoreBuilder = SegmentNodeStore.newSegmentNodeStore(store);
+        SegmentNodeStore.SegmentNodeStoreBuilder nodeStoreBuilder = SegmentNodeStore.builder(store);
         nodeStoreBuilder.withCompactionStrategy(compactionStrategy);
-        segmentNodeStore = nodeStoreBuilder.create();
+        segmentNodeStore = nodeStoreBuilder.build();
 
         observerTracker = new ObserverTracker(segmentNodeStore);
         observerTracker.start(context.getBundleContext());

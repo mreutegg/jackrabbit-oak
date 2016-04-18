@@ -69,6 +69,8 @@
       org.apache.jackrabbit.test.api.observation.NodeRemovedTest#testMultiNodesRemoved  <!-- OAK-1459 -->
       org.apache.jackrabbit.test.api.observation.NodeMovedTest#testMoveWithRemove       <!-- OAK-1459 -->
       org.apache.jackrabbit.test.api.observation.GetInfoTest#testPropertyAdded          <!--OAK-2262-->
+      org.apache.jackrabbit.test.api.observation.GetInfoTest#testPropertyChanged        <!--OAK-2262-->
+      org.apache.jackrabbit.test.api.observation.GetInfoTest#testPropertyRemoved        <!--OAK-2262-->
       org.apache.jackrabbit.test.api.observation.GetIdentifierTest#testNodeMoved  <!-- Move in 2nd session not reflected in nodes of 1st session -->
       org.apache.jackrabbit.test.api.observation.NodeReorderTest#testNodeReorderAddRemove          <!-- Uses SNS -->
       org.apache.jackrabbit.test.api.observation.NodeReorderTest#testNodeReorderSameName           <!-- Uses SNS -->
@@ -76,6 +78,7 @@
       org.apache.jackrabbit.core.observation.ReorderTest                                           <!-- Uses SNS -->
       org.apache.jackrabbit.core.observation.ShareableNodesTest#testAddShare                       <!-- OAK-118 workspace support needed -->
       org.apache.jackrabbit.core.observation.ShareableNodesTest#testRemoveShare                    <!-- OAK-118 workspace support needed -->
+      org.apache.jackrabbit.oak.jcr.security.authorization.ObservationTest#testEventDeniedNode     <!-- OAK-4196 -->
 
       <!-- Versioning -->
       org.apache.jackrabbit.test.api.version.VersionTest#testMerge
@@ -305,7 +308,12 @@
     <dependency>
       <groupId>org.apache.jackrabbit</groupId>
       <artifactId>jackrabbit-jcr-tests</artifactId>
-      <version>${jackrabbit.version}</version>
+      <!--
+        OAK-3858: use snapshot dependency to take advantage of JCR-3961,
+        JCR-3962 and JCR-3963. Reset to jackrabbit.version for a release
+        or once 2.13.0 is available.
+      -->
+      <version>2.13.0-SNAPSHOT</version>
       <optional>true</optional>
     </dependency>
     <dependency>

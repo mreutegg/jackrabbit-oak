@@ -34,6 +34,7 @@ import static com.google.common.collect.Iterables.filter;
 import static com.google.common.collect.Iterables.size;
 import static java.util.concurrent.TimeUnit.HOURS;
 import static java.util.concurrent.TimeUnit.MINUTES;
+import static org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture.DOCUMENT_MEM;
 import static org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture.DOCUMENT_NS;
 import static org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture.DOCUMENT_RDB;
 import static org.apache.jackrabbit.oak.commons.FixturesHelper.getFixtures;
@@ -91,6 +92,11 @@ public class VersionGarbageCollectorIT {
     @Parameterized.Parameters(name="{0}")
     public static Collection<Object[]> fixtures() throws IOException {
         List<Object[]> fixtures = Lists.newArrayList();
+
+        if (getFixtures().contains(DOCUMENT_MEM)) {
+            fixtures.add(new Object[] { new DocumentStoreFixture.MemoryFixture() });
+        }
+
         DocumentStoreFixture mongo = new DocumentStoreFixture.MongoFixture();
         if (getFixtures().contains(DOCUMENT_NS) && mongo.isAvailable()) {
             fixtures.add(new Object[] { mongo });

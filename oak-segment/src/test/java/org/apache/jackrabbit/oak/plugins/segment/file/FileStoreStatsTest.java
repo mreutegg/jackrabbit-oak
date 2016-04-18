@@ -49,13 +49,14 @@ public class FileStoreStatsTest {
     @Before
     public void createFileStore() throws Exception {
         BlobStore blobStore = mock(BlobStore.class);
-        fileStore = FileStore.newFileStore(segmentFolder.newFolder())
+        fileStore = FileStore.builder(segmentFolder.newFolder())
                 .withBlobStore(blobStore)
-                .withStatisticsProvider(statsProvider).create();
+                .withStatisticsProvider(statsProvider).build();
     }
 
     @After
     public void shutDown(){
+        fileStore.close();
         new ExecutorCloser(executor).close();
     }
 

@@ -37,7 +37,6 @@ import org.junit.Test;
 import javax.annotation.Nonnull;
 import javax.jcr.NamespaceRegistry;
 import javax.jcr.Node;
-import javax.jcr.Repository;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import java.io.File;
@@ -59,7 +58,7 @@ public class RepeatedRepositoryUpgradeTest extends AbstractRepositoryUpgradeTest
 
     @Override
     protected NodeStore createTargetNodeStore() {
-        return new SegmentNodeStore(fileStore);
+        return SegmentNodeStore.builder(fileStore).build();
     }
 
     @BeforeClass
@@ -67,7 +66,7 @@ public class RepeatedRepositoryUpgradeTest extends AbstractRepositoryUpgradeTest
         final File dir = new File(getTestDirectory(), "segments");
         dir.mkdirs();
         try {
-            fileStore = FileStore.newFileStore(dir).withMaxFileSize(128).create();
+            fileStore = FileStore.builder(dir).withMaxFileSize(128).build();
             upgradeComplete = false;
         } catch (IOException e) {
             throw new RuntimeException(e);
@@ -98,7 +97,7 @@ public class RepeatedRepositoryUpgradeTest extends AbstractRepositoryUpgradeTest
             }
 
             final NodeStore target = getTargetNodeStore();
-            doUpgradeRepository(sourceDir, target);
+            doUpgradeRepository(sourceDir, target, false);
             fileStore.flush();
 
             // re-create source repo
@@ -112,19 +111,19 @@ public class RepeatedRepositoryUpgradeTest extends AbstractRepositoryUpgradeTest
                 source.shutdown();
             }
 
-            doUpgradeRepository(sourceDir, target);
+            doUpgradeRepository(sourceDir, target, true);
             fileStore.flush();
 
             upgradeComplete = true;
         }
     }
 
-    @Override
-    protected void doUpgradeRepository(File source, NodeStore target) throws RepositoryException, IOException {
+    protected void doUpgradeRepository(File source, NodeStore target, boolean skipInit) throws RepositoryException, IOException {
         final RepositoryConfig config = RepositoryConfig.create(source);
         final RepositoryContext context = RepositoryContext.create(config);
         try {
             final RepositoryUpgrade repositoryUpgrade = new RepositoryUpgrade(context, target);
+            repositoryUpgrade.setSkipInitialization(skipInit);
             repositoryUpgrade.copy(new RepositoryInitializer() {
                 @Override
                 public void initialize(@Nonnull NodeBuilder builder) {

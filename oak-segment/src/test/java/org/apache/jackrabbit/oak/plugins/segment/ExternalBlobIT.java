@@ -16,28 +16,13 @@
  */
 package org.apache.jackrabbit.oak.plugins.segment;
 
-import com.google.common.collect.Lists;
-
-import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
-import org.apache.jackrabbit.core.data.FileDataStore;
-import org.apache.jackrabbit.oak.api.Blob;
-import org.apache.jackrabbit.oak.api.PropertyState;
-import org.apache.jackrabbit.oak.plugins.blob.ReferenceCollector;
-import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreBlobStore;
-import org.apache.jackrabbit.oak.plugins.memory.AbstractBlob;
-import org.apache.jackrabbit.oak.plugins.segment.file.FileBlob;
-import org.apache.jackrabbit.oak.api.Type;
-import org.apache.jackrabbit.oak.plugins.segment.file.FileStore;
-import org.apache.jackrabbit.oak.spi.blob.BlobStore;
-import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
-import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
-import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
-import org.apache.jackrabbit.oak.spi.state.NodeState;
-import org.junit.After;
-import org.junit.BeforeClass;
-import org.junit.Ignore;
-import org.junit.Test;
+import static org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture.SEGMENT_MK;
+import static org.apache.jackrabbit.oak.commons.FixturesHelper.getFixtures;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -48,19 +33,38 @@ import java.util.Random;
 
 import javax.annotation.Nonnull;
 
-import static org.apache.jackrabbit.oak.commons.FixturesHelper.getFixtures;
-import static org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture.SEGMENT_MK;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assume.assumeTrue;
-import static org.junit.Assert.assertTrue;
+import com.google.common.collect.Lists;
+import org.apache.commons.io.FileUtils;
+import org.apache.commons.io.IOUtils;
+import org.apache.jackrabbit.core.data.FileDataStore;
+import org.apache.jackrabbit.oak.api.Blob;
+import org.apache.jackrabbit.oak.api.PropertyState;
+import org.apache.jackrabbit.oak.api.Type;
+import org.apache.jackrabbit.oak.plugins.blob.ReferenceCollector;
+import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreBlobStore;
+import org.apache.jackrabbit.oak.plugins.memory.AbstractBlob;
+import org.apache.jackrabbit.oak.plugins.segment.file.FileBlob;
+import org.apache.jackrabbit.oak.plugins.segment.file.FileStore;
+import org.apache.jackrabbit.oak.spi.blob.BlobStore;
+import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
+import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
+import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
+import org.apache.jackrabbit.oak.spi.state.NodeState;
+import org.junit.After;
+import org.junit.BeforeClass;
+import org.junit.Ignore;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 
 public class ExternalBlobIT {
 
     private SegmentStore store;
     private SegmentNodeStore nodeStore;
     private FileBlob fileBlob;
+
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
 
     @BeforeClass
     public static void assumptions() {
@@ -153,13 +157,12 @@ public class ExternalBlobIT {
         if (store != null) {
             store.close();
         }
-        FileUtils.cleanDirectory(getWorkDir());
     }
 
     protected SegmentNodeStore getNodeStore(BlobStore blobStore) throws IOException {
         if (nodeStore == null) {
-            store = new FileStore(blobStore, getWorkDir(), 256, false);
-            nodeStore = new SegmentNodeStore(store);
+            store = FileStore.builder(getWorkDir()).withBlobStore(blobStore).withMaxFileSize(256).withMemoryMapping(false).build();
+            nodeStore = SegmentNodeStore.builder(store).build();
         }
         return nodeStore;
     }
@@ -178,13 +181,12 @@ public class ExternalBlobIT {
     }
 
     private File getWorkDir(){
-        return new File("target", "ExternalBlobTest");
+        return folder.getRoot();
     }
 
     private FileBlob getFileBlob() throws IOException {
         if (fileBlob == null) {
-            File file = File.createTempFile("blob", "tmp");
-            file.deleteOnExit();
+            File file = folder.newFile();
 
             byte[] data = new byte[2345];
             new Random().nextBytes(data);

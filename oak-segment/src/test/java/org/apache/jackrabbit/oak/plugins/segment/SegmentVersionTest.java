@@ -18,12 +18,12 @@
  */
 package org.apache.jackrabbit.oak.plugins.segment;
 
-import static org.apache.commons.io.FileUtils.deleteDirectory;
 import static org.apache.jackrabbit.oak.api.Type.LONG;
 import static org.apache.jackrabbit.oak.api.Type.LONGS;
 import static org.apache.jackrabbit.oak.api.Type.STRING;
 import static org.apache.jackrabbit.oak.api.Type.STRINGS;
 import static org.apache.jackrabbit.oak.plugins.segment.SegmentVersion.LATEST_VERSION;
+import static org.apache.jackrabbit.oak.plugins.segment.SegmentVersion.V_10;
 import static org.apache.jackrabbit.oak.plugins.segment.SegmentVersion.V_11;
 import static org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy.CleanupType.CLEAN_NONE;
 import static org.junit.Assert.assertEquals;
@@ -49,35 +49,20 @@ import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.jackrabbit.oak.spi.state.NodeStateDiff;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
-import org.junit.After;
-import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.junit.rules.TemporaryFolder;
 
 public class SegmentVersionTest {
 
-    private static final Logger log = LoggerFactory
-            .getLogger(SegmentVersionTest.class);
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
+
+    private File getFileStoreFolder() {
+        return folder.getRoot();
+    }
 
     private File directory;
-
-    @Before
-    public void setUp() throws IOException {
-        directory = File.createTempFile("VersionTest", "dir",
-                new File("target"));
-        directory.delete();
-        directory.mkdir();
-    }
-
-    @After
-    public void cleanDir() {
-        try {
-            deleteDirectory(directory);
-        } catch (IOException e) {
-            log.error("Error cleaning directory", e);
-        }
-    }
 
     @Test
     public void latestVersion() {
@@ -86,13 +71,7 @@ public class SegmentVersionTest {
 
     @Test
     public void compareOldRevision() throws Exception {
-        FileStore fileStoreV10 = new FileStore(directory, 1) {
-            @SuppressWarnings("deprecation")
-            @Override
-            public SegmentVersion getVersion() {
-                return SegmentVersion.V_10;
-            }
-        };
+        FileStore fileStoreV10 = FileStore.builder(getFileStoreFolder()).withMaxFileSize(1).withSegmentVersion(V_10).build();
         try {
             NodeState content = addTestContent(fileStoreV10, "content").getChildNode("content");
             assertVersion(content, SegmentVersion.V_10);
@@ -142,13 +121,7 @@ public class SegmentVersionTest {
 
     @Test
     public void readOldVersions() throws Exception {
-        FileStore fileStoreV10 = new FileStore(directory, 1) {
-            @SuppressWarnings("deprecation")
-            @Override
-            public SegmentVersion getVersion() {
-                return SegmentVersion.V_10;
-            }
-        };
+        FileStore fileStoreV10 = FileStore.builder(getFileStoreFolder()).withMaxFileSize(1).withSegmentVersion(V_10).build();
         try {
             NodeState content = addTestContent(fileStoreV10, "content");
             assertVersion(content, SegmentVersion.V_10);
@@ -156,7 +129,7 @@ public class SegmentVersionTest {
             fileStoreV10.close();
         }
 
-        FileStore fileStoreV11 = new FileStore(directory, 1);
+        FileStore fileStoreV11 = FileStore.builder(getFileStoreFolder()).withMaxFileSize(1).build();
         try {
             verifyContent(fileStoreV11, "content");
         } finally {
@@ -166,13 +139,7 @@ public class SegmentVersionTest {
 
     @Test
     public void mixedVersions() throws IOException, CommitFailedException {
-        FileStore fileStoreV10 = new FileStore(directory, 1) {
-            @SuppressWarnings("deprecation")
-            @Override
-            public SegmentVersion getVersion() {
-                return SegmentVersion.V_10;
-            }
-        };
+        FileStore fileStoreV10 = FileStore.builder(getFileStoreFolder()).withMaxFileSize(1).withSegmentVersion(V_10).build();
         try {
             NodeState content10 = addTestContent(fileStoreV10, "content10");
             assertVersion(content10, SegmentVersion.V_10);
@@ -180,7 +147,7 @@ public class SegmentVersionTest {
             fileStoreV10.close();
         }
 
-        FileStore fileStoreV11 = new FileStore(directory, 1);
+        FileStore fileStoreV11 = FileStore.builder(getFileStoreFolder()).withMaxFileSize(1).build();
         try {
             NodeState content11 = addTestContent(fileStoreV11, "content11");
             assertVersion(content11, V_11);
@@ -193,20 +160,14 @@ public class SegmentVersionTest {
 
     @Test
     public void migrate() throws IOException, CommitFailedException {
-        FileStore fileStoreV10 = new FileStore(directory, 1) {
-            @SuppressWarnings("deprecation")
-            @Override
-            public SegmentVersion getVersion() {
-                return SegmentVersion.V_10;
-            }
-        };
+        FileStore fileStoreV10 = FileStore.builder(getFileStoreFolder()).withMaxFileSize(1).withSegmentVersion(V_10).build();
         try {
             addTestContent(fileStoreV10, "content10");
         } finally {
             fileStoreV10.close();
         }
 
-        FileStore fileStoreV11 = new FileStore(directory, 1);
+        FileStore fileStoreV11 = FileStore.builder(getFileStoreFolder()).withMaxFileSize(1).build();
         try {
             fileStoreV11.setCompactionStrategy(new CompactionStrategy(false, false,
                     CLEAN_NONE, 0, (byte) 0) {
@@ -238,7 +199,7 @@ public class SegmentVersionTest {
     @SuppressWarnings("deprecation")
     private static NodeState addTestContent(FileStore fs, String nodeName)
             throws CommitFailedException {
-        NodeStore store = new SegmentNodeStore(fs);
+        NodeStore store = SegmentNodeStore.builder(fs).build();
         NodeBuilder builder = store.getRoot().builder();
 
         NodeBuilder content = builder.child(nodeName);
@@ -255,7 +216,7 @@ public class SegmentVersionTest {
     }
 
     private static void verifyContent(FileStore fs, String nodeName) {
-        NodeStore store = new SegmentNodeStore(fs);
+        NodeStore store = SegmentNodeStore.builder(fs).build();
         SegmentNodeState content = (SegmentNodeState) store.getRoot()
                 .getChildNode(nodeName);
 

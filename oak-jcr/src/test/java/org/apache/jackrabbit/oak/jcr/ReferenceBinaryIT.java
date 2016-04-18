@@ -44,6 +44,7 @@ import org.apache.jackrabbit.oak.fixture.DocumentMongoFixture;
 import org.apache.jackrabbit.oak.fixture.NodeStoreFixture;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.DataStoreBlobStore;
 import org.apache.jackrabbit.oak.plugins.blob.datastore.OakFileDataStore;
+import org.apache.jackrabbit.oak.plugins.document.MongoUtils;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentStore;
 import org.apache.jackrabbit.oak.plugins.segment.file.FileStore;
 import org.apache.jackrabbit.oak.plugins.segment.fixture.SegmentFixture;
@@ -135,7 +136,11 @@ public class ReferenceBinaryIT {
     @Parameterized.Parameters
     public static Collection<Object[]> fixtures() throws IOException {
         File file = getTestDir("tar");
-        SegmentStore segmentStore = new FileStore(createBlobStore(), file, 266, true);
+        SegmentStore segmentStore = FileStore.builder(file)
+                .withBlobStore(createBlobStore())
+                .withMaxFileSize(256)
+                .withMemoryMapping(true)
+                .build();
 
         List<Object[]> fixtures = Lists.newArrayList();
         SegmentFixture segmentFixture = new SegmentFixture(segmentStore);
@@ -145,13 +150,17 @@ public class ReferenceBinaryIT {
 
         FileBlobStore fbs = new FileBlobStore(getTestDir("fbs1").getAbsolutePath());
         fbs.setReferenceKeyPlainText("foobar");
-        SegmentStore segmentStoreWithFBS =  new FileStore(fbs, getTestDir("tar2"), 266, true);
+        SegmentStore segmentStoreWithFBS = FileStore.builder(getTestDir("tar2"))
+                .withBlobStore(fbs)
+                .withMaxFileSize(256)
+                .withMemoryMapping(true)
+                .build();
         SegmentFixture segmentFixtureFBS = new SegmentFixture(segmentStoreWithFBS);
         if (segmentFixtureFBS.isAvailable()) {
             fixtures.add(new Object[] {segmentFixtureFBS});
         }
 
-        DocumentMongoFixture documentFixture = new DocumentMongoFixture(DocumentMongoFixture.DEFAULT_URI, createBlobStore());
+        DocumentMongoFixture documentFixture = new DocumentMongoFixture(MongoUtils.URL, createBlobStore());
         if (documentFixture.isAvailable()) {
             fixtures.add(new Object[]{documentFixture});
         }

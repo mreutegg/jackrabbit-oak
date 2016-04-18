@@ -50,12 +50,12 @@ public class SegmentNodeStoreContainer implements NodeStoreContainer {
 
     @Override
     public NodeStore open() throws IOException {
-        FileStore.Builder builder = FileStore.newFileStore(new File(directory, "segmentstore"));
+        FileStore.Builder builder = FileStore.builder(new File(directory, "segmentstore"));
         if (blob != null) {
             builder.withBlobStore(blob.open());
         }
-        fs = builder.create();
-        return SegmentNodeStore.newSegmentNodeStore(fs).create();
+        fs = builder.build();
+        return SegmentNodeStore.builder(fs).build();
     }
 
     @Override
