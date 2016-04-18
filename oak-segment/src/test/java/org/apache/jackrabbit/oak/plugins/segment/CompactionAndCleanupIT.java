@@ -23,16 +23,14 @@ import static com.google.common.collect.Lists.newArrayList;
 import static java.lang.Integer.getInteger;
 import static java.util.concurrent.TimeUnit.MINUTES;
 import static org.apache.commons.io.FileUtils.byteCountToDisplaySize;
-import static org.apache.commons.io.FileUtils.deleteDirectory;
 import static org.apache.jackrabbit.oak.api.Type.STRING;
 import static org.apache.jackrabbit.oak.commons.FixturesHelper.Fixture.SEGMENT_MK;
 import static org.apache.jackrabbit.oak.commons.FixturesHelper.getFixtures;
 import static org.apache.jackrabbit.oak.plugins.memory.EmptyNodeState.EMPTY_NODE;
-import static org.apache.jackrabbit.oak.plugins.segment.SegmentNodeStore.newSegmentNodeStore;
+import static org.apache.jackrabbit.oak.plugins.segment.SegmentNodeStore.builder;
 import static org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy.CleanupType.CLEAN_ALL;
 import static org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy.CleanupType.CLEAN_NONE;
 import static org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy.CleanupType.CLEAN_OLD;
-import static org.apache.jackrabbit.oak.plugins.segment.file.FileStore.newFileStore;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -63,17 +61,16 @@ import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy;
 import org.apache.jackrabbit.oak.plugins.segment.file.FileStore;
-import org.apache.jackrabbit.oak.plugins.segment.file.NonCachingFileStore;
 import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
 import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
 import org.apache.jackrabbit.oak.spi.state.ChildNodeEntry;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Ignore;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,20 +79,17 @@ public class CompactionAndCleanupIT {
     private static final Logger log = LoggerFactory
             .getLogger(CompactionAndCleanupIT.class);
 
-    private File directory;
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
+
+    private File getFileStoreFolder() {
+        return folder.getRoot();
+    }
 
     public static void assumptions() {
         assumeTrue(getFixtures().contains(SEGMENT_MK));
     }
     
-    @Before
-    public void setUp() throws IOException {
-        directory = File.createTempFile(
-                "FileStoreTest", "dir", new File("target"));
-        directory.delete();
-        directory.mkdir();
-    }
-
     @Test
     public void compactionNoBinaryClone() throws Exception {
         // 2MB data, 5MB blob
@@ -104,10 +98,10 @@ public class CompactionAndCleanupIT {
 
         // really long time span, no binary cloning
 
-        FileStore fileStore = FileStore.newFileStore(directory)
+        FileStore fileStore = FileStore.builder(getFileStoreFolder())
                 .withMaxFileSize(1)
-                .create();
-        final SegmentNodeStore nodeStore = new SegmentNodeStore(fileStore);
+                .build();
+        final SegmentNodeStore nodeStore = SegmentNodeStore.builder(fileStore).build();
         CompactionStrategy custom = new CompactionStrategy(false, false,
                 CLEAN_OLD, TimeUnit.HOURS.toMillis(1), (byte) 0) {
             @Override
@@ -213,8 +207,8 @@ public class CompactionAndCleanupIT {
         final int blobSize = 5 * 1024 * 1024;
         final int dataNodes = 10000;
 
-        FileStore fileStore = new FileStore(directory, 1);
-        final SegmentNodeStore nodeStore = new SegmentNodeStore(fileStore);
+        FileStore fileStore = FileStore.builder(getFileStoreFolder()).withMaxFileSize(1).build();
+        final SegmentNodeStore nodeStore = SegmentNodeStore.builder(fileStore).build();
         CompactionStrategy custom = new CompactionStrategy(false, false,
                 CLEAN_OLD, TimeUnit.HOURS.toMillis(1), (byte) 0) {
             @Override
@@ -288,15 +282,6 @@ public class CompactionAndCleanupIT {
                 mb(size) >= mb(lower) && mb(size) <= mb(upper));
     }
 
-    @After
-    public void cleanDir() {
-        try {
-            deleteDirectory(directory);
-        } catch (IOException e) {
-            log.error("Error cleaning directory", e);
-        }
-    }
-
     private static Blob createBlob(NodeStore nodeStore, int size) throws IOException {
         byte[] data = new byte[size];
         new Random().nextBytes(data);
@@ -314,8 +299,8 @@ public class CompactionAndCleanupIT {
      */
     @Test
     public void testMixedSegments() throws Exception {
-        FileStore store = new FileStore(directory, 2, false);
-        final SegmentNodeStore nodeStore = new SegmentNodeStore(store);
+        FileStore store = FileStore.builder(getFileStoreFolder()).withMaxFileSize(2).withMemoryMapping(true).build();
+        final SegmentNodeStore nodeStore = SegmentNodeStore.builder(store).build();
         final AtomicBoolean compactionSuccess = new AtomicBoolean(true);
         CompactionStrategy strategy = new CompactionStrategy(true, false, CLEAN_NONE, 0, (byte) 5) {
             @Override
@@ -391,7 +376,7 @@ public class CompactionAndCleanupIT {
      */
     @Test
     public void cleanupCyclicGraph() throws IOException, ExecutionException, InterruptedException {
-        FileStore fileStore = newFileStore(directory).create();
+        FileStore fileStore = FileStore.builder(getFileStoreFolder()).build();
         final SegmentWriter writer = fileStore.getTracker().getWriter();
         final SegmentNodeState oldHead = fileStore.getHead();
 
@@ -415,7 +400,7 @@ public class CompactionAndCleanupIT {
         fileStore.setHead(oldHead, newHead);
         fileStore.close();
 
-        fileStore = newFileStore(directory).create();
+        fileStore = FileStore.builder(getFileStoreFolder()).build();
 
         traverse(fileStore.getHead());
         fileStore.cleanup();
@@ -445,9 +430,9 @@ public class CompactionAndCleanupIT {
     @Ignore("OAK-3348")  // FIXME OAK-3348
     public void preCompactionReferences() throws IOException, CommitFailedException, InterruptedException {
         for (String ref : new String[] {"merge-before-compact", "merge-after-compact"}) {
-            File repoDir = new File(directory, ref);
-            FileStore fileStore = newFileStore(repoDir).withMaxFileSize(2).create();
-            final SegmentNodeStore nodeStore = newSegmentNodeStore(fileStore).create();
+            File repoDir = new File(getFileStoreFolder(), ref);
+            FileStore fileStore = FileStore.builder(repoDir).withMaxFileSize(2).build();
+            final SegmentNodeStore nodeStore = builder(fileStore).build();
             fileStore.setCompactionStrategy(new CompactionStrategy(true, false, CLEAN_NONE, 0, (byte) 5) {
                 @Override
                 public boolean compacted(Callable<Boolean> setHead) throws Exception {
@@ -496,7 +481,7 @@ public class CompactionAndCleanupIT {
             }
 
             // Re-initialise the file store to simulate off-line gc
-            fileStore = newFileStore(repoDir).withMaxFileSize(2).create();
+            fileStore = FileStore.builder(repoDir).withMaxFileSize(2).build();
             try {
                 // The 1M blob should get gc-ed. This works for case 1.
                 // However it doesn't for case 2 as merging after compaction
@@ -606,9 +591,9 @@ public class CompactionAndCleanupIT {
 
     @Test
     public void propertyRetention() throws IOException, CommitFailedException {
-        FileStore fileStore = new NonCachingFileStore(directory, 1);
+        FileStore fileStore = FileStore.builder(getFileStoreFolder()).withMaxFileSize(1).build();
         try {
-            final SegmentNodeStore nodeStore = new SegmentNodeStore(fileStore);
+            final SegmentNodeStore nodeStore = SegmentNodeStore.builder(fileStore).build();
             CompactionStrategy strategy = new CompactionStrategy(false, false, CLEAN_ALL, 0, (byte) 0) {
                 @Override
                 public boolean compacted(@Nonnull Callable<Boolean> setHead)

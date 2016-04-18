@@ -44,7 +44,7 @@ public class UpgradeFromTwoSourcesTest extends AbstractRepositoryUpgradeTest {
 
     @Override
     protected NodeStore createTargetNodeStore() {
-        return new SegmentNodeStore(fileStore);
+        return SegmentNodeStore.builder(fileStore).build();
     }
 
     @BeforeClass
@@ -52,7 +52,7 @@ public class UpgradeFromTwoSourcesTest extends AbstractRepositoryUpgradeTest {
         final File dir = new File(getTestDirectory(), "segments");
         dir.mkdirs();
         try {
-            fileStore = FileStore.newFileStore(dir).withMaxFileSize(128).create();
+            fileStore = FileStore.builder(dir).withMaxFileSize(128).build();
             upgradeComplete = false;
         } catch (IOException e) {
             throw new RuntimeException(e);

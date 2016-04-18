@@ -23,22 +23,18 @@ import static com.google.common.collect.Iterables.get;
 import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Maps.newHashMap;
 import static com.google.common.collect.Sets.newHashSet;
-import static java.io.File.createTempFile;
 import static junit.framework.Assert.assertTrue;
-import static org.apache.commons.io.FileUtils.deleteDirectory;
 import static org.apache.jackrabbit.oak.commons.IOUtils.humanReadableByteCount;
 import static org.apache.jackrabbit.oak.commons.benchmark.MicroBenchmark.run;
 import static org.apache.jackrabbit.oak.plugins.segment.Segment.MAX_SEGMENT_SIZE;
 import static org.apache.jackrabbit.oak.plugins.segment.SegmentVersion.V_11;
 import static org.apache.jackrabbit.oak.plugins.segment.TestUtils.newValidOffset;
 import static org.apache.jackrabbit.oak.plugins.segment.TestUtils.randomRecordIdMap;
-import static org.apache.jackrabbit.oak.plugins.segment.file.FileStore.newFileStore;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assume.assumeTrue;
 
-import java.io.File;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -50,13 +46,14 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.google.common.collect.ImmutableList;
-
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
 import org.apache.jackrabbit.oak.commons.benchmark.MicroBenchmark.Benchmark;
 import org.apache.jackrabbit.oak.plugins.segment.file.FileStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.slf4j.Logger;
@@ -81,11 +78,13 @@ public class PartialCompactionMapTest {
     private final Random rnd = new Random(SEED);
     private final boolean usePersistedMap;
 
-    private File directory;
     private FileStore segmentStore;
 
     private Map<RecordId, RecordId> reference;
     private PartialCompactionMap map;
+
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
 
     @Parameterized.Parameters
     public static List<Boolean[]> fixtures() {
@@ -98,21 +97,12 @@ public class PartialCompactionMapTest {
 
     @Before
     public void setup() throws IOException {
-        directory = createTempFile(PartialCompactionMapTest.class.getSimpleName(), "dir", new File("target"));
-        directory.delete();
-        directory.mkdir();
-
-        segmentStore = newFileStore(directory).create();
+        segmentStore = FileStore.builder(folder.getRoot()).build();
     }
 
     @After
     public void tearDown() {
         segmentStore.close();
-        try {
-            deleteDirectory(directory);
-        } catch (IOException e) {
-            //
-        }
     }
 
     private SegmentTracker getTracker() {

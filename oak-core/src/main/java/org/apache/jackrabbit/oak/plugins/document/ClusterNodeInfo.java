@@ -355,6 +355,40 @@ public class ClusterNodeInfo {
     }
 
     /**
+     * Create a dummy cluster node info instance to be utilized for read only access to underlying store.
+     * @param store
+     * @return the cluster node info
+     */
+    public static ClusterNodeInfo getReadOnlyInstance(DocumentStore store) {
+        return new ClusterNodeInfo(0, store, MACHINE_ID, WORKING_DIR, ClusterNodeState.ACTIVE,
+                RecoverLockState.NONE, null, true) {
+            @Override
+            public void dispose() {
+            }
+
+            @Override
+            public long getLeaseTime() {
+                return Long.MAX_VALUE;
+            }
+
+            @Override
+            public void performLeaseCheck() {
+            }
+
+            @Override
+            public boolean renewLease() {
+                return false;
+            }
+
+            @Override
+            public void setInfo(Map<String, String> info) {}
+
+            @Override
+            public void setLeaseFailureHandler(LeaseFailureHandler leaseFailureHandler) {}
+        };
+    }
+
+    /**
      * Create a cluster node info instance for the store, with the
      *
      * @param store the document store (for the lease)
@@ -443,6 +477,7 @@ public class ClusterNodeInfo {
         int clusterNodeId = 0;
         int maxId = 0;
         ClusterNodeState state = ClusterNodeState.NONE;
+        RecoverLockState lockState = RecoverLockState.NONE;
         Long prevLeaseEnd = null;
         boolean newEntry = false;
 
@@ -519,6 +554,7 @@ public class ClusterNodeInfo {
                 clusterNodeId = id;
                 state = ClusterNodeState.fromString((String) doc.get(STATE));
                 prevLeaseEnd = leaseEnd;
+                lockState = RecoverLockState.fromString((String) doc.get(REV_RECOVERY_LOCK));
             }
         }
 
@@ -540,7 +576,7 @@ public class ClusterNodeInfo {
         // Do not expire entries and stick on the earlier state, and leaseEnd so,
         // that _lastRev recovery if needed is done.
         return new ClusterNodeInfo(clusterNodeId, store, machineId, instanceId, state,
-                RecoverLockState.NONE, prevLeaseEnd, newEntry);
+                lockState, prevLeaseEnd, newEntry);
     }
 
     private static boolean waitForLeaseExpiry(DocumentStore store, ClusterNodeInfoDocument cdoc, long leaseEnd, String machineId,
@@ -556,7 +592,7 @@ public class ClusterNodeInfo {
             LOG.info("Waiting for cluster node " + key + "'s lease to expire: " + (waitUntil - getCurrentTime()) / 1000 + "s left");
 
             try {
-                Thread.sleep(5000);
+                clock.waitUntil(getCurrentTime() + 5000);
             } catch (InterruptedException e) {
                 // ignored
             }

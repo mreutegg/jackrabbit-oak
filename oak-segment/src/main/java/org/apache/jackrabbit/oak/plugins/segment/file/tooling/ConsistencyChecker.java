@@ -39,6 +39,7 @@ import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentBlob;
 import org.apache.jackrabbit.oak.plugins.segment.SegmentNodeStore;
+import org.apache.jackrabbit.oak.plugins.segment.file.FileStore;
 import org.apache.jackrabbit.oak.plugins.segment.file.FileStore.ReadOnlyStore;
 import org.apache.jackrabbit.oak.plugins.segment.file.JournalReader;
 import org.apache.jackrabbit.oak.spi.state.ChildNodeEntry;
@@ -117,7 +118,7 @@ public class ConsistencyChecker {
      */
     public ConsistencyChecker(File directory, long debugInterval)
             throws IOException {
-        store = new ReadOnlyStore(directory);
+        store = FileStore.builder(directory).buildReadOnly();
         this.debugInterval = debugInterval;
     }
 
@@ -144,7 +145,7 @@ public class ConsistencyChecker {
     private String checkPath(String path, long binLen) {
         try {
             print("Checking {}", path);
-            NodeState root = new SegmentNodeStore(store).getRoot();
+            NodeState root = SegmentNodeStore.builder(store).build().getRoot();
             String parentPath = getParentPath(path);
             String name = getName(path);
             NodeState parent = getNode(root, parentPath);
@@ -172,7 +173,7 @@ public class ConsistencyChecker {
             store.setRevision(revision);
             nodeCount = 0;
             propertyCount = 0;
-            String result = traverse(new SegmentNodeStore(store).getRoot(), "/", true, binLen);
+            String result = traverse(SegmentNodeStore.builder(store).build().getRoot(), "/", true, binLen);
             print("Traversed {} nodes and {} properties", nodeCount, propertyCount);
             return result;
         } catch (RuntimeException e) {

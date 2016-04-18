@@ -23,7 +23,6 @@ import static org.apache.commons.io.FileUtils.deleteDirectory;
 import static org.apache.commons.lang.RandomStringUtils.randomAlphabetic;
 import static org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy.CleanupType.CLEAN_OLD;
 import static org.apache.jackrabbit.oak.plugins.segment.compaction.CompactionStrategy.MEMORY_THRESHOLD_DEFAULT;
-import static org.apache.jackrabbit.oak.plugins.segment.file.FileStore.newFileStore;
 import static org.junit.Assume.assumeTrue;
 
 import java.io.ByteArrayInputStream;
@@ -46,7 +45,9 @@ import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeStore;
 import org.junit.After;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,25 +73,16 @@ public class SegmentOverflowExceptionIT {
 
     private final Random rnd = new Random();
 
-    private File directory;
+    @Rule
+    public TemporaryFolder folder = new TemporaryFolder();
+
+    private File getFileStoreFolder() {
+        return folder.getRoot();
+    }
 
     @Before
     public void setUp() throws IOException {
         assumeTrue(ENABLED);
-        directory = File.createTempFile(getClass().getSimpleName(), "dir", new File("target"));
-        directory.delete();
-        directory.mkdir();
-    }
-
-    @After
-    public void cleanDir() {
-        try {
-            if (directory != null) {
-                deleteDirectory(directory);
-            }
-        } catch (IOException e) {
-            LOG.error("Error cleaning directory", e);
-        }
     }
 
     private volatile boolean compact = true;
@@ -109,9 +101,9 @@ public class SegmentOverflowExceptionIT {
 
     @Test
     public void run() throws IOException, CommitFailedException, InterruptedException {
-        FileStore fileStore = newFileStore(directory).withGCMonitor(gcMonitor).create();
+        FileStore fileStore = FileStore.builder(getFileStoreFolder()).withGCMonitor(gcMonitor).build();
         try {
-            final SegmentNodeStore nodeStore = new SegmentNodeStore(fileStore);
+            final SegmentNodeStore nodeStore = SegmentNodeStore.builder(fileStore).build();
             fileStore.setCompactionStrategy(new CompactionStrategy(false, false, CLEAN_OLD, 1000, MEMORY_THRESHOLD_DEFAULT) {
                 @Override
                 public boolean compacted(@Nonnull Callable<Boolean> setHead) throws Exception {
