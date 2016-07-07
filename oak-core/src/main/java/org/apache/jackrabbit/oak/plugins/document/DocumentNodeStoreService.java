@@ -675,13 +675,6 @@ public class DocumentNodeStoreService {
                         CacheStatsMBean.TYPE,
                         store.getNodeChildrenCacheStats().getName())
         );
-        registrations.add(
-                registerMBean(whiteboard,
-                        CacheStatsMBean.class,
-                        store.getDocChildrenCacheStats(),
-                        CacheStatsMBean.TYPE,
-                        store.getDocChildrenCacheStats().getName())
-        );
         for (CacheStats cs : store.getDiffCacheStats()) {
             registrations.add(
                     registerMBean(whiteboard,
