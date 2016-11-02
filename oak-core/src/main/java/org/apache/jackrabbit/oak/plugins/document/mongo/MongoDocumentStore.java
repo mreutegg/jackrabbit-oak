@@ -1523,11 +1523,6 @@ public class MongoDocumentStore implements DocumentStore, RevisionListener {
         // other updates
         for (Entry<Key, Operation> entry : updateOp.getChanges().entrySet()) {
             Key k = entry.getKey();
-            if (!includeId && k.getName().equals(Document.ID)) {
-                // TODO: remove once set _id is prohibited (OAK-4952)
-                // avoid exception "Mod on _id not allowed"
-                continue;
-            }
             Operation op = entry.getValue();
             switch (op.type) {
                 case SET:
