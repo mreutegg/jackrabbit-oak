@@ -15,16 +15,16 @@
 
 sudo: false
 env:
+  - MODULE=oak-jcr
   - MODULE=oak-core
   - MODULE=oak-it
-  - MODULE=oak-jcr
   - MODULE=oak-lucene
   - MODULE=oak-run
   - MODULE=oak-it-osgi
   - MODULE=oak-pojosr
   - MODULE=oak-upgrade
-install:  mvn --batch-mode -DskipTests install
-script:   mvn --batch-mode clean verify -PintegrationTesting -Dnsfixtures=DOCUMENT_NS -pl ':$MODULE'
+install:  mvn --batch-mode -DskipTests install -pl :${MODULE} -am
+script:   mvn --batch-mode clean verify -PintegrationTesting -Dnsfixtures=DOCUMENT_NS -pl :${MODULE}
 language: java
 jdk:
   - oraclejdk7
