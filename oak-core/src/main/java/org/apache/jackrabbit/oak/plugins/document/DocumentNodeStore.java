@@ -662,13 +662,13 @@ public final class DocumentNodeStore
             clusterUpdateThread.start();
         }
 
-        // perform an initial document sweep
-        internalRunBackgroundSweepOperations();
-
         backgroundSweepThread = new Thread(new BackgroundSweeper(this, isDisposed),
                 "DocumentNodeStore background sweep thread " + threadNamePostfix);
         backgroundSweepThread.setDaemon(true);
         if (!readOnlyMode) {
+            // perform an initial document sweep
+            internalRunBackgroundSweepOperations();
+
             backgroundSweepThread.start();
         }
 
@@ -2095,7 +2095,7 @@ public final class DocumentNodeStore
     /**
      * Perform a background read and make external changes visible.
      */
-    private BackgroundReadStats backgroundRead() {
+    BackgroundReadStats backgroundRead() {
         return new ExternalChange(this) {
 
             @Override
