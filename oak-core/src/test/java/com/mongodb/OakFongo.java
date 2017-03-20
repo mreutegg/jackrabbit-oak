@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 
 import com.github.fakemongo.Fongo;
-import com.mongodb.connection.ServerVersion;
 
 public class OakFongo extends Fongo {
 
@@ -107,11 +106,24 @@ public class OakFongo extends Fongo {
 
         @Override
         public CommandResult command(DBObject cmd,
+                                     int options,
+                                     ReadPreference readPrefs) {
+            if (cmd.containsField("buildInfo")) {
+                CommandResult commandResult = okResult();
+                commandResult.append("version", "2.6.0");
+                return commandResult;
+            } else {
+                return super.command(cmd, options, readPrefs);
+            }
+        }
+
+        @Override
+        public CommandResult command(DBObject cmd,
                                      ReadPreference readPreference,
                                      DBEncoder encoder) {
             if (cmd.containsField("serverStatus")) {
                 CommandResult commandResult = okResult();
-                commandResult.append("version", asString(getServerVersion()));
+                commandResult.append("version", "2.6.0");
                 return commandResult;
             } else {
                 return super.command(cmd, readPreference, encoder);
@@ -153,10 +165,11 @@ public class OakFongo extends Fongo {
         }
 
         @Override
-        public WriteResult insert(List<? extends DBObject> documents,
-                                               InsertOptions insertOptions) {
-            beforeInsert(documents, insertOptions);
-            WriteResult result = super.insert(documents, insertOptions);
+        public WriteResult insert(List<DBObject> documents,
+                                  WriteConcern concern,
+                                  DBEncoder encoder) {
+            beforeInsert(documents, null);
+            WriteResult result = super.insert(documents, concern, encoder);
             afterInsert(result);
             return result;
         }
