@@ -20,7 +20,7 @@ import javax.jcr.Value;
 import javax.jcr.ValueFactory;
 
 import org.apache.jackrabbit.oak.api.Descriptors;
-import org.apache.jackrabbit.oak.commons.jmx.GenericDescriptors;
+import org.apache.jackrabbit.oak.spi.descriptors.GenericDescriptors;
 
 import static javax.jcr.Repository.OPTION_LOCKING_SUPPORTED;
 import static javax.jcr.Repository.OPTION_XML_EXPORT_SUPPORTED;

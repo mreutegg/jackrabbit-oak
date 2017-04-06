@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.oak.commons.jmx;
+package org.apache.jackrabbit.oak.spi.descriptors;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -35,6 +35,8 @@ import javax.jcr.ValueFactory;
 
 import org.apache.jackrabbit.commons.SimpleValueFactory;
 import org.apache.jackrabbit.oak.api.Descriptors;
+import org.apache.jackrabbit.oak.spi.descriptors.AggregatingDescriptors;
+import org.apache.jackrabbit.oak.spi.descriptors.GenericDescriptors;
 import org.apache.jackrabbit.oak.spi.whiteboard.Tracker;
 import org.junit.Test;
 

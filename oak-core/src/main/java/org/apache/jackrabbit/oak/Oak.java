@@ -90,6 +90,7 @@ import org.apache.jackrabbit.oak.spi.commit.EditorHook;
 import org.apache.jackrabbit.oak.spi.commit.EditorProvider;
 import org.apache.jackrabbit.oak.spi.commit.Observable;
 import org.apache.jackrabbit.oak.spi.commit.Observer;
+import org.apache.jackrabbit.oak.spi.descriptors.AggregatingDescriptors;
 import org.apache.jackrabbit.oak.spi.lifecycle.CompositeInitializer;
 import org.apache.jackrabbit.oak.spi.lifecycle.RepositoryInitializer;
 import org.apache.jackrabbit.oak.spi.lifecycle.WorkspaceInitializer;
@@ -108,7 +109,7 @@ import org.apache.jackrabbit.oak.spi.whiteboard.Tracker;
 import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
 import org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardAware;
 import org.apache.jackrabbit.oak.spi.whiteboard.WhiteboardUtils;
-import org.apache.jackrabbit.oak.commons.jmx.AggregatingDescriptors;
+import org.apache.jackrabbit.oak.spi.descriptors.AggregatingDescriptors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

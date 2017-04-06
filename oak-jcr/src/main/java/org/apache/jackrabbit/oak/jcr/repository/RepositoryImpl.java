@@ -59,6 +59,7 @@ import org.apache.jackrabbit.oak.jcr.session.RefreshStrategy.Composite;
 import org.apache.jackrabbit.oak.jcr.session.SessionContext;
 import org.apache.jackrabbit.oak.jcr.session.SessionStats;
 import org.apache.jackrabbit.oak.plugins.observation.CommitRateLimiter;
+import org.apache.jackrabbit.oak.spi.descriptors.GenericDescriptors;
 import org.apache.jackrabbit.oak.spi.gc.DelegatingGCMonitor;
 import org.apache.jackrabbit.oak.spi.gc.GCMonitor;
 import org.apache.jackrabbit.oak.spi.security.SecurityProvider;
@@ -66,7 +67,6 @@ import org.apache.jackrabbit.oak.spi.whiteboard.Registration;
 import org.apache.jackrabbit.oak.spi.whiteboard.Whiteboard;
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.apache.jackrabbit.oak.stats.StatisticManager;
-import org.apache.jackrabbit.oak.commons.jmx.GenericDescriptors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
