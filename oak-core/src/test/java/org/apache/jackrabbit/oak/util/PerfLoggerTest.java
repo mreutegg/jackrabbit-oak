@@ -29,6 +29,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import org.apache.jackrabbit.oak.commons.benchmark.PerfLogger;
+
 public class PerfLoggerTest {
     @Mock
     Logger logger;
