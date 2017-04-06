@@ -17,7 +17,7 @@
  * under the License.
  */
 
-package org.apache.jackrabbit.oak.util;
+package org.apache.jackrabbit.oak.plugins.index.lucene.binary;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -25,7 +25,7 @@ import java.io.InputStream;
 import com.google.common.io.ByteSource;
 import org.apache.jackrabbit.oak.api.Blob;
 
-public final class BlobByteSource extends ByteSource {
+final class BlobByteSource extends ByteSource {
     private final Blob blob;
 
     public BlobByteSource(Blob blob) {
