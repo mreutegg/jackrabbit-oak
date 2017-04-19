@@ -60,6 +60,7 @@ import java.util.zip.GZIPOutputStream;
 
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import javax.sql.DataSource;
 
 import org.apache.jackrabbit.oak.cache.CacheStats;
@@ -1948,7 +1949,7 @@ public class RDBDocumentStore implements DocumentStore {
     private NodeDocumentLocks locks;
 
     @CheckForNull
-    private static NodeDocument unwrap(@Nonnull NodeDocument doc) {
+    private static NodeDocument unwrap(@Nullable NodeDocument doc) {
         return doc == NodeDocument.NULL ? null : doc;
     }
 
