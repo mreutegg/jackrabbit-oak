@@ -33,13 +33,7 @@ cache:
     - $HOME/.m2
 addons:
   apt:
-    sources:
-      - mongodb-upstart
     packages:
-      - mongodb-org-server
+      - oracle-java7-installer
 notifications:
   email: false
-  webhooks:
-    urls:       http://zitting.name/travis/notify
-    on_success: change
-    on_failure: change
