@@ -22,7 +22,7 @@ before_install:
   - tar xfz mongodb-linux-x86_64-$MONGO_VER.tgz
   - export PATH=`pwd`/mongodb-linux-x86_64-$MONGO_VER/bin:$PATH
   - mkdir -p target/data/db
-  - mongod --dbpath=target/data/db &
+  - mongod --dbpath=target/data/db --logpath=target/mongodb.log &
   - sleep 3
 install:  true
 script:   mvn --batch-mode verify -Ppedantic,integrationTesting -pl :oak-lucene -am
