@@ -53,7 +53,8 @@ public class GetChildNodeCountTest {
 
     @Before
     public void before() throws Exception {
-        ns = builderProvider.newBuilder().setDocumentStore(store).getNodeStore();
+        ns = builderProvider.newBuilder().setAsyncDelay(0)
+                .setDocumentStore(store).getNodeStore();
         repository = new Oak(ns)
                 .with(new PropertyIndexEditorProvider())
                 .with(new OpenSecurityProvider())
