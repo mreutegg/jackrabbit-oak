@@ -88,6 +88,6 @@ public class GetChildNodeCountTest {
         root = session.getLatestRoot();
         root.getTree("/test").remove();
         root.commit();
-        assertThat(store.getNumQueryCalls(NODES), lessThan(10));
+        assertThat(store.getNumQueryCalls(NODES), lessThan(13));
     }
 }
