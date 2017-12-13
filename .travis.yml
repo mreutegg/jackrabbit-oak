@@ -30,5 +30,7 @@ addons:
       - mongodb-3.4-trusty
     packages:
       - mongodb-org-server
+services:
+  - mongodb
 notifications:
   email: false
