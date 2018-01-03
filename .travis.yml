@@ -38,5 +38,7 @@ jdk:
 cache:
   directories:
     - $HOME/.m2
+services:
+  - mongodb
 notifications:
   email: false
