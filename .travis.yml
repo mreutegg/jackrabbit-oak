@@ -22,6 +22,8 @@ before_install:
   - "sudo apt-get update"
   - "sudo apt-get install -y --allow-downgrades mongodb-org-server=3.2.18"
   - "sudo service mongod start"
+  - "sleep 5"
+  - "sudo cat /var/log/mongodb/mongod.log"
 env:
   - MODULE=oak-jcr
   - MODULE=oak-core
