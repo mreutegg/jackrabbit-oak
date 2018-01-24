@@ -26,6 +26,7 @@ import static org.apache.jackrabbit.JcrConstants.JCR_MIXINTYPES;
 import static org.apache.jackrabbit.JcrConstants.JCR_PRIMARYTYPE;
 import static org.apache.jackrabbit.oak.api.Type.NAME;
 import static org.apache.jackrabbit.oak.api.Type.NAMES;
+import static org.apache.jackrabbit.oak.api.Type.STRING;
 import static org.apache.jackrabbit.oak.jcr.session.SessionImpl.checkIndexOnName;
 import static org.apache.jackrabbit.oak.plugins.tree.TreeUtil.getNames;
 
@@ -1301,9 +1302,18 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     }
 
     private boolean canReadProperty(@Nonnull Tree tree, @Nonnull String propName) throws RepositoryException {
+        return canReadPropertyNew(tree, propName);
+    }
+
+    private boolean canReadPropertyOld(@Nonnull Tree tree, @Nonnull String propName) throws RepositoryException {
         String propPath = PathUtils.concat(tree.getPath(), propName);
         String permName = Permissions.PERMISSION_NAMES.get(Permissions.READ_PROPERTY);
         return sessionContext.getAccessManager().hasPermissions(propPath, permName);
+    }
+    
+    private boolean canReadPropertyNew(@Nonnull Tree tree, @Nonnull String propName) throws RepositoryException {
+        PropertyState p = PropertyStates.createProperty(propName, "", STRING);
+        return sessionContext.getAccessManager().hasPermissions(tree, p, Permissions.READ_PROPERTY);
     }
 
     private EffectiveNodeType getEffectiveNodeType() throws RepositoryException {
