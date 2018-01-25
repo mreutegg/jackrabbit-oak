@@ -1289,7 +1289,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     @Nonnull
     private Iterator<String> getMixinTypeNames(@Nonnull Tree tree) throws RepositoryException {
         Iterator<String> mixinNames = Collections.emptyIterator();
-        if (tree.hasProperty(JcrConstants.JCR_MIXINTYPES) || canReadProperty(tree, JcrConstants.JCR_MIXINTYPES)) {
+        if (tree.hasProperty(JcrConstants.JCR_MIXINTYPES)) {
             mixinNames = TreeUtil.getNames(tree, JcrConstants.JCR_MIXINTYPES).iterator();
         } else if (tree.getStatus() != Status.NEW) {
             // OAK-2441: for backwards compatibility with Jackrabbit 2.x try to
@@ -1299,21 +1299,6 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
                     JcrConstants.JCR_MIXINTYPES).iterator();
         }
         return mixinNames;
-    }
-
-    private boolean canReadProperty(@Nonnull Tree tree, @Nonnull String propName) throws RepositoryException {
-        return canReadPropertyNew(tree, propName);
-    }
-
-    private boolean canReadPropertyOld(@Nonnull Tree tree, @Nonnull String propName) throws RepositoryException {
-        String propPath = PathUtils.concat(tree.getPath(), propName);
-        String permName = Permissions.PERMISSION_NAMES.get(Permissions.READ_PROPERTY);
-        return sessionContext.getAccessManager().hasPermissions(propPath, permName);
-    }
-    
-    private boolean canReadPropertyNew(@Nonnull Tree tree, @Nonnull String propName) throws RepositoryException {
-        PropertyState p = PropertyStates.createProperty(propName, "", STRING);
-        return sessionContext.getAccessManager().hasPermissions(tree, p, Permissions.READ_PROPERTY);
     }
 
     private EffectiveNodeType getEffectiveNodeType() throws RepositoryException {
