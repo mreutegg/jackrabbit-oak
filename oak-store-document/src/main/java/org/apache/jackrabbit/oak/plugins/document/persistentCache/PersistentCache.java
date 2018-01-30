@@ -33,7 +33,6 @@ import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.Broa
 import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.InMemoryBroadcaster;
 import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.TCPBroadcaster;
 import org.apache.jackrabbit.oak.plugins.document.persistentCache.broadcast.UDPBroadcaster;
-import org.apache.jackrabbit.oak.spi.blob.GarbageCollectableBlobStore;
 import org.apache.jackrabbit.oak.stats.StatisticsProvider;
 import org.h2.mvstore.FileStore;
 import org.h2.mvstore.MVMap;
@@ -79,7 +78,6 @@ public class PersistentCache implements Broadcaster.Listener {
     private int memCache = -1;
     private int readGeneration = -1;
     private int writeGeneration;
-    private long maxBinaryEntry = 1024 * 1024;
     private int autoCompact = 0;
     private boolean appendOnly;
     private boolean manualCommit;
@@ -140,7 +138,8 @@ public class PersistentCache implements Broadcaster.Listener {
             } else if (p.startsWith("memCache=")) {
                 memCache = Integer.parseInt(p.split("=")[1]);
             } else if (p.startsWith("binary=")) {
-                maxBinaryEntry = Long.parseLong(p.split("=")[1]);
+                LOG.warn("Support for binary has been removed from persistent cache. " +
+                        "Please update the configuration.");
             } else if (p.startsWith("autoCompact=")) {
                 autoCompact = Integer.parseInt(p.split("=")[1]);
             } else if (p.equals("appendOnly")) {
@@ -384,16 +383,6 @@ public class PersistentCache implements Broadcaster.Listener {
         writeBuffer.remove();
     }
     
-    public synchronized GarbageCollectableBlobStore wrapBlobStore(
-            GarbageCollectableBlobStore base) {
-        if (maxBinaryEntry == 0) {
-            return base;
-        }
-        BlobCache c = new BlobCache(this, base);
-        initGenerationCache(c);
-        return c;
-    }
-    
     public synchronized <K, V> Cache<K, V> wrap(
             DocumentNodeStore docNodeStore, 
             DocumentStore docStore,
@@ -508,10 +497,6 @@ public class PersistentCache implements Broadcaster.Listener {
     
     public int getMaxSize() {
         return maxSizeMB;
-    }
-    
-    public long getMaxBinaryEntrySize() {
-        return maxBinaryEntry;
     }
     
     public int getOpenCount() {
