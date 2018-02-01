@@ -139,6 +139,8 @@ public final class DocumentNodeStore
     private static final PerfLogger PERFLOG = new PerfLogger(
             LoggerFactory.getLogger(DocumentNodeStore.class.getName() + ".perf"));
 
+    private static final boolean DISABLE_FORCE_READ = Boolean.getBoolean("oak.disableForceRead");
+
     /**
      * Number of milliseconds in one minute.
      */
@@ -1196,7 +1198,7 @@ public final class DocumentNodeStore
         String queriedName = name;
         String path = parent.getPath();
         RevisionVector rev = parent.getLastRevision();
-        LOG.trace("Reading children for [{}] at rev [{}]", path, rev);
+        LOG.debug("Reading children for [{}] at rev [{}]", path, rev);
         Iterable<NodeDocument> docs;
         DocumentNodeState.Children c = new DocumentNodeState.Children();
         // add one to the requested limit for the raw limit
@@ -1412,7 +1414,11 @@ public final class DocumentNodeStore
                 String p = PathUtils.getAncestorPath(path, depth - i);
                 RevisionVector lastRev = beforeState.getLastRevision();
                 PathRev key = new PathRev(p, lastRev);
-                beforeState = nodeCache.getIfPresent(key);
+                if (DISABLE_FORCE_READ) {
+                    beforeState = nodeCache.getIfPresent(key);
+                } else {
+                    beforeState = getNode(p, lastRev);
+                }
                 if (missing.equals(beforeState)) {
                     // This is unexpected. The before state should exist.
                     // Invalidate the relevant cache entries. (OAK-6294)
@@ -1422,6 +1428,8 @@ public final class DocumentNodeStore
                     nodeCache.invalidate(key);
                     nodeChildrenCache.invalidate(childNodeCacheKey(path, lastRev, null));
                     beforeState = null;
+                } else if (beforeState == null) {
+                    LOG.debug("Before state not cached {} @ {}", p, lastRev);
                 }
             }
             DocumentNodeState.Children children = null;
