@@ -1414,11 +1414,7 @@ public final class DocumentNodeStore
                 String p = PathUtils.getAncestorPath(path, depth - i);
                 RevisionVector lastRev = beforeState.getLastRevision();
                 PathRev key = new PathRev(p, lastRev);
-                if (DISABLE_FORCE_READ) {
-                    beforeState = nodeCache.getIfPresent(key);
-                } else {
-                    beforeState = getNode(p, lastRev);
-                }
+                beforeState = nodeCache.getIfPresent(key);
                 if (missing.equals(beforeState)) {
                     // This is unexpected. The before state should exist.
                     // Invalidate the relevant cache entries. (OAK-6294)
