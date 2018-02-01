@@ -1430,6 +1430,9 @@ public final class DocumentNodeStore
                     beforeState = null;
                 } else if (beforeState == null) {
                     LOG.debug("Before state not cached {} @ {}", p, lastRev);
+                    if (!DISABLE_FORCE_READ) {
+                        beforeState = getNode(p, lastRev);
+                    }
                 }
             }
             DocumentNodeState.Children children = null;
