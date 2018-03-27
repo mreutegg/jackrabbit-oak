@@ -138,6 +138,12 @@ public abstract class OakFixture {
                 dropDBAfterTest, cacheSize, false, null, 0);
     }
 
+    public static OakFixture getMongo(String uri, boolean readOnly,
+                                      boolean dropDBAfterTest, long cacheSize) {
+        return getMongo(OAK_MONGO, uri, readOnly,
+                dropDBAfterTest, cacheSize, false, null, 0);
+    }
+
     public static OakFixture getMongo(String host, int port, String database,
                                       boolean dropDBAfterTest, long cacheSize) {
         return getMongo(OAK_MONGO, host, port, database,
@@ -173,7 +179,15 @@ public abstract class OakFixture {
                                       final boolean dropDBAfterTest, final long cacheSize,
                                       final boolean useDataStore,
                                       final File base, final int dsCacheInMB) {
-        return new MongoFixture(name, uri, dropDBAfterTest, cacheSize, useDataStore, base, dsCacheInMB);
+        return new MongoFixture(name, uri, false, dropDBAfterTest, cacheSize, useDataStore, base, dsCacheInMB);
+    }
+
+    public static OakFixture getMongo(final String name, final String uri,
+                                      final boolean readOnly,
+                                      final boolean dropDBAfterTest, final long cacheSize,
+                                      final boolean useDataStore,
+                                      final File base, final int dsCacheInMB) {
+        return new MongoFixture(name, uri, readOnly, dropDBAfterTest, cacheSize, useDataStore, base, dsCacheInMB);
     }
 
     public static OakFixture getRDB(final String name, final String jdbcuri, final String jdbcuser, final String jdbcpasswd,
@@ -360,6 +374,8 @@ public abstract class OakFixture {
 
         private final String uri;
 
+        private final boolean readOnly;
+
         private final boolean dropDBAfterTest;
 
         private final long cacheSize;
@@ -374,11 +390,14 @@ public abstract class OakFixture {
         private BlobStoreFixture blobStoreFixture;
 
         public MongoFixture(final String name, final String uri,
-                            final boolean dropDBAfterTest, final long cacheSize,
+                            final boolean readOnly,
+                            final boolean dropDBAfterTest,
+                            final long cacheSize,
                             final boolean useDataStore,
                             final File base, final int dsCacheInMB) {
             super(name);
             this.uri = uri;
+            this.readOnly = readOnly;
             this.dropDBAfterTest = dropDBAfterTest;
             this.cacheSize = cacheSize;
             this.useDataStore = useDataStore;
@@ -399,6 +418,10 @@ public abstract class OakFixture {
                     memoryCacheSize(cacheSize).
                     setClusterId(clusterId).
                     setLogging(false);
+
+            if (readOnly) {
+                builder.setReadOnlyMode();
+            }
 
             configurePersistentCache(builder);
             setupBlobStore(builder, StatisticsProvider.NOOP);

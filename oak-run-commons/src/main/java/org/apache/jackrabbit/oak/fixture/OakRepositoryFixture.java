@@ -45,6 +45,11 @@ public class OakRepositoryFixture implements RepositoryFixture {
         return getMongoNS(uri, dropDBAfterTest, cacheSize);
     }
 
+    public static RepositoryFixture getMongo(String uri, boolean readOnly,
+                                             boolean dropDBAfterTest, long cacheSize) {
+        return getMongoNS(uri, readOnly, dropDBAfterTest, cacheSize);
+    }
+
     public static RepositoryFixture getMongoWithDS(String host, int port, String database,
                                              boolean dropDBAfterTest, long cacheSize,
                                              final File base, int fdsCacheInMB) {
@@ -67,6 +72,11 @@ public class OakRepositoryFixture implements RepositoryFixture {
     public static RepositoryFixture getMongoNS(String uri,
                                                boolean dropDBAfterTest, long cacheSize) {
         return new OakRepositoryFixture(OakFixture.getMongo(uri, dropDBAfterTest, cacheSize));
+    }
+
+    public static RepositoryFixture getMongoNS(String uri, boolean readOnly,
+                                               boolean dropDBAfterTest, long cacheSize) {
+        return new OakRepositoryFixture(OakFixture.getMongo(uri, readOnly, dropDBAfterTest, cacheSize));
     }
 
     private static RepositoryFixture getMongo(String name,

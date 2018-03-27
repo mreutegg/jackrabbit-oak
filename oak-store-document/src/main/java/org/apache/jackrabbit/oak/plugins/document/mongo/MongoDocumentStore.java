@@ -1111,6 +1111,7 @@ public class MongoDocumentStore implements DocumentStore, RevisionListener {
 
     private <T extends Document> BulkUpdateResult sendBulkUpdate(Collection<T> collection,
             java.util.Collection<UpdateOp> updateOps, Map<String, T> oldDocs) {
+        final long start = PERFLOG.start();
         DBCollection dbCollection = getDBCollection(collection);
         BulkWriteOperation bulk = dbCollection.initializeUnorderedBulkOperation();
         String[] bulkIds = new String[updateOps.size()];
@@ -1145,6 +1146,7 @@ public class MongoDocumentStore implements DocumentStore, RevisionListener {
         for (BulkWriteUpsert upsert : bulkResult.getUpserts()) {
             upserts.add(bulkIds[upsert.getIndex()]);
         }
+        PERFLOG.end(start, 1, "sendBulkUpdate: keys={}", oldDocs.keySet());
         return new BulkUpdateResult(failedUpdates, upserts);
     }
 

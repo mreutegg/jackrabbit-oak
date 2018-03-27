@@ -37,6 +37,7 @@ import com.codahale.metrics.MetricRegistry;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.MoreExecutors;
+
 import joptsimple.OptionParser;
 import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
@@ -65,6 +66,8 @@ public class BenchmarkRunner {
         OptionSpec<File> base = parser.accepts("base", "Base directory")
                 .withRequiredArg().ofType(File.class)
                 .defaultsTo(new File("target"));
+        OptionSpec<Boolean> readOnly = parser.accepts("readOnly", "Open an existing repository read-only")
+                .withOptionalArg().ofType(Boolean.class).defaultsTo(false);
         OptionSpec<String> host = parser.accepts("host", "MongoDB host")
                 .withRequiredArg().defaultsTo("localhost");
         OptionSpec<Integer> port = parser.accepts("port", "MongoDB port")
@@ -212,7 +215,7 @@ public class BenchmarkRunner {
         RepositoryFixture[] allFixtures = new RepositoryFixture[] {
                 new JackrabbitRepositoryFixture(base.value(options), cacheSize),
                 OakRepositoryFixture.getMemoryNS(cacheSize * MB),
-                OakRepositoryFixture.getMongo(uri,
+                OakRepositoryFixture.getMongo(uri, readOnly.value(options),
                         dropDBAfterTest.value(options), cacheSize * MB),
                 OakRepositoryFixture.getMongoWithDS(uri,
                         dropDBAfterTest.value(options),
@@ -468,7 +471,10 @@ public class BenchmarkRunner {
             new HybridIndexTest(base.value(options), statsProvider),
             new BundlingNodeTest(),
             new PersistentCacheTest(statsProvider),
-            new BasicWriteTest()
+            new BasicWriteTest(),
+            new DocumentStoreWriteTest(),
+            new DocumentStoreBulkWriteTest(),
+            new DocumentStoreReadTest()
         };
 
         Set<String> argset = Sets.newHashSet(nonOption.values(options));
