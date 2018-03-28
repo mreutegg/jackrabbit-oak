@@ -20,10 +20,14 @@ import java.security.SecureRandom;
 import java.util.Random;
 
 import org.apache.jackrabbit.oak.plugins.document.Collection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getIdFromPath;
 
 public class DocumentStoreReadTest extends DocumentStoreTest {
+
+    private static final Logger LOG = LoggerFactory.getLogger(DocumentStoreReadTest.class);
 
     private static final int NUM_NODES = Integer.getInteger("num.nodes", 10000);
 
@@ -34,7 +38,11 @@ public class DocumentStoreReadTest extends DocumentStoreTest {
     @Override
     Operation generateOperation() {
         String id = getIdFromPath("/test" + TEST_ID + "/path/" + nextNodeName());
-        return ds -> ds.find(Collection.NODES, id, 0);
+        return ds -> {
+            if (ds.find(Collection.NODES, id, 0) == null) {
+                LOG.warn("document not found: {}", id);
+            }
+        };
     }
 
     private static String nextNodeName() {
