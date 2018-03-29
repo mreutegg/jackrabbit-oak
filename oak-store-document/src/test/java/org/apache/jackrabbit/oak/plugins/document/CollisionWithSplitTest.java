@@ -22,6 +22,7 @@ import java.util.List;
 import com.mongodb.DB;
 
 import org.apache.jackrabbit.oak.api.CommitFailedException;
+import org.apache.jackrabbit.oak.plugins.document.util.MongoConnection;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
 import org.apache.jackrabbit.oak.spi.commit.EmptyHook;
@@ -50,13 +51,13 @@ public class CollisionWithSplitTest extends AbstractMongoConnectionTest {
     public void setUpConnection() throws Exception {
         mongoConnection = connectionFactory.getConnection();
         MongoUtils.dropCollections(mongoConnection.getDB());
-        mk = newDocumentMK(mongoConnection.getDB(), 2);
+        mk = newDocumentMK(mongoConnection, 2);
         ns1 = mk.getNodeStore();
     }
 
     @Before
     public void setup() throws Exception {
-        ns2 = newDocumentMK(connectionFactory.getConnection().getDB(), 3).getNodeStore();
+        ns2 = newDocumentMK(connectionFactory.getConnection(), 3).getNodeStore();
     }
 
     @After
@@ -121,9 +122,9 @@ public class CollisionWithSplitTest extends AbstractMongoConnectionTest {
                 ourRev, c.mark(ns2.getDocumentStore()));
     }
 
-    private static DocumentMK newDocumentMK(DB db, int clusterId) {
+    private static DocumentMK newDocumentMK(MongoConnection c, int clusterId) {
         return new DocumentMK.Builder().setAsyncDelay(0)
-                .setMongoDB(db)
+                .setMongoDB(c.getMongoClient(), c.getDBName())
                 .setClusterId(clusterId)
                 .open();
     }

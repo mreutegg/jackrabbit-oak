@@ -697,8 +697,10 @@ public abstract class BaseDocumentDiscoveryLiteServiceTest {
 
     DocumentMK createMK(int clusterId, int asyncDelay) {
         if (MONGO_DB) {
-            DB db = connectionFactory.getConnection().getDB();
-            return register(new DocumentMK.Builder().setMongoDB(db).setLeaseCheck(false).setClusterId(clusterId)
+            MongoConnection connection = connectionFactory.getConnection();
+            return register(new DocumentMK.Builder()
+                    .setMongoDB(connection.getMongoClient(), connection.getDBName())
+                    .setLeaseCheck(false).setClusterId(clusterId)
                     .setAsyncDelay(asyncDelay).open());
         } else {
             if (ds == null) {

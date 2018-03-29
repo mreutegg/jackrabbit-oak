@@ -33,6 +33,7 @@ import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.commons.json.JsopBuilder;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState.Children;
+import org.apache.jackrabbit.oak.plugins.document.util.MongoConnection;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.junit.Rule;
 import org.junit.Test;
@@ -441,9 +442,9 @@ public class SimpleTest {
         DocumentMK.Builder builder = builderProvider.newBuilder();
 
         if (MONGO_DB) {
-            DB db = connectionFactory.getConnection().getDB();
-            MongoUtils.dropCollections(db);
-            builder.setMongoDB(db);
+            MongoConnection c = connectionFactory.getConnection();
+            MongoUtils.dropCollections(c.getDBName());
+            builder.setMongoDB(c.getMongoClient(), c.getDBName());
         }
 
         builder.setUseSimpleRevision(useSimpleRevision);

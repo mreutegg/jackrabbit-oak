@@ -27,6 +27,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 
+import org.apache.jackrabbit.oak.plugins.document.util.MongoConnection;
 import org.apache.jackrabbit.oak.spi.blob.MemoryBlobStore;
 import org.apache.jackrabbit.oak.commons.json.JsonObject;
 import org.apache.jackrabbit.oak.commons.json.JsopBuilder;
@@ -377,9 +378,9 @@ public class RandomizedClusterTest {
         DocumentMK.Builder builder = new DocumentMK.Builder();
         builder.setAsyncDelay(0);
         if (MONGO_DB) {
-            DB db = connectionFactory.getConnection().getDB();
-            MongoUtils.dropCollections(db);
-            builder.setMongoDB(db);
+            MongoConnection c = connectionFactory.getConnection();
+            MongoUtils.dropCollections(c.getDBName());
+            builder.setMongoDB(c.getMongoClient(), c.getDBName());
         } else {
             if (ds == null) {
                 ds = new MemoryDocumentStore();
