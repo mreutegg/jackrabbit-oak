@@ -15,16 +15,17 @@
 
 sudo: false
 env:
-  - MODULE=oak-jcr PROFILE="-PintegrationTesting" UT="-Dsurefire.skip.ut=true"
-  - MODULE=oak-jcr PROFILE="" UT=""
-  - MODULE=oak-store-document PROFILE="-PintegrationTesting" UT=""
-  - MODULE=oak-it PROFILE="-PintegrationTesting" UT=""
-  - MODULE=oak-lucene PROFILE="-PintegrationTesting" UT=""
-  - MODULE=oak-run PROFILE="-PintegrationTesting" UT=""
-  - MODULE=oak-it-osgi PROFILE="-PintegrationTesting" UT=""
-  - MODULE=oak-pojosr PROFILE="-PintegrationTesting" UT=""
-  - MODULE=oak-upgrade PROFILE="-PintegrationTesting" UT=""
+  global:
+    - MONGODB=3.6.4
+  matrix:
+    - MODULE=oak-store-document PROFILE="-PintegrationTesting" UT=""
 install:  mvn --batch-mode -DskipTests -Dbaseline.skip=true install -pl :${MODULE} -am -nsu
+before_script:
+  - wget -N http://fastdl.mongodb.org/linux/mongodb-linux-x86_64-${MONGODB}.tgz -O $HOME/.mongodb/mongodb.tgz
+  - tar --skip-old-files -C $HOME/.mongodb -xf $HOME/.mongodb/mongodb.tgz
+  - mkdir -p target/mongodb/data
+  - pip install mlaunch
+  - mlaunch init --replicaset --binarypath $HOME/.mongodb/mongodb-linux-x86_64-${MONGODB}/bin --dir target/mongodb/data
 script:   mvn --batch-mode clean verify -Dbaseline.skip=true ${UT} ${PROFILE} -Dnsfixtures=DOCUMENT_NS -pl :${MODULE} -nsu
 language: java
 jdk:
@@ -32,13 +33,11 @@ jdk:
 cache:
   directories:
     - $HOME/.m2
+    - $HOME/.mongodb
 addons:
   apt:
-    sources:
-      - mongodb-3.4-trusty
     packages:
-      - mongodb-org-server
-services:
-  - mongodb
+      - python
+      - python-pip
 notifications:
   email: false
