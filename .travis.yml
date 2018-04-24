@@ -27,7 +27,7 @@ before_install:
   - virtualenv mtools
   - source mtools/bin/activate
   - pip install --upgrade pip
-  - pip install pymongo mtools
+  - pip install python-dateutil psutil pymongo mtools
   - mlaunch init --replicaset --binarypath $HOME/.mongodb/mongodb-linux-x86_64-${MONGODB}/bin --dir ${HOME}/target/mongodb/data
   - cd $TRAVIS_BUILD_DIR
 install:  mvn --batch-mode -DskipTests -Dbaseline.skip=true install -pl :${MODULE} -am -nsu
@@ -43,8 +43,6 @@ addons:
   apt:
     packages:
       - python
-      - python-dateutil
-      - python-psutil
       - python-pip
       - python-virtualenv
 notifications:
