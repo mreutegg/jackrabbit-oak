@@ -18,8 +18,9 @@ env:
   global:
     - MONGODB=3.6.4
   matrix:
-    - MODULE=oak-store-document PROFILE="-PintegrationTesting" UT=""
-before_install:
+    - MODULE=oak-store-document PROFILE="-PintegrationTesting" UT="" MONGODB-MODE="single"
+    - MODULE=oak-store-document PROFILE="-PintegrationTesting" UT="" MONGODB-MODE="replicaset"
+install:
   - wget -N http://fastdl.mongodb.org/linux/mongodb-linux-x86_64-${MONGODB}.tgz -O $HOME/.mongodb/mongodb.tgz
   - tar --skip-old-files -C $HOME/.mongodb -xf $HOME/.mongodb/mongodb.tgz
   - mkdir -p target/mongodb/data
@@ -28,9 +29,9 @@ before_install:
   - source mtools/bin/activate
   - pip install --upgrade pip
   - pip install python-dateutil psutil pymongo mtools
-  - mlaunch init --replicaset --binarypath $HOME/.mongodb/mongodb-linux-x86_64-${MONGODB}/bin --dir ${HOME}/target/mongodb/data
+  - mlaunch init --${MONGODB-MODE} --binarypath $HOME/.mongodb/mongodb-linux-x86_64-${MONGODB}/bin --dir ${HOME}/target/mongodb/data
   - cd $TRAVIS_BUILD_DIR
-install:  mvn --batch-mode -DskipTests -Dbaseline.skip=true install -pl :${MODULE} -am -nsu
+  - mvn --batch-mode -DskipTests -Dbaseline.skip=true install -pl :${MODULE} -am -nsu
 script:   mvn --batch-mode clean verify -Dbaseline.skip=true ${UT} ${PROFILE} -Dnsfixtures=DOCUMENT_NS -pl :${MODULE} -nsu
 language: java
 jdk:
