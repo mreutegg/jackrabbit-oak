@@ -24,10 +24,10 @@ before_install:
   - tar --skip-old-files -C $HOME/.mongodb -xf $HOME/.mongodb/mongodb.tgz
   - mkdir -p target/mongodb/data
   - cd target/mongodb
-  - virtualenv mlaunch
-  - source mlaunch/bin/activate
+  - virtualenv mtools
+  - source mtools/bin/activate
   - pip install --upgrade pip
-  - pip install mlaunch
+  - pip install mtools
   - mlaunch init --replicaset --binarypath $HOME/.mongodb/mongodb-linux-x86_64-${MONGODB}/bin --dir ${HOME}/target/mongodb/data
   - cd ~
 install:  mvn --batch-mode -DskipTests -Dbaseline.skip=true install -pl :${MODULE} -am -nsu
