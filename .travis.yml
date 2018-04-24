@@ -24,6 +24,7 @@ before_script:
   - wget -N http://fastdl.mongodb.org/linux/mongodb-linux-x86_64-${MONGODB}.tgz -O $HOME/.mongodb/mongodb.tgz
   - tar --skip-old-files -C $HOME/.mongodb -xf $HOME/.mongodb/mongodb.tgz
   - mkdir -p target/mongodb/data
+  - pip install --upgrade pip
   - pip install mlaunch
   - mlaunch init --replicaset --binarypath $HOME/.mongodb/mongodb-linux-x86_64-${MONGODB}/bin --dir target/mongodb/data
 script:   mvn --batch-mode clean verify -Dbaseline.skip=true ${UT} ${PROFILE} -Dnsfixtures=DOCUMENT_NS -pl :${MODULE} -nsu
