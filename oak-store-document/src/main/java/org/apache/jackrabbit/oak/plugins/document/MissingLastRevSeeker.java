@@ -22,21 +22,12 @@ package org.apache.jackrabbit.oak.plugins.document;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 
-import org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.RecoverLockState;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.apache.jackrabbit.oak.stats.Clock;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
 
-import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.ClusterNodeState.ACTIVE;
-import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.LEASE_END_KEY;
-import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.REV_RECOVERY_BY;
-import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.REV_RECOVERY_LOCK;
-import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.RecoverLockState.ACQUIRED;
-import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.STATE;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.MODIFIED_IN_SECS;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.getModifiedInSecs;
@@ -46,8 +37,6 @@ import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getSelectedD
  * Utilities to retrieve _lastRev missing update candidates.
  */
 public class MissingLastRevSeeker {
-
-    private static final Logger LOG = LoggerFactory.getLogger(MissingLastRevSeeker.class);
 
     protected final String ROOT_PATH = "/";
 
@@ -123,21 +112,8 @@ public class MissingLastRevSeeker {
      * @return whether the lock has been acquired
      */
     public boolean acquireRecoveryLock(int clusterId, int recoveredBy) {
-        ClusterNodeInfoDocument doc = getClusterNodeInfo(clusterId);
-        if (doc == null) {
-            // this is unexpected...
-            return false;
-        }
-        if (!isRecoveryNeeded(doc)) {
-            return false;
-        }
-        boolean acquired = tryAcquireRecoveryLock(doc, recoveredBy);
-        if (acquired) {
-            return true;
-        }
-        // either we already own the lock or were able to break the lock
-        return doc.isBeingRecoveredBy(recoveredBy)
-                || tryBreakRecoveryLock(doc, recoveredBy);
+        return new RecoveryLock(store, clock, clusterId)
+                .acquireRecoveryLock(recoveredBy);
     }
 
     /**
@@ -152,23 +128,7 @@ public class MissingLastRevSeeker {
      * @param success whether recovery was successful.
      */
     public void releaseRecoveryLock(int clusterId, boolean success) {
-        try {
-            UpdateOp update = new UpdateOp(Integer.toString(clusterId), false);
-            update.set(REV_RECOVERY_LOCK, RecoverLockState.NONE.name());
-            update.set(REV_RECOVERY_BY, null);
-            if (success) {
-                update.set(STATE, null);
-            }
-            ClusterNodeInfoDocument old = store.findAndUpdate(CLUSTER_NODES, update);
-            if (old == null) {
-                throw new RuntimeException("ClusterNodeInfo document for " + clusterId + " missing.");
-            }
-            LOG.info("Released recovery lock for cluster id {} (recovery successful: {})",
-                    clusterId, success);
-        } catch (RuntimeException ex) {
-            LOG.error("Failed to release the recovery lock for clusterNodeId " + clusterId, ex);
-            throw (ex);
-        }
+        new RecoveryLock(store, clock, clusterId).releaseRecoveryLock(success);
     }
 
     public NodeDocument getRoot() {
@@ -185,84 +145,5 @@ public class MissingLastRevSeeker {
      */
     public boolean isRecoveryNeeded(@Nonnull ClusterNodeInfoDocument nodeInfo) {
         return nodeInfo.isActive() && clock.getTime() > nodeInfo.getLeaseEndTime();
-    }
-
-    //-------------------------< internal >-------------------------------------
-
-    /**
-     * Acquire a recovery lock for the given cluster node info document
-     *
-     * @param info
-     *            info document of the cluster that is going to be recovered
-     * @param recoveredBy
-     *            id of cluster doing the recovery ({@code 0} when unknown)
-     * @return whether the lock has been acquired
-     */
-    private boolean tryAcquireRecoveryLock(ClusterNodeInfoDocument info,
-                                           int recoveredBy) {
-        int clusterId = info.getClusterId();
-        try {
-            UpdateOp update = new UpdateOp(Integer.toString(clusterId), false);
-            update.equals(STATE, ACTIVE.name());
-            update.equals(LEASE_END_KEY, info.getLeaseEndTime());
-            update.notEquals(REV_RECOVERY_LOCK, ACQUIRED.name());
-            update.set(REV_RECOVERY_LOCK, ACQUIRED.name());
-            if (recoveredBy != 0) {
-                update.set(REV_RECOVERY_BY, recoveredBy);
-            }
-            ClusterNodeInfoDocument old = store.findAndUpdate(CLUSTER_NODES, update);
-            if (old != null) {
-                LOG.info("Acquired recovery lock for cluster id {}", clusterId);
-            }
-            return old != null;
-        } catch (RuntimeException ex) {
-            LOG.error("Failed to acquire the recovery lock for clusterNodeId " + clusterId, ex);
-            throw (ex);
-        }
-    }
-
-    /**
-     * Checks if the recovering cluster node is inactive and then tries to
-     * break the recovery lock.
-     *
-     * @param doc the cluster node info document of the cluster node to acquire
-     *            the recovery lock for.
-     * @param recoveredBy id of cluster doing the recovery.
-     * @return whether the lock has been acquired.
-     */
-    private boolean tryBreakRecoveryLock(ClusterNodeInfoDocument doc,
-                                         int recoveredBy) {
-        Long recoveryBy = doc.getRecoveryBy();
-        if (recoveryBy == null) {
-            // cannot determine current lock owner
-            return false;
-        }
-        ClusterNodeInfoDocument recovering = getClusterNodeInfo(recoveryBy.intValue());
-        if (recovering == null) {
-            // cannot determine current lock owner
-            return false;
-        }
-        if (recovering.isActive() && recovering.getLeaseEndTime() > clock.getTime()) {
-            // still active, cannot break lock
-            return false;
-        }
-        // try to break the lock
-        try {
-            UpdateOp update = new UpdateOp(Integer.toString(doc.getClusterId()), false);
-            update.equals(STATE, ACTIVE.name());
-            update.equals(REV_RECOVERY_LOCK, ACQUIRED.name());
-            update.equals(REV_RECOVERY_BY, recoveryBy);
-            update.set(REV_RECOVERY_BY, recoveredBy);
-            ClusterNodeInfoDocument old = store.findAndUpdate(CLUSTER_NODES, update);
-            if (old != null) {
-                LOG.info("Acquired (broke) recovery lock for cluster id {}. " +
-                        "Previous lock owner: {}", doc.getClusterId(), recoveryBy);
-            }
-            return old != null;
-        } catch (RuntimeException ex) {
-            LOG.error("Failed to break the recovery lock for clusterNodeId " +
-                    doc.getClusterId(), ex);
-            throw (ex);
-        }
     }
 }

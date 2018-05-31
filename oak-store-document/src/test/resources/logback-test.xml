@@ -29,6 +29,7 @@
     </encoder>
 </appender>
 
+    <logger name="org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo" level="DEBUG"/>
 <root level="INFO">
     <!--
     <appender-ref ref="console"/>

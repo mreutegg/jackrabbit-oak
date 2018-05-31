@@ -134,7 +134,7 @@ public class LastRevRecoveryTest {
         //lastRev should not be updated for C #2
         assertNull(y1.getLastRev().get(c2Id));
 
-        LastRevRecoveryAgent recovery = new LastRevRecoveryAgent(ds1);
+        LastRevRecoveryAgent recovery = new LastRevRecoveryAgent(sharedStore, ds1);
 
         //Do not pass y1 but still y1 should be updated
         recovery.recover(Lists.newArrayList(x1, z1), c2Id);
@@ -164,7 +164,7 @@ public class LastRevRecoveryTest {
         clock.waitUntil(doc.getLeaseEndTime() + 1);
 
         // run recovery on ds2
-        LastRevRecoveryAgent agent = new LastRevRecoveryAgent(ds2);
+        LastRevRecoveryAgent agent = new LastRevRecoveryAgent(sharedStore, ds2);
         Iterable<Integer> clusterIds = agent.getRecoveryCandidateNodes();
         assertTrue(Iterables.contains(clusterIds, c1Id));
         assertEquals("must not recover any documents",
@@ -194,7 +194,7 @@ public class LastRevRecoveryTest {
         seeker.acquireRecoveryLock(c1Id, c2Id);
 
         // run recovery from ds1
-        LastRevRecoveryAgent a1 = new LastRevRecoveryAgent(ds1);
+        LastRevRecoveryAgent a1 = new LastRevRecoveryAgent(sharedStore, ds1);
         // use current time -> do not wait for recovery of other agent
         assertEquals(-1, a1.recover(c1Id, clock.getTime()));
 
@@ -317,7 +317,7 @@ public class LastRevRecoveryTest {
         ds2.getClusterInfo().renewLease();
 
         // run recovery on ds2 for ds1
-        LastRevRecoveryAgent agent = new LastRevRecoveryAgent(ds2);
+        LastRevRecoveryAgent agent = new LastRevRecoveryAgent(sharedStore, ds2);
         Iterable<Integer> clusterIds = agent.getRecoveryCandidateNodes();
         assertTrue(Iterables.contains(clusterIds, c1Id));
         // nothing to recover
