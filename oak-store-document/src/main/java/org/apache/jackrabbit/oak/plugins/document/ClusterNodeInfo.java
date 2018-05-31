@@ -900,8 +900,6 @@ public class ClusterNodeInfo {
                 readWriteMode = mode;
                 store.setReadWriteMode(mode);
             }
-            // TODO: remove
-            // renewed = true;
             return true;
         } catch (DocumentStoreException e) {
             dse = e;

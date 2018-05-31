@@ -29,7 +29,6 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.jackrabbit.oak.api.CommitFailedException.OAK;
 import static org.apache.jackrabbit.oak.commons.PathUtils.ROOT_PATH;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
-import static org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.JOURNAL;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.DocumentNodeStoreBuilder.MANY_CHILDREN_THRESHOLD;
@@ -176,15 +175,6 @@ public final class DocumentNodeStore
      */
     private boolean fairBackgroundOperationLock =
             Boolean.parseBoolean(System.getProperty("oak.fairBackgroundOperationLock", "true"));
-
-    /**
-     * The timeout in milliseconds to wait for the recovery performed by
-     * another cluster node.
-     */
-    // TODO: remove
-    private long recoveryWaitTimeoutMS =
-            Long.getLong("oak.recoveryWaitTimeoutMS", 60000);
-
 
     public static final String SYS_PROP_DISABLE_JOURNAL = "oak.disableJournalDiff";
     /**
@@ -710,32 +700,6 @@ public final class DocumentNodeStore
 
         if (!builder.isBundlingDisabled()) {
             bundlingConfigHandler.initialize(this, executor);
-        }
-    }
-
-
-    /**
-     * Recover _lastRev recovery if needed.
-     * TODO: remove method, but where's the test for this behaviour?
-     *
-     * @throws DocumentStoreException if recovery did not finish within
-     *          {@link #recoveryWaitTimeoutMS}.
-     */
-    private void checkLastRevRecovery() throws DocumentStoreException {
-        long timeout = clock.getTime() + recoveryWaitTimeoutMS;
-        int numRecovered = lastRevRecoveryAgent.recover(clusterId, timeout);
-        if (numRecovered == -1) {
-            ClusterNodeInfoDocument doc = store.find(CLUSTER_NODES, String.valueOf(clusterId));
-            String otherId = "n/a";
-            if (doc != null) {
-                otherId = String.valueOf(doc.get(ClusterNodeInfo.REV_RECOVERY_BY));
-            }
-            String msg = "This cluster node (" + clusterId + ") requires " +
-                    "_lastRev recovery which is currently performed by " +
-                    "another cluster node (" + otherId + "). Recovery is " +
-                    "still ongoing after " + recoveryWaitTimeoutMS + " ms. " +
-                    "Failing startup of this DocumentNodeStore now!";
-            throw new DocumentStoreException(msg);
         }
     }
 

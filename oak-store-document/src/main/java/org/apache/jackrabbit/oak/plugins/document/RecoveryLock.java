@@ -31,8 +31,8 @@ import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.STATE;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES;
 
 /**
- * TODO: document
- * <code>RecoveryLock</code>...
+ * Utility class to acquire and release a recovery lock on an entry in the
+ * {@link Collection#CLUSTER_NODES} collection.
  */
 class RecoveryLock {
 
@@ -44,6 +44,15 @@ class RecoveryLock {
 
     private final int clusterId;
 
+    /**
+     * Prepare a recovery lock on the document store for an entry with the given
+     * {@code clusterId}. Constructing the lock does not check whether an entry
+     * actually exists for the {@code clusterId} and is indeed valid.
+     *
+     * @param store the store where the cluster node entries are stored.
+     * @param clock the clock used to check whether an entry's lease expired.
+     * @param clusterId the {@code clusterId} this lock is created for.
+     */
     RecoveryLock(DocumentStore store, Clock clock, int clusterId) {
         this.store = store;
         this.clock = clock;
