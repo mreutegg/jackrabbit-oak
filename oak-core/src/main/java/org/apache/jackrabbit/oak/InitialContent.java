@@ -142,13 +142,13 @@ public class InitialContent implements RepositoryInitializer, NodeTypeConstants 
     }
     
     //--------------------------< internal >------------------------------------
-    
-    private boolean isInitialized(NodeBuilder versionStorage) {
+
+    private static boolean isInitialized(NodeBuilder versionStorage) {
         PropertyState init = versionStorage.getProperty(":initialized");
         return init != null && init.getValue(Type.LONG) > 0;
     }
 
-    private void createIntermediateNodes(NodeBuilder versionStorage) {
+    private static void createIntermediateNodes(NodeBuilder versionStorage) {
         String fmt = "%02x";
         versionStorage.setProperty(":initialized", 1);
         for (int i = 0; i < 0xff; i++) {
@@ -158,8 +158,8 @@ public class InitialContent implements RepositoryInitializer, NodeTypeConstants 
             }
         }
     }
-    
-    private NodeBuilder storageChild(NodeBuilder node, String name) {
+
+    private static NodeBuilder storageChild(NodeBuilder node, String name) {
         NodeBuilder c = node.child(name);
         if (!c.hasProperty(JCR_PRIMARYTYPE)) {
             c.setProperty(JCR_PRIMARYTYPE, REP_VERSIONSTORAGE, Type.NAME);
