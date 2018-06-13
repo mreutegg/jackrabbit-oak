@@ -15,17 +15,17 @@
    limitations under the License.
  '/
 @startuml
-[*] --> Active : new clusterId
+[*] --> Active : acquire new
 Active : state=Active
 Active : startTime=t
 Active : leaseEnd=t' > tc
 Active -right-> Inactive : dispose
-Active -down-> Expired : lease expired
+Active -down-> Expired : lease\nexpired
 
 Inactive : state=null
 Inactive : startTime=t
 Inactive : leaseEnd=null
-Inactive -left-> Active : acquire
+Inactive -left-> Active : acquire existing
 
 Expired : state=Active
 Expired : startTime=t
@@ -34,10 +34,12 @@ Expired -right-> Recovering : start recovery
 
 Recovering : state=Active
 Recovering : startTime=t
-Recovering : leaseEnd=t' < tc
+Recovering : leaseEnd=t' > tc
 Recovering : recoveryLock=Acquired
 Recovering : recoveryBy=id
-Recovering -up-> Inactive : recovery finished
+Recovering -up-> Inactive : recovery\nsuccessful
+Recovering -left-> Expired : recovery failed
+Recovering -> Recovering : break\nrecovery lock
 
 footer tc : current time
 @enduml
