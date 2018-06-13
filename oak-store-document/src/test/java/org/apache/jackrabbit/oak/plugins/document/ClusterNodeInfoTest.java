@@ -35,6 +35,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
@@ -370,7 +371,7 @@ public class ClusterNodeInfoTest {
             newClusterNodeInfo(1, instanceId2);
             fail("Must fail with DocumentStoreException");
         } catch (DocumentStoreException e) {
-            assertTrue(e.getMessage().contains("expired lease"));
+            assertThat(e.getMessage(), containsString("needs recovery"));
         }
     }
 
@@ -440,7 +441,7 @@ public class ClusterNodeInfoTest {
         String key = String.valueOf(info.getId());
         ClusterNodeInfoDocument infoDoc = store.find(Collection.CLUSTER_NODES, key);
         assertNotNull(infoDoc);
-        assertTrue(util.isRecoveryNeeded(infoDoc));
+        assertTrue(infoDoc.isRecoveryNeeded(clock.getTime()));
     }
 
     private void recoverClusterNode(int clusterId) throws Exception {

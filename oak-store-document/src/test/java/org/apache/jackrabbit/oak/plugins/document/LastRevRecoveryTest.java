@@ -20,6 +20,7 @@
 package org.apache.jackrabbit.oak.plugins.document;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
@@ -41,10 +42,13 @@ import static com.google.common.collect.Lists.newArrayList;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getRootDocument;
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -208,6 +212,7 @@ public class LastRevRecoveryTest {
     public void failStartupOnRecoveryTimeout() throws Exception {
         String clusterId = String.valueOf(c1Id);
         ClusterNodeInfoDocument doc = sharedStore.find(CLUSTER_NODES, clusterId);
+        assertNotNull(doc);
 
         NodeBuilder builder = ds1.getRoot().builder();
         builder.child("x").child("y").child("z");
@@ -221,7 +226,7 @@ public class LastRevRecoveryTest {
         // 'wait' until lease expires
         clock.waitUntil(doc.getLeaseEndTime() + 1);
         // make sure ds2 lease is still fine
-        ds2.getClusterInfo().renewLease();
+        assertTrue(ds2.getClusterInfo().renewLease());
 
         // simulate ongoing recovery by cluster node 2
         MissingLastRevSeeker seeker = new MissingLastRevSeeker(sharedStore, clock);
@@ -237,6 +242,7 @@ public class LastRevRecoveryTest {
             fail("DocumentStoreException expected");
         } catch (DocumentStoreException e) {
             // expected
+            assertThat(e.getMessage(), containsString("needs recovery"));
         }
         seeker.releaseRecoveryLock(c1Id, true);
     }
@@ -246,6 +252,7 @@ public class LastRevRecoveryTest {
     public void breakRecoveryLockWithExpiredLease() throws Exception {
         String clusterId = String.valueOf(c1Id);
         ClusterNodeInfoDocument info1 = sharedStore.find(CLUSTER_NODES, clusterId);
+        assertNotNull(info1);
 
         NodeBuilder builder = ds1.getRoot().builder();
         builder.child("x").child("y").child("z");
@@ -266,6 +273,7 @@ public class LastRevRecoveryTest {
         assertTrue(seeker.acquireRecoveryLock(c1Id, c2Id));
         // simulate crash of ds2
         ClusterNodeInfoDocument info2 = sharedStore.find(CLUSTER_NODES, String.valueOf(c2Id));
+        assertNotNull(info2);
         ds2.dispose();
         // reset clusterNodes entry
         sharedStore.remove(CLUSTER_NODES, String.valueOf(c2Id));
@@ -274,7 +282,8 @@ public class LastRevRecoveryTest {
         clock.waitUntil(info2.getLeaseEndTime() + 1);
 
         info1 = sharedStore.find(CLUSTER_NODES, clusterId);
-        assertTrue(seeker.isRecoveryNeeded(info1));
+        assertNotNull(info1);
+        assertTrue(info1.isRecoveryNeeded(clock.getTime()));
         assertTrue(info1.isBeingRecovered());
 
         // restart ds1
@@ -286,7 +295,8 @@ public class LastRevRecoveryTest {
                 .setClusterId(1)
                 .getNodeStore();
         info1 = sharedStore.find(CLUSTER_NODES, clusterId);
-        assertFalse(seeker.isRecoveryNeeded(info1));
+        assertNotNull(info1);
+        assertFalse(info1.isRecoveryNeeded(clock.getTime()));
         assertFalse(info1.isBeingRecovered());
     }
 
@@ -326,6 +336,71 @@ public class LastRevRecoveryTest {
         // must not set sweep revision
         doc = getRootDocument(sharedStore);
         assertNull(doc.getSweepRevisions().getRevision(c1Id));
+    }
+
+    @Test
+    public void selfRecoveryPassedDeadline() throws Exception {
+        String clusterId = String.valueOf(c1Id);
+        ClusterNodeInfoDocument info1 = sharedStore.find(CLUSTER_NODES, clusterId);
+        assertNotNull(info1);
+
+        NodeBuilder builder = ds1.getRoot().builder();
+        builder.child("x").child("y").child("z");
+        merge(ds1, builder);
+        ds1.dispose();
+
+        // reset clusterNodes entry to simulate a crash of ds1
+        sharedStore.remove(CLUSTER_NODES, clusterId);
+        sharedStore.create(CLUSTER_NODES, newArrayList(updateOpFromDocument(info1)));
+
+        // 'wait' until lease expires
+        clock.waitUntil(info1.getLeaseEndTime() + 1);
+
+        AtomicBoolean delay = new AtomicBoolean(true);
+        // simulate a startup with self-recovery by acquiring the clusterId
+        // this will call the recovery handler because the lease is expired
+        // use a seeker that takes longer than the lease duration
+        MissingLastRevSeeker seeker = new MissingLastRevSeeker(sharedStore, clock) {
+            @Override
+            public boolean acquireRecoveryLock(int clusterId, int recoveredBy) {
+                assertTrue(super.acquireRecoveryLock(clusterId, recoveredBy));
+                if (delay.get()) {
+                    try {
+                        clock.waitUntil(clock.getTime() + ClusterNodeInfo.DEFAULT_LEASE_DURATION_MILLIS + 1);
+                    } catch (InterruptedException e) {
+                        fail();
+                    }
+                }
+                return true;
+            }
+        };
+        RecoveryHandler recoveryHandler = new RecoveryHandlerImpl(
+                sharedStore, clock, seeker);
+        try {
+            // Explicitly acquiring the clusterId must fail
+            // when it takes too long to recover
+            ClusterNodeInfo.getInstance(sharedStore, recoveryHandler,
+                    null, null, c1Id);
+            fail("must fail with DocumentStoreException");
+        } catch (DocumentStoreException e) {
+            assertThat(e.getMessage(), containsString("needs recovery"));
+        }
+        // But must succeed with auto-assignment of clusterId
+        // even if machineId and instanceId match
+        ClusterNodeInfo cni = ClusterNodeInfo.getInstance(sharedStore,
+                recoveryHandler,null, null, 0);
+        // though clusterId must not be the one that took too long to recover
+        assertNotEquals(c1Id, cni.getId());
+        // hence recovery is still needed for c1Id
+        assertTrue(seeker.isRecoveryNeeded());
+        cni.dispose();
+        // now run again without delay with the explicit clusterId
+        delay.set(false);
+        // must succeed now
+        cni = ClusterNodeInfo.getInstance(sharedStore, recoveryHandler,
+                null, null, c1Id);
+        assertEquals(c1Id, cni.getId());
+        cni.dispose();
     }
 
     private NodeDocument getDocument(DocumentNodeStore nodeStore, String path) {

@@ -94,7 +94,15 @@ public class LastRevRecoveryAgent {
      * nodes. If another cluster node is already performing the recovery for the
      * given {@code clusterId}, this method will {@code waitUntil} the given
      * time in milliseconds for the recovery to finish.
-     *
+     * <p>
+     * If recovery is performed for the clusterId as exposed by the revision
+     * context passed to the constructor of this recovery agent, then this
+     * method will put a deadline on how long recovery may take. The deadline
+     * is the current lease end as read from the {@code clusterNodes} collection
+     * entry for the {@code clusterId} to recover minus the
+     * {@link ClusterNodeInfo#DEFAULT_LEASE_FAILURE_MARGIN_MILLIS}. This method
+     * will throw a {@link DocumentStoreException} if the deadline is reached.
+     * <p>
      * This method will return:
      * <ul>
      *     <li>{@code -1} when another cluster node is busy performing recovery
@@ -113,6 +121,8 @@ public class LastRevRecoveryAgent {
      *                  already performing the recovery.
      * @return the number of restored nodes or {@code -1} if a timeout occurred
      *          while waiting for an ongoing recovery by another cluster node.
+     * @throws DocumentStoreException if the deadline is reached or some other
+     *          error occurs while reading from the underlying document store.
      */
     public int recover(int clusterId, long waitUntil)
             throws DocumentStoreException {
@@ -121,7 +131,7 @@ public class LastRevRecoveryAgent {
         if (nodeInfo != null) {
             // Check if _lastRev recovery needed for this cluster node
             // state is Active && current time past leaseEnd
-            if (missingLastRevUtil.isRecoveryNeeded(nodeInfo)) {
+            if (nodeInfo.isRecoveryNeeded(revisionContext.getClock().getTime())) {
                 // retrieve the root document's _lastRev
                 NodeDocument root = missingLastRevUtil.getRoot();
                 Revision lastRev = root.getLastRev().get(clusterId);
@@ -160,24 +170,37 @@ public class LastRevRecoveryAgent {
      * @param clusterId the cluster id for which the _lastRev are to be recovered
      * @return the number of restored nodes or {@code -1} if there is an ongoing
      *          recovery by another cluster node.
+     * @throws DocumentStoreException if the deadline is reached or some other
+     *          error occurs while reading from the underlying document store.
      */
-    public int recover(int clusterId) {
+    public int recover(int clusterId) throws DocumentStoreException {
         return recover(clusterId, 0);
     }
 
     /**
-     * Recover the correct _lastRev updates for the given candidate nodes.
+     * Same as {@link #recover(Iterable, int, boolean)} with {@code dryRun} set
+     * to {@code false}.
      *
      * @param suspects the potential suspects
      * @param clusterId the cluster id for which _lastRev recovery needed
      * @return the number of documents that required recovery.
+     * @throws DocumentStoreException if the deadline is reached or some other
+     *          error occurs while reading from the underlying document store.
      */
-    public int recover(Iterable<NodeDocument> suspects, int clusterId) {
+    public int recover(Iterable<NodeDocument> suspects, int clusterId)
+            throws DocumentStoreException {
         return recover(suspects, clusterId, false);
     }
 
     /**
-     * Recover the correct _lastRev updates for the given candidate nodes.
+     * Recover the correct _lastRev updates for the given candidate nodes. If
+     * recovery is performed for the clusterId as exposed by the revision
+     * context passed to the constructor of this recovery agent, then this
+     * method will put a deadline on how long recovery may take. The deadline
+     * is the current lease end as read from the {@code clusterNodes} collection
+     * entry for the {@code clusterId} to recover minus the
+     * {@link ClusterNodeInfo#DEFAULT_LEASE_FAILURE_MARGIN_MILLIS}. This method
+     * will throw a {@link DocumentStoreException} if the deadline is reached.
      *
      * @param suspects the potential suspects
      * @param clusterId the cluster id for which _lastRev recovery needed
@@ -186,10 +209,23 @@ public class LastRevRecoveryAgent {
      * @return the number of documents that required recovery. This method
      *          returns the number of the affected documents even if
      *          {@code dryRun} is set true and no document was changed.
+     * @throws DocumentStoreException if the deadline is reached or some other
+     *          error occurs while reading from the underlying document store.
      */
     public int recover(final Iterable<NodeDocument> suspects,
                        final int clusterId, final boolean dryRun)
             throws DocumentStoreException {
+        // set a deadline if this is a self recovery. Self recovery does not
+        // update the lease in a background thread and must terminate before
+        // the lease acquired by the recovery lock expires.
+        long deadline = Long.MAX_VALUE;
+        if (clusterId == revisionContext.getClusterId()) {
+            ClusterNodeInfoDocument nodeInfo = missingLastRevUtil.getClusterNodeInfo(clusterId);
+            if (nodeInfo != null && nodeInfo.isActive()) {
+                deadline = nodeInfo.getLeaseEndTime() - ClusterNodeInfo.DEFAULT_LEASE_FAILURE_MARGIN_MILLIS;
+            }
+        }
+
         NodeDocument rootDoc = Utils.getRootDocument(store);
 
         // first run a sweep
@@ -328,6 +364,15 @@ public class LastRevRecoveryAgent {
             log.info("Dry run of lastRev recovery identified [{}] documents for " +
                     "cluster node [{}]: {}", size, clusterId, updates);
         } else {
+            // check deadline before the update
+            if (revisionContext.getClock().getTime() > deadline) {
+                String msg = String.format("Cluster node %d was unable to " +
+                        "perform lastRev recovery for clusterId %d within " +
+                        "deadline: %s", clusterId, clusterId,
+                        Utils.timestampToString(deadline));
+                throw new DocumentStoreException(msg);
+            }
+
             //UnsavedModifications is designed to be used in concurrent
             //access mode. For recovery case there is no concurrent access
             //involve so just pass a new lock instance
@@ -384,6 +429,14 @@ public class LastRevRecoveryAgent {
     /**
      * Retrieves possible candidates which have been modified after the given
      * {@code startTime} and recovers the missing updates.
+     * <p>
+     * If recovery is performed for the clusterId as exposed by the revision
+     * context passed to the constructor of this recovery agent, then this
+     * method will put a deadline on how long recovery may take. The deadline
+     * is the current lease end as read from the {@code clusterNodes} collection
+     * entry for the {@code clusterId} to recover minus the
+     * {@link ClusterNodeInfo#DEFAULT_LEASE_FAILURE_MARGIN_MILLIS}. This method
+     * will throw a {@link DocumentStoreException} if the deadline is reached.
      *
      * @param nodeInfo the info of the cluster node to recover.
      * @param startTime the start time
@@ -393,11 +446,14 @@ public class LastRevRecoveryAgent {
      * @return the number of restored nodes or {@code -1} if recovery is still
      *      ongoing by another process even when {@code waitUntil} time was
      *      reached.
+     * @throws DocumentStoreException if the deadline is reached or some other
+     *          error occurs while reading from the underlying document store.
      */
     private int recoverCandidates(final ClusterNodeInfoDocument nodeInfo,
                                   final long startTime,
                                   final long waitUntil,
-                                  final String info) {
+                                  final String info)
+            throws DocumentStoreException {
         ClusterNodeInfoDocument infoDoc = nodeInfo;
         int clusterId = infoDoc.getClusterId();
         for (;;) {
@@ -428,7 +484,12 @@ public class LastRevRecoveryAgent {
                 throw new DocumentStoreException(msg, e);
             }
             infoDoc = missingLastRevUtil.getClusterNodeInfo(clusterId);
-            if (!missingLastRevUtil.isRecoveryNeeded(infoDoc)) {
+            if (infoDoc == null) {
+                String msg = String.format("No cluster node info document " +
+                        "for id %d", clusterId);
+                throw new DocumentStoreException(msg);
+            }
+            if (!infoDoc.isRecoveryNeeded(clock.getTime())) {
                 // meanwhile another process finished recovery
                 return 0;
             }
@@ -525,7 +586,8 @@ public class LastRevRecoveryAgent {
                 new Predicate<ClusterNodeInfoDocument>() {
             @Override
             public boolean apply(ClusterNodeInfoDocument input) {
-                return revisionContext.getClusterId() != input.getClusterId() && missingLastRevUtil.isRecoveryNeeded(input);
+                return revisionContext.getClusterId() != input.getClusterId()
+                        && input.isRecoveryNeeded(revisionContext.getClock().getTime());
             }
         }), ClusterNodeInfoDocument::getClusterId);
     }

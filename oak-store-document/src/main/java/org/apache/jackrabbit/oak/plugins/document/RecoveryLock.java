@@ -16,13 +16,12 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
-import javax.annotation.Nonnull;
-
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.ClusterNodeState.ACTIVE;
+import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.DEFAULT_LEASE_DURATION_MILLIS;
 import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.LEASE_END_KEY;
 import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.REV_RECOVERY_BY;
 import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.REV_RECOVERY_LOCK;
@@ -74,11 +73,10 @@ class RecoveryLock {
             // this is unexpected...
             return false;
         }
-        if (!isRecoveryNeeded(doc)) {
+        if (!doc.isRecoveryNeeded(clock.getTime())) {
             return false;
         }
-        boolean acquired = tryAcquireRecoveryLock(doc, recoveredBy);
-        if (acquired) {
+        if (tryAcquireRecoveryLock(doc, recoveredBy)) {
             return true;
         }
         // either we already own the lock or were able to break the lock
@@ -104,6 +102,9 @@ class RecoveryLock {
             if (success) {
                 update.set(STATE, null);
                 update.set(LEASE_END_KEY, null);
+            } else {
+                // make sure lease is expired
+                update.set(LEASE_END_KEY, clock.getTime() - 1);
             }
             ClusterNodeInfoDocument old = store.findAndUpdate(CLUSTER_NODES, update);
             if (old == null) {
@@ -118,14 +119,6 @@ class RecoveryLock {
     }
 
     //-------------------------------< internal >-------------------------------
-
-    /**
-     * Check if _lastRev recovery needed for this cluster node
-     * state is Active and currentTime past the leaseEnd time
-     */
-    private boolean isRecoveryNeeded(@Nonnull ClusterNodeInfoDocument nodeInfo) {
-        return nodeInfo.isActive() && clock.getTime() > nodeInfo.getLeaseEndTime();
-    }
 
     /**
      * Acquire a recovery lock for the given cluster node info document
@@ -145,6 +138,10 @@ class RecoveryLock {
             update.equals(LEASE_END_KEY, info.getLeaseEndTime());
             update.notEquals(REV_RECOVERY_LOCK, ACQUIRED.name());
             update.set(REV_RECOVERY_LOCK, ACQUIRED.name());
+            // Renew the lease once to give the recovery some time to finish
+            // in case recovery is done by the same clusterId. In this scenario
+            // the lease is not updated by a background thread.
+            update.set(LEASE_END_KEY, clock.getTime() + DEFAULT_LEASE_DURATION_MILLIS);
             if (recoveredBy != 0) {
                 update.set(REV_RECOVERY_BY, recoveredBy);
             }
@@ -193,6 +190,10 @@ class RecoveryLock {
             update.equals(REV_RECOVERY_LOCK, ACQUIRED.name());
             update.equals(REV_RECOVERY_BY, recoveryBy);
             update.set(REV_RECOVERY_BY, recoveredBy);
+            // Renew the lease once to give the recovery some time to finish
+            // in case recovery is done by the same clusterId. In this scenario
+            // the lease is not updated by a background thread.
+            update.set(LEASE_END_KEY, clock.getTime() + DEFAULT_LEASE_DURATION_MILLIS);
             ClusterNodeInfoDocument old = store.findAndUpdate(CLUSTER_NODES, update);
             if (old != null) {
                 LOG.info("Acquired (broke) recovery lock for cluster id {}. " +

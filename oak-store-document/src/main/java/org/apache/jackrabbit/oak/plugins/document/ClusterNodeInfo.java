@@ -513,7 +513,11 @@ public class ClusterNodeInfo {
             String mId = "" + doc.get(MACHINE_ID_KEY);
             String iId = "" + doc.get(INSTANCE_ID_KEY);
 
-            if (leaseEnd != null && leaseEnd > now) {
+            // handle active clusterId with valid lease and no recovery lock
+            // -> potentially wait for lease if machine and instance id match
+            if (leaseEnd != null
+                    && leaseEnd > now
+                    && !doc.isRecoveryNeeded(now)) {
                 // wait if (a) instructed to, and (b) also the remaining time
                 // time is not much bigger than the lease interval (in which
                 // case something is very very wrong anyway)
@@ -530,19 +534,22 @@ public class ClusterNodeInfo {
                 continue;
             }
 
-            if (isLeaseExpired(doc)) {
+            // if we get here the clusterId either:
+            // 1) is inactive
+            // 2) needs recovery
+            if (doc.isRecoveryNeeded(now)) {
                 if (mId.equals(machineId) && iId.equals(instanceId)) {
                     // this id matches our environment and has an expired lease
                     // use it after a successful recovery
                     if (!recoveryHandler.recover(id)) {
                         reuseFailureReason = reject(id,
-                                "expired lease and unable to run recovery");
+                                "needs recovery and was unable to perform it myself");
                         continue;
                     }
                 } else {
                     // a different machine or instance
                     reuseFailureReason = reject(id,
-                            "expired lease and machineId/instanceId do not match: " +
+                            "needs recovery and machineId/instanceId do not match: " +
                                     mId + "/" + iId + " != " + machineId + "/" + instanceId);
                     continue;
                 }
@@ -580,14 +587,6 @@ public class ClusterNodeInfo {
     private static String reject(int id, String reason) {
         LOG.debug("Cannot acquire {}: {}", id, reason);
         return reason;
-    }
-
-    private static boolean isLeaseExpired(ClusterNodeInfoDocument doc) {
-        Long leaseEnd = (Long) doc.get(LEASE_END_KEY);
-        if (leaseEnd == null) {
-            return false;
-        }
-        return doc.isActive() && leaseEnd < getCurrentTime();
     }
 
     private static boolean waitForLeaseExpiry(DocumentStore store, ClusterNodeInfoDocument cdoc, long leaseEnd, String machineId,

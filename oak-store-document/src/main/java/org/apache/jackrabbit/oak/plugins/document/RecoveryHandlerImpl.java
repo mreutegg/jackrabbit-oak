@@ -16,9 +16,6 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
-import javax.annotation.CheckForNull;
-import javax.annotation.Nonnull;
-
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.slf4j.Logger;
@@ -56,11 +53,21 @@ class RecoveryHandlerImpl implements RecoveryHandler {
 
     @Override
     public boolean recover(int clusterId) {
+        try {
+            return recoverInternal(clusterId);
+        } catch (DocumentStoreException e) {
+            LOG.warn("Recovery failed for cluster node {}", clusterId, e);
+            return false;
+        }
+    }
+
+    private boolean recoverInternal(int clusterId)
+            throws DocumentStoreException {
         NodeDocument root = Utils.getRootDocument(store);
         // prepare a context for recovery
         RevisionContext context = new RecoveryContext(
                 root, clock, clusterId,
-                new CommitValueResolver(COMMIT_VALUE_CACHE_SIZE, root::getSweepRevisions));
+                new CachingCommitValueResolver(COMMIT_VALUE_CACHE_SIZE, root::getSweepRevisions));
         LastRevRecoveryAgent agent = new LastRevRecoveryAgent(
                 store, context, lastRevSeeker, id -> {});
         long timeout = context.getClock().getTime() + recoveryWaitTimeoutMS;
@@ -82,64 +89,4 @@ class RecoveryHandlerImpl implements RecoveryHandler {
         return true;
     }
 
-    private final class RecoveryContext implements RevisionContext {
-
-        private final NodeDocument root;
-        private final Clock clock;
-        private final int clusterId;
-        private final CommitValueResolver resolver;
-
-        RecoveryContext(NodeDocument root,
-                        Clock clock,
-                        int clusterId,
-                        CommitValueResolver resolver) {
-            this.root = root;
-            this.clock = clock;
-            this.clusterId = clusterId;
-            this.resolver = resolver;
-        }
-
-        @Override
-        public UnmergedBranches getBranches() {
-            // an expired cluster node does not have active unmerged branches
-            return new UnmergedBranches();
-        }
-
-        @Override
-        public UnsavedModifications getPendingModifications() {
-            // an expired cluster node does not have
-            // pending in-memory _lastRev updates
-            return new UnsavedModifications();
-        }
-
-        @Override
-        public int getClusterId() {
-            return clusterId;
-        }
-
-        @Nonnull
-        @Override
-        public RevisionVector getHeadRevision() {
-            return new RevisionVector(root.getLastRev().values());
-        }
-
-        @Nonnull
-        @Override
-        public Revision newRevision() {
-            return Revision.newRevision(clusterId);
-        }
-
-        @Nonnull
-        @Override
-        public Clock getClock() {
-            return clock;
-        }
-
-        @CheckForNull
-        @Override
-        public String getCommitValue(@Nonnull Revision changeRevision,
-                                     @Nonnull NodeDocument doc) {
-            return resolver.resolve(changeRevision, doc);
-        }
-    }
 }

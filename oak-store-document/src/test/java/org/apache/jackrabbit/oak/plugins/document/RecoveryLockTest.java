@@ -18,6 +18,11 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
+
 import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
 import org.apache.jackrabbit.oak.stats.Clock;
 import org.junit.After;
@@ -26,10 +31,12 @@ import org.junit.Test;
 
 import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.DEFAULT_LEASE_UPDATE_INTERVAL_MILLIS;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES;
+import static org.hamcrest.Matchers.lessThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 public class RecoveryLockTest {
@@ -37,6 +44,8 @@ public class RecoveryLockTest {
     private DocumentStore store = new MemoryDocumentStore();
 
     private Clock clock = new Clock.Virtual();
+
+    private ExecutorService executor = Executors.newCachedThreadPool();
 
     private RecoveryLock lock1 = new RecoveryLock(store, clock, 1);
     private RecoveryLock lock2 = new RecoveryLock(store, clock, 2);
@@ -100,6 +109,62 @@ public class RecoveryLockTest {
         assertFalse(c.isBeingRecovered());
         assertFalse(c.isBeingRecoveredBy(2));
         assertNotNull(c.get(ClusterNodeInfo.LEASE_END_KEY));
+        assertThat(c.getLeaseEndTime(), lessThan(clock.getTime()));
+    }
+
+    @Test
+    public void inactive() {
+        info1.dispose();
+        assertFalse(lock1.acquireRecoveryLock(1));
+        assertFalse(lock1.acquireRecoveryLock(2));
+    }
+
+    @Test
+    public void selfRecoveryWithinDeadline() throws Exception {
+        // expire clusterId 1
+        clock.waitUntil(info1.getLeaseEndTime() + DEFAULT_LEASE_UPDATE_INTERVAL_MILLIS);
+        ClusterNodeInfoDocument c = infoDocument(1);
+        MissingLastRevSeeker seeker = new MissingLastRevSeeker(store, clock);
+        assertTrue(c.isRecoveryNeeded(clock.getTime()));
+        assertFalse(c.isBeingRecovered());
+
+        Semaphore recovering = new Semaphore(0);
+        Semaphore recovered = new Semaphore(0);
+        // simulate new startup and get info again
+        Future<ClusterNodeInfo> infoFuture = executor.submit(() ->
+                ClusterNodeInfo.getInstance(store, clusterId -> {
+                    assertTrue(lock1.acquireRecoveryLock(1));
+                    recovering.release();
+                    recovered.acquireUninterruptibly();
+                    lock1.releaseRecoveryLock(true);
+                    return true;
+        }, null, "node1", 1));
+        // wait until submitted task is in recovery
+        recovering.acquireUninterruptibly();
+
+        // check state again
+        c = infoDocument(1);
+        assertTrue(c.isRecoveryNeeded(clock.getTime()));
+        assertTrue(c.isBeingRecovered());
+        assertTrue(c.isBeingRecoveredBy(1));
+        // clusterId 2 must not be able to acquire (break) the recovery lock
+        assertFalse(lock1.acquireRecoveryLock(2));
+
+        // signal recovery to continue
+        recovered.release();
+        ClusterNodeInfo info1 = infoFuture.get();
+        assertEquals(1, info1.getId());
+
+        // check state again
+        c = infoDocument(1);
+        assertFalse(c.isRecoveryNeeded(clock.getTime()));
+        assertFalse(c.isBeingRecovered());
+        assertFalse(c.isBeingRecoveredBy(1));
+
+        // neither must be able to acquire a recovery lock on
+        // an active entry with a valid lease
+        assertFalse(lock1.acquireRecoveryLock(1));
+        assertFalse(lock1.acquireRecoveryLock(2));
     }
 
     private ClusterNodeInfoDocument infoDocument(int clusterId) {

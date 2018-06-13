@@ -19,6 +19,8 @@
 
 package org.apache.jackrabbit.oak.plugins.document;
 
+import java.util.stream.StreamSupport;
+
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 
@@ -43,14 +45,6 @@ public class MissingLastRevSeeker {
     private final DocumentStore store;
 
     protected final Clock clock;
-
-    private final Predicate<ClusterNodeInfoDocument> isRecoveryNeeded =
-            new Predicate<ClusterNodeInfoDocument>() {
-        @Override
-        public boolean apply(ClusterNodeInfoDocument nodeInfo) {
-            return isRecoveryNeeded(nodeInfo);
-        }
-    };
 
     public MissingLastRevSeeker(DocumentStore store, Clock clock) {
         this.store = store;
@@ -135,15 +129,27 @@ public class MissingLastRevSeeker {
         return store.find(Collection.NODES, Utils.getIdFromPath(ROOT_PATH));
     }
 
+    /**
+     * Returns {@code true} if any of the cluster node info documents satisfies
+     * {@link ClusterNodeInfoDocument#isRecoveryNeeded(long)} where the passed
+     * timestamp is the current time.
+     *
+     * @return {@code true} if any of the cluster nodes need recovery,
+     *          {@code false} otherwise.
+     */
     public boolean isRecoveryNeeded() {
-        return Iterables.any(getAllClusters(), isRecoveryNeeded);
+        long now = clock.getTime();
+        return StreamSupport.stream(getAllClusters().spliterator(), false)
+                .anyMatch(info -> info != null && info.isRecoveryNeeded(now));
     }
 
     /**
-     * Check if _lastRev recovery needed for this cluster node
-     * state is Active and currentTime past the leaseEnd time
+     * Same as {@link ClusterNodeInfoDocument#isRecoveryNeeded(long)}.
+     *
+     * @deprecated use {@link ClusterNodeInfoDocument#isRecoveryNeeded(long)}
+     *          instead.
      */
     public boolean isRecoveryNeeded(@Nonnull ClusterNodeInfoDocument nodeInfo) {
-        return nodeInfo.isActive() && clock.getTime() > nodeInfo.getLeaseEndTime();
+        return nodeInfo.isRecoveryNeeded(clock.getTime());
     }
 }
