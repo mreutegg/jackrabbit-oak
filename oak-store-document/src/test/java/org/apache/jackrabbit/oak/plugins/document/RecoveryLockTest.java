@@ -31,6 +31,7 @@ import org.junit.Test;
 
 import static org.apache.jackrabbit.oak.plugins.document.ClusterNodeInfo.DEFAULT_LEASE_UPDATE_INTERVAL_MILLIS;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.lessThan;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -38,6 +39,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class RecoveryLockTest {
 
@@ -74,6 +76,19 @@ public class RecoveryLockTest {
     @Test
     public void acquireUnknown() {
         assertFalse(lock2.acquireRecoveryLock(1));
+    }
+
+    @Test
+    public void releaseRemovedClusterNodeInfo() throws Exception {
+        clock.waitUntil(info1.getLeaseEndTime() + DEFAULT_LEASE_UPDATE_INTERVAL_MILLIS);
+        assertTrue(lock1.acquireRecoveryLock(2));
+        store.remove(CLUSTER_NODES, String.valueOf(info1.getId()));
+        try {
+            lock1.releaseRecoveryLock(false);
+            fail("Must fail with DocumentStoreException");
+        } catch (DocumentStoreException e) {
+            assertThat(e.getMessage(), containsString("does not exist"));
+        }
     }
 
     @Test
