@@ -17,6 +17,7 @@
 # Oak Document Storage
 
 * [Oak Document Storage](#oak-document-storage)
+    * [New in 1.10](#new-1.10)
     * [New in 1.8](#new-1.8)
     * [New in 1.6](#new-1.6)
     * [Backend implementations](#backend-implementations)
@@ -50,6 +51,11 @@ The plugin implements the low level `NodeStore` interface.
 
 The document storage optionally uses the [persistent cache](persistent-cache.html)
 to reduce read operations on the backend storage.
+
+## <a name="new-1.10"></a> New in 1.10
+
+* Use of MongoDB client sessions. See also [read preference](document/mongo-document-store.html#read-preference).
+* [Greedy cluster node info][OAK-7316]. See also [Acquire a Cluster Node ID](#acquire-a-cluster-node-id).
 
 ## <a name="new-1.8"></a> New in 1.8
 
@@ -812,6 +818,7 @@ For more details, see also the [OSGi configuration][osgi-config] page.
 [OAK-1156]: https://issues.apache.org/jira/browse/OAK-1156
 [OAK-2646]: https://issues.apache.org/jira/browse/OAK-2646
 [OAK-2546]: https://issues.apache.org/jira/browse/OAK-2546
+[OAK-7316]: https://issues.apache.org/jira/browse/OAK-7316
 [osgi-config]: ../osgi_config.html#document-node-store
 [cache-allocation]: ../osgi_config.html#cache-allocation
 
