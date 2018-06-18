@@ -261,6 +261,35 @@ public class ClusterNodeInfoTest {
     }
 
     @Test
+    public void readOnlyClusterNodeInfo() {
+        ClusterNodeInfo info = ClusterNodeInfo.getReadOnlyInstance(store);
+        assertEquals(0, info.getId());
+        assertEquals(Long.MAX_VALUE, info.getLeaseEndTime());
+        assertFalse(info.renewLease());
+    }
+
+    @Test
+    public void ignoreEntryWithInvalidID() {
+        String instanceId1 = "node1";
+
+        ClusterNodeInfo info1 = newClusterNodeInfo(0, instanceId1);
+        assertEquals(1, info1.getId());
+        assertEquals(instanceId1, info1.getInstanceId());
+        // shut it down
+        info1.dispose();
+
+        // sneak in an invalid entry
+        UpdateOp op = new UpdateOp("invalid", true);
+        store.create(Collection.CLUSTER_NODES, Collections.singletonList(op));
+
+        // acquire again
+        info1 = newClusterNodeInfo(0, instanceId1);
+        assertEquals(1, info1.getId());
+        assertEquals(instanceId1, info1.getInstanceId());
+        info1.dispose();
+    }
+
+    @Test
     public void acquireInactiveClusterId() {
         // simulate multiple cluster nodes
         String instanceId1 = "node1";
@@ -438,7 +467,7 @@ public class ClusterNodeInfoTest {
     }
 
     @Test
-    public void skipClusterIdWithoutStartTime() throws Exception {
+    public void skipClusterIdWithoutStartTime() {
         ClusterNodeInfo info = newClusterNodeInfo(0);
         int id = info.getId();
         assertEquals(1, id);

@@ -377,7 +377,7 @@ public class ClusterNodeInfo {
             }
 
             @Override
-            public long getLeaseTime() {
+            public long getLeaseEndTime() {
                 return Long.MAX_VALUE;
             }
 
