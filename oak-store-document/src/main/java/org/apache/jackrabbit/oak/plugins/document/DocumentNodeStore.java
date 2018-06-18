@@ -384,7 +384,7 @@ public final class DocumentNodeStore
     /**
      * The commit value resolver for this node store.
      */
-    private final CachingCommitValueResolver commitValueResolver;
+    private final CommitValueResolver commitValueResolver;
 
     /**
      * The blob store.

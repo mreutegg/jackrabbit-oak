@@ -24,15 +24,15 @@ import java.util.Comparator;
  * cluster node info with a matching environment before others that do not match
  * and then compares the clusterId, lower values first.
  */
-public class ClusterNodeInfoComparator implements Comparator<ClusterNodeInfo> {
+class ClusterNodeInfoComparator implements Comparator<ClusterNodeInfo> {
 
     private static final Comparator<Boolean> BOOLEAN_REVERSED = Comparator.comparing(Boolean::booleanValue).reversed();
 
     private final String machineId;
     private final String instanceId;
 
-    public ClusterNodeInfoComparator(String machineId,
-                                     String instanceId) {
+    ClusterNodeInfoComparator(String machineId,
+                              String instanceId) {
         this.machineId = machineId;
         this.instanceId = instanceId;
     }

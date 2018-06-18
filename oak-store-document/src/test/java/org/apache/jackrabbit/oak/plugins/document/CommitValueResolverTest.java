@@ -40,7 +40,7 @@ public class CommitValueResolverTest {
 
     private DocumentNodeStore ns;
 
-    private CachingCommitValueResolver resolver;
+    private CommitValueResolver resolver;
 
     @Before
     public void setup() {
