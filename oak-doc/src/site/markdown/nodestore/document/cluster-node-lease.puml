@@ -19,7 +19,7 @@
 Active : state=Active
 Active : startTime=t
 Active : leaseEnd=t' > tc
-Active -right-> Inactive : dispose
+Active -right-> Inactive : release
 Active -down-> Expired : lease\nexpired
 
 Inactive : state=null
