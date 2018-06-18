@@ -281,6 +281,31 @@ public class ClusterNodeInfoTest {
     }
 
     @Test
+    public void acquireInactiveClusterIdWithMatchingEnvironment() {
+        // simulate multiple cluster nodes
+        String instanceId1 = "node1";
+        String instanceId2 = "node2";
+
+        ClusterNodeInfo info1 = newClusterNodeInfo(0, instanceId1);
+        assertEquals(1, info1.getId());
+        assertEquals(instanceId1, info1.getInstanceId());
+
+        // simulate start from different location
+        ClusterNodeInfo info2 = newClusterNodeInfo(0, instanceId2);
+        assertEquals(2, info2.getId());
+        assertEquals(instanceId2, info2.getInstanceId());
+
+        info1.dispose();
+        info2.dispose();
+
+        // restart node2
+        info2 = newClusterNodeInfo(0, instanceId2);
+        // must acquire clusterId 2 again
+        assertEquals(2, info2.getId());
+        assertEquals(instanceId2, info2.getInstanceId());
+    }
+
+    @Test
     public void acquireInactiveClusterIdConcurrently() throws Exception {
         ExecutorService executor = Executors.newCachedThreadPool();
         String instanceId1 = "node1";

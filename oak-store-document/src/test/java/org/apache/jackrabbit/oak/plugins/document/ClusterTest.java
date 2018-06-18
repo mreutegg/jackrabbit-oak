@@ -263,8 +263,9 @@ public class ClusterTest {
         c1.dispose();
         c2.dispose();
 
+        // must acquire same id as before with matching machineId/instanceId
         c1 = ClusterNodeInfo.getInstance(store, NOOP, "m3", "/a", 0);
-        assertEquals(1, c1.getId());
+        assertEquals(2, c1.getId());
 
         c1.dispose();
 

@@ -28,10 +28,13 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -164,7 +167,7 @@ public class ClusterNodeInfo {
     /**
      * The unique machine id (the MAC address if available).
      */
-    private static final String MACHINE_ID = getMachineId();
+    private static final String MACHINE_ID = getHardwareMachineId();
 
     /**
      * The process id (if available).
@@ -352,6 +355,10 @@ public class ClusterNodeInfo {
         return id;
     }
 
+    String getMachineId() {
+        return machineId;
+    }
+
     String getInstanceId() {
         return instanceId;
     }
@@ -469,14 +476,14 @@ public class ClusterNodeInfo {
                                                                    boolean waitForLease) {
 
         long now = getCurrentTime();
-        int clusterNodeId = 0;
         int maxId = 0;
-        Long prevStartTime = null;
-        boolean newEntry = false;
 
         ClusterNodeInfoDocument alreadyExistingConfigured = null;
         String reuseFailureReason = "";
         List<ClusterNodeInfoDocument> list = ClusterNodeInfoDocument.all(store);
+        Map<Integer, Long> startTimes = new HashMap<>();
+        SortedSet<ClusterNodeInfo> candidates = new TreeSet<>(
+                new ClusterNodeInfoComparator(machineId, instanceId));
 
         for (ClusterNodeInfoDocument doc : list) {
 
@@ -555,17 +562,18 @@ public class ClusterNodeInfo {
                 }
             }
 
-            // an inactive clusterNode
-            if (clusterNodeId == 0 || id < clusterNodeId) {
-                // if there are multiple, use the smallest value
-                clusterNodeId = id;
-                prevStartTime = doc.getStartTime();
-            }
+            // if we get here the cluster node entry is inactive. if recovery
+            // was needed, then it was successful
+
+            // create a candidate. those with matching machine and instance id
+            // are preferred, then the one with the lowest clusterId.
+            candidates.add(new ClusterNodeInfo(id, store, mId, iId, false));
+            startTimes.put(id, doc.getStartTime());
         }
 
-        if (clusterNodeId == 0) {
-            // No usable existing entry found so create a new entry
-            newEntry = true;
+        if (candidates.isEmpty()) {
+            // No usable existing entry found
+            int clusterNodeId;
             if (configuredClusterId != 0) {
                 if (alreadyExistingConfigured != null) {
                     throw new DocumentStoreException(
@@ -575,13 +583,15 @@ public class ClusterNodeInfo {
             } else {
                 clusterNodeId = maxId + 1;
             }
+            // No usable existing entry found so create a new entry
+            candidates.add(new ClusterNodeInfo(clusterNodeId, store, machineId, instanceId, true));
         }
 
-        // Do not expire entries and stick on the earlier state and leaseEnd so,
-        // that _lastRev recovery if needed is done
-        ClusterNodeInfo info = new ClusterNodeInfo(clusterNodeId, store,
-                machineId, instanceId, newEntry);
-        return new AbstractMap.SimpleImmutableEntry<>(info, prevStartTime);
+        // use the best candidate
+        ClusterNodeInfo info = candidates.first();
+        // and replace with an info matching the current machine and instance id
+        info = new ClusterNodeInfo(info.id, store, machineId, instanceId, info.newEntry);
+        return new AbstractMap.SimpleImmutableEntry<>(info, startTimes.get(info.getId()));
     }
 
     private static String reject(int id, String reason) {
@@ -1077,7 +1087,7 @@ public class ClusterNodeInfo {
      *
      * @return the unique id
      */
-    private static String getMachineId() {
+    private static String getHardwareMachineId() {
         Exception exception = null;
         try {
             ArrayList<String> macAddresses = new ArrayList<String>();
