@@ -22,6 +22,7 @@ import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.spi.commit.DefaultEditor;
 import org.apache.jackrabbit.oak.spi.commit.Editor;
+import org.apache.jackrabbit.oak.spi.state.DefaultNodeStateDiff;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.apache.jackrabbit.oak.spi.state.NodeState;
 
@@ -31,6 +32,7 @@ import static org.apache.jackrabbit.JcrConstants.JCR_VERSIONLABELS;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
 import static org.apache.jackrabbit.oak.commons.PathUtils.getDepth;
 import static org.apache.jackrabbit.oak.commons.PathUtils.relativize;
+import static org.apache.jackrabbit.oak.spi.state.AbstractNodeState.comparePropertiesAgainstBaseState;
 import static org.apache.jackrabbit.oak.spi.version.VersionConstants.VERSION_NODE_TYPE_NAMES;
 import static org.apache.jackrabbit.oak.spi.version.VersionConstants.VERSION_STORE_NT_NAMES;
 import static org.apache.jackrabbit.oak.spi.version.VersionConstants.VERSION_STORE_PATH;
@@ -66,7 +68,7 @@ class VersionStorageEditor extends DefaultEditor {
     }
 
     @Override
-    public void enter(NodeState before, NodeState after) throws CommitFailedException {
+    public void enter(NodeState before, NodeState after) {
         if (VERSION_STORE_PATH.equals(path)) {
             initPhase = isInitializationPhase(before, after);
         }
@@ -170,7 +172,14 @@ class VersionStorageEditor extends DefaultEditor {
         return Utils.throwProtected(concat(path, name));
     }
 
-    private static boolean isInitializationPhase(NodeState before, NodeState after) {
-        return !before.hasProperty(":initialized") && after.hasProperty(":initialized");
+    private static boolean isInitializationPhase(NodeState before,
+                                                 NodeState after) {
+        return !comparePropertiesAgainstBaseState(after, before,
+                new DefaultNodeStateDiff() {
+            @Override
+            public boolean propertyAdded(PropertyState after) {
+                return !after.getName().equals(":initialized");
+            }
+        });
     }
 }
