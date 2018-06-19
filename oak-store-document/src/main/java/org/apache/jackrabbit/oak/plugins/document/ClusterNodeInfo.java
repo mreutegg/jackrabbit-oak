@@ -439,12 +439,16 @@ public class ClusterNodeInfo {
             update.set(STATE, ACTIVE.name());
             update.set(OAK_VERSION_KEY, OAK_VERSION);
 
+            ClusterNodeInfoDocument before = null;
             final boolean success;
             if (clusterNode.newEntry) {
                 // For new entry do a create. This ensures that if two nodes
                 // create entry with same id then only one would succeed
                 success = store.create(Collection.CLUSTER_NODES, Collections.singletonList(update));
             } else {
+                // remember how the entry looked before the update
+                before = store.find(Collection.CLUSTER_NODES, key);
+
                 // perform a conditional update with a check on the startTime
                 // field. If there are competing cluster nodes trying to acquire
                 // the same inactive clusterId, only one of them will succeed.
@@ -459,7 +463,7 @@ public class ClusterNodeInfo {
             }
 
             if (success) {
-                LOG.info("Acquired clusterId {}", clusterNode.getId());
+                logClusterIdAcquired(clusterNode, before);
                 return clusterNode;
             }
             LOG.info("Collision while acquiring clusterId {}. Retrying...",
@@ -592,6 +596,27 @@ public class ClusterNodeInfo {
         // and replace with an info matching the current machine and instance id
         info = new ClusterNodeInfo(info.id, store, machineId, instanceId, info.newEntry);
         return new AbstractMap.SimpleImmutableEntry<>(info, startTimes.get(info.getId()));
+    }
+
+    private static void logClusterIdAcquired(ClusterNodeInfo clusterNode,
+                                             ClusterNodeInfoDocument before) {
+        String type = clusterNode.newEntry ? "new" : "existing";
+        String machineInfo = clusterNode.machineId;
+        String instanceInfo = clusterNode.instanceId;
+        if (before != null) {
+            // machineId or instanceId may have changed
+            String beforeMachineId = String.valueOf(before.get(MACHINE_ID_KEY));
+            String beforeInstanceId = String.valueOf(before.get(INSTANCE_ID_KEY));
+            if (!clusterNode.machineId.equals(beforeMachineId)) {
+                machineInfo = "(changed) " + beforeMachineId + " -> " + machineInfo;
+            }
+            if (!clusterNode.instanceId.equals(beforeInstanceId)) {
+                instanceInfo = "(changed) " + beforeInstanceId + " -> " + instanceInfo;
+            }
+        }
+        LOG.info("Acquired ({}) clusterId {}. MachineId {}, InstanceId {}",
+                type, clusterNode.getId(), machineInfo, instanceInfo);
+
     }
 
     private static String reject(int id, String reason) {
