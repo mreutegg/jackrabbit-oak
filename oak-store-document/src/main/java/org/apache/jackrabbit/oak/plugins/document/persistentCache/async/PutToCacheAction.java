@@ -57,7 +57,7 @@ class PutToCacheAction<K extends CacheValue, V extends CacheValue>
     public int getMemory() {
         long mem = key.getMemory();
         mem += value.getMemory();
-        return (int) Math.max(Integer.MAX_VALUE, mem);
+        return (int) Math.min(Integer.MAX_VALUE, mem);
     }
 
     @Override

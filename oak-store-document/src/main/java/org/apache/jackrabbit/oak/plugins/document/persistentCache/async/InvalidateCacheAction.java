@@ -63,7 +63,7 @@ class InvalidateCacheAction<K extends CacheValue, V extends CacheValue>
             for (K key : keys) {
                 m += key.getMemory();
             }
-            m = Math.max(Integer.MAX_VALUE, m);
+            m = Math.min(Integer.MAX_VALUE, m);
             memory = (int) m;
         }
         return (int) m;
