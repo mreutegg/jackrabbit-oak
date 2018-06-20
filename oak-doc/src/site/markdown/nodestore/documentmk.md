@@ -615,6 +615,16 @@ cluster node ID identified by `recoveryBy` is still active and try to break
 the recovery lock if the recovering cluster node is considered inactive or
 expired.
 
+There is a special case when a starting cluster node performs the recovery for
+itself. That is, for the cluster node ID it wants to acquire but first has to
+run recovery for it. In this case the lease is only updated once for the cluster
+node entry ID entry that needs recovery. This happens when the recovery lock is
+set on the entry. The starting cluster node then must finish the recovery within
+this initial lease deadline, otherwise the recovery will be considered failed
+and the starting cluster node will acquire a different (potentially new) ID. The
+failed recovery will then be performed later by a background job of one of the
+active cluster nodes.
+
 ### <a name="rw-preference"></a> Specifying the Read Preference and Write Concern
 
 See [configuration](document/mongo-document-store.html#configuration) of a `MongoDocumentStore`.
