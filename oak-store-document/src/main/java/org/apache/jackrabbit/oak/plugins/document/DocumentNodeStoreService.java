@@ -434,7 +434,7 @@ public class DocumentNodeStoreService {
                 setCacheStackMoveDistance(config.cacheStackMoveDistance()).
                 setBundlingDisabled(config.bundlingDisabled()).
                 setJournalPropertyHandlerFactory(journalPropertyHandlerFactory).
-                setLeaseCheck(!ClusterNodeInfo.DEFAULT_LEASE_CHECK_DISABLED /* OAK-2739: enabled by default */).
+                setLeaseCheckMode(LeaseCheckMode.valueOf(config.leaseCheckMode())).
                 setLeaseFailureHandler(new LeaseFailureHandler() {
 
                     @Override
