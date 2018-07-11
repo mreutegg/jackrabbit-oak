@@ -352,8 +352,12 @@ public class ClusterNodeInfo {
         this.newEntry = newEntry;
     }
 
-    public void setLeaseCheckMode(@Nonnull LeaseCheckMode mode) {
+    void setLeaseCheckMode(@Nonnull LeaseCheckMode mode) {
         this.leaseCheckMode = checkNotNull(mode);
+    }
+
+    LeaseCheckMode getLeaseCheckMode() {
+        return leaseCheckMode;
     }
     
     public int getId() {
