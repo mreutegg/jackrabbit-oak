@@ -226,7 +226,11 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
 
     /**
      * If {@code true}, sets lease check mode to {@link LeaseCheckMode#LENIENT},
-     * otherwise sets the mode to {@link LeaseCheckMode#DISABLED}.
+     * otherwise sets the mode to {@link LeaseCheckMode#DISABLED}. This method
+     * is only kept for backward compatibility with the behaviour before
+     * OAK-7626. The new default lease check mode is {@link LeaseCheckMode#STRICT},
+     * but existing code may rely on the previous behaviour, when enabling the
+     * lease check corresponded with a {@link LeaseCheckMode#LENIENT} behaviour.
      *
      * @deprecated use {@link #setLeaseCheckMode(LeaseCheckMode)} instead.
      */
