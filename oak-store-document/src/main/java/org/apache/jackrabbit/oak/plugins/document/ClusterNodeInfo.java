@@ -1115,6 +1115,7 @@ public class ClusterNodeInfo {
                 "pid: " + PROCESS_ID + ",\n" +
                 "uuid: " + uuid + ",\n" +
                 "readWriteMode: " + readWriteMode + ",\n" +
+                "leaseCheckMode: " + leaseCheckMode.name() + ",\n" +
                 "state: " + state + ",\n" +
                 "oakVersion: " + OAK_VERSION + ",\n" +
                 "formatVersion: " + DocumentNodeStore.VERSION;

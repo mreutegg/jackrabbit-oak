@@ -434,7 +434,7 @@ public class DocumentNodeStoreService {
                 setCacheStackMoveDistance(config.cacheStackMoveDistance()).
                 setBundlingDisabled(config.bundlingDisabled()).
                 setJournalPropertyHandlerFactory(journalPropertyHandlerFactory).
-                setLeaseCheckMode(LeaseCheckMode.valueOf(config.leaseCheckMode())).
+                setLeaseCheckMode(ClusterNodeInfo.DEFAULT_LEASE_CHECK_DISABLED ? LeaseCheckMode.DISABLED : LeaseCheckMode.valueOf(config.leaseCheckMode())).
                 setLeaseFailureHandler(new LeaseFailureHandler() {
 
                     @Override
