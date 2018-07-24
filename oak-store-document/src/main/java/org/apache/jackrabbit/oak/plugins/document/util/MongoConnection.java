@@ -113,15 +113,6 @@ public class MongoConnection {
     }
 
     /**
-     * Returns the {@link DB} with the given name.
-     *
-     * @return The {@link DB}.
-     */
-    public DB getDB(@NotNull String name) {
-        return mongo.getDB(name);
-    }
-
-    /**
      * Returns the {@link MongoDatabase} with the given name.
      *
      * @return The {@link MongoDatabase}.
