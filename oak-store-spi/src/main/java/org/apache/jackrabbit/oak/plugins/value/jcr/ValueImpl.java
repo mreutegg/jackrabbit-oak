@@ -65,6 +65,7 @@ class ValueImpl implements JackrabbitValue, OakValue {
      * @param index  The index
      * @param namePathMapper The name/path mapping used for converting JCR names/paths to
      * the internal representation.
+     * @param blobAccessProvider The blob access provider
      * @throws IllegalArgumentException if {@code index < propertyState.count()}
      * @throws RepositoryException if the underlying node state cannot be accessed
      */
@@ -85,6 +86,7 @@ class ValueImpl implements JackrabbitValue, OakValue {
      * @param property  The property state this instance is based on
      * @param namePathMapper The name/path mapping used for converting JCR names/paths to
      * the internal representation.
+     * @param blobAccessProvider The blob access provider
      * @throws IllegalArgumentException if {@code property.isArray()} is {@code true}.
      * @throws RepositoryException if the underlying node state cannot be accessed
      */
@@ -106,6 +108,7 @@ class ValueImpl implements JackrabbitValue, OakValue {
      * @param index  The index
      * @param namePathMapper The name/path mapping used for converting JCR names/paths to
      * the internal representation.
+     * @param blobAccessProvider The blob access provider
      * @throws IllegalArgumentException if {@code index < propertyState.count()}
      */
     @NotNull
@@ -120,6 +123,14 @@ class ValueImpl implements JackrabbitValue, OakValue {
         }
     }
 
+    /**
+     * Create a new {@code Value} instance
+     * @param property  The property state this instance is based on
+     * @param namePathMapper The name/path mapping used for converting JCR names/paths to
+     * the internal representation.
+     * @param blobAccessProvider The blob access provider
+     * @throws IllegalArgumentException if {@code property.isArray()} is {@code true}.
+     */
     @NotNull
     static Value newValue(@NotNull PropertyState property,
                           @NotNull NamePathMapper namePathMapper,
