@@ -117,8 +117,7 @@ class ValueImpl implements JackrabbitValue, OakValue {
                           @NotNull BlobAccessProvider blobAccessProvider) {
         try {
             return new ValueImpl(property, index, namePathMapper, blobAccessProvider);
-        }
-        catch (RepositoryException e) {
+        } catch (RepositoryException e) {
             return new ErrorValue(e);
         }
     }
@@ -137,8 +136,7 @@ class ValueImpl implements JackrabbitValue, OakValue {
                           @NotNull BlobAccessProvider blobAccessProvider) {
         try {
             return new ValueImpl(property, 0, namePathMapper, blobAccessProvider);
-        }
-        catch (RepositoryException e) {
+        } catch (RepositoryException e) {
             return new ErrorValue(e);
         }
     }
@@ -284,7 +282,7 @@ class ValueImpl implements JackrabbitValue, OakValue {
     public String getString() throws RepositoryException {
         checkState(getType() != PropertyType.BINARY || stream == null,
                 "getStream has previously been called on this Value instance. " +
-                        "In this case a new Value instance must be acquired in order to successfully call this method.");
+                "In this case a new Value instance must be acquired in order to successfully call this method.");
 
         switch (getType()) {
             case PropertyType.NAME:
