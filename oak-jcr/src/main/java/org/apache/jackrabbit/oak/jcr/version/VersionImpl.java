@@ -41,7 +41,7 @@ import org.apache.jackrabbit.oak.jcr.delegate.VersionHistoryDelegate;
 import org.apache.jackrabbit.oak.jcr.delegate.VersionManagerDelegate;
 import org.apache.jackrabbit.oak.jcr.session.operation.SessionOperation;
 import org.apache.jackrabbit.oak.plugins.value.Conversions;
-import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryStub;
+import org.apache.jackrabbit.oak.plugins.value.jcr.PartialValueFactory;
 import org.apache.jackrabbit.oak.spi.version.VersionConstants;
 import org.jetbrains.annotations.NotNull;
 
@@ -115,7 +115,7 @@ public class VersionImpl extends NodeImpl<VersionDelegate> implements Version {
     }
 
     private List<Value> getValues(PropertyDelegate p) throws InvalidItemStateException, ValueFormatException {
-        return new ValueFactoryStub(sessionContext).createValues(p.getMultiState());
+        return new PartialValueFactory(sessionContext).createValues(p.getMultiState());
     }
 
     @Override

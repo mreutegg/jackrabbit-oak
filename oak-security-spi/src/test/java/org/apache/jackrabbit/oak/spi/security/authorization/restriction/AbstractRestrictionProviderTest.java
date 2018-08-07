@@ -31,7 +31,7 @@ import org.apache.jackrabbit.oak.api.Tree;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.namepath.NamePathMapper;
 import org.apache.jackrabbit.oak.plugins.memory.PropertyStates;
-import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryStub;
+import org.apache.jackrabbit.oak.plugins.value.jcr.PartialValueFactory;
 import org.apache.jackrabbit.oak.spi.security.authorization.accesscontrol.AccessControlConstants;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -57,13 +57,13 @@ public class AbstractRestrictionProviderTest implements AccessControlConstants {
     private Value nameValue;
 
     private final NamePathMapper namePathMapper = NamePathMapper.DEFAULT;
-    private ValueFactoryStub valueFactory;
+    private PartialValueFactory valueFactory;
     private Map<String, ? extends RestrictionDefinition> supported;
     private AbstractRestrictionProvider restrictionProvider;
 
     @Before
     public void before() throws Exception {
-        valueFactory = new ValueFactoryStub(namePathMapper);
+        valueFactory = new PartialValueFactory(namePathMapper);
         globValue = valueFactory.createValue("*");
         nameValue = valueFactory.createValue("nt:file", PropertyType.NAME);
         nameValues = new Value[] {

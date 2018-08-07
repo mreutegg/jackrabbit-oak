@@ -45,7 +45,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Implementation of {@link ValueFactory} interface.
  */
-public class ValueFactoryImpl extends ValueFactoryStub implements ValueFactory {
+public class ValueFactoryImpl extends PartialValueFactory implements ValueFactory {
 
     private static final PerfLogger binOpsLogger = new PerfLogger(
             LoggerFactory.getLogger("org.apache.jackrabbit.oak.jcr.operations.binary.perf"));
@@ -91,11 +91,12 @@ public class ValueFactoryImpl extends ValueFactoryStub implements ValueFactory {
      *          names/paths to the internal representation.
      * @return  New {@code Value} instance
      * @throws IllegalArgumentException if {@code property.isArray()} is {@code true}.
-     * @deprecated use {@link ValueFactoryStub#createValue(PropertyState)} instead.
+     * @deprecated use {@link PartialValueFactory#createValue(PropertyState)} instead.
      */
+    @Deprecated
     public static Value createValue(@NotNull PropertyState property,
                                     @NotNull NamePathMapper namePathMapper) {
-        return new ValueFactoryStub(namePathMapper).createValue(property);
+        return new PartialValueFactory(namePathMapper).createValue(property);
     }
 
     /**
@@ -111,8 +112,9 @@ public class ValueFactoryImpl extends ValueFactoryStub implements ValueFactory {
      * the internal representation.
      * @return  New {@code Value} instance
      * @throws IllegalArgumentException if {@code property.isArray()} is {@code true}.
-     * @deprecated use {@link ValueFactoryStub#createValue(PropertyState)} instead.
+     * @deprecated use {@link PartialValueFactory#createValue(PropertyState)} instead.
      */
+    @Deprecated
     @NotNull
     public static Value createValue(@NotNull PropertyValue property,
                                     @NotNull NamePathMapper namePathMapper) {
@@ -120,7 +122,7 @@ public class ValueFactoryImpl extends ValueFactoryStub implements ValueFactory {
         if (ps == null) {
             throw new IllegalArgumentException("Failed to convert the specified property value to a property state.");
         }
-        return new ValueFactoryStub(namePathMapper).createValue(ps);
+        return new PartialValueFactory(namePathMapper).createValue(ps);
     }
 
     /**
@@ -134,10 +136,11 @@ public class ValueFactoryImpl extends ValueFactoryStub implements ValueFactory {
      * @param namePathMapper The name/path mapping used for converting JCR names/paths to
      * the internal representation.
      * @return  A list of new {@code Value} instances
-     * @deprecated use {@link ValueFactoryStub#createValues(PropertyState)} instead.
+     * @deprecated use {@link PartialValueFactory#createValues(PropertyState)} instead.
      */
+    @Deprecated
     public static List<Value> createValues(PropertyState property, NamePathMapper namePathMapper) {
-        return new ValueFactoryStub(namePathMapper).createValues(property);
+        return new PartialValueFactory(namePathMapper).createValues(property);
     }
 
     //-------------------------------------------------------< ValueFactory >---

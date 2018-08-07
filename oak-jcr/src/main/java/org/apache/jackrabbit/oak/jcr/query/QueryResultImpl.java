@@ -41,7 +41,7 @@ import org.apache.jackrabbit.oak.jcr.session.SessionContext;
 import org.apache.jackrabbit.oak.jcr.delegate.NodeDelegate;
 import org.apache.jackrabbit.oak.jcr.delegate.SessionDelegate;
 import org.apache.jackrabbit.oak.plugins.memory.PropertyValues;
-import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryStub;
+import org.apache.jackrabbit.oak.plugins.value.jcr.PartialValueFactory;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,13 +59,13 @@ public class QueryResultImpl implements QueryResult {
 
     private final SessionDelegate sessionDelegate;
 
-    private final ValueFactoryStub valueFactory;
+    private final PartialValueFactory valueFactory;
 
     public QueryResultImpl(SessionContext sessionContext, Result result) {
         this.sessionContext = sessionContext;
         this.sessionDelegate = sessionContext.getSessionDelegate();
         this.result = result;
-        this.valueFactory = new ValueFactoryStub(sessionContext);
+        this.valueFactory = new PartialValueFactory(sessionContext);
     }
 
     @Override

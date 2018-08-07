@@ -32,7 +32,7 @@ import org.apache.jackrabbit.oak.commons.QueryUtils;
 import org.apache.jackrabbit.oak.namepath.impl.LocalNameMapper;
 import org.apache.jackrabbit.oak.namepath.NamePathMapper;
 import org.apache.jackrabbit.oak.namepath.impl.NamePathMapperImpl;
-import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryStub;
+import org.apache.jackrabbit.oak.plugins.value.jcr.PartialValueFactory;
 import org.apache.jackrabbit.oak.spi.query.QueryConstants;
 import org.apache.jackrabbit.oak.spi.security.ConfigurationParameters;
 import org.apache.jackrabbit.oak.spi.security.user.AuthorizableType;
@@ -45,7 +45,7 @@ import static org.junit.Assert.assertSame;
 
 public class QueryUtilTest {
 
-    private ValueFactoryStub valueFactory = new ValueFactoryStub(NamePathMapper.DEFAULT);
+    private PartialValueFactory valueFactory = new PartialValueFactory(NamePathMapper.DEFAULT);
 
     private static void assertSearchRoot(@NotNull Map<AuthorizableType, String> mapping, @NotNull ConfigurationParameters params) {
         for (AuthorizableType type : mapping.keySet()) {

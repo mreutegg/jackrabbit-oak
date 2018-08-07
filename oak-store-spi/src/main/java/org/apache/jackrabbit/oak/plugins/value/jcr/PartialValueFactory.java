@@ -61,7 +61,7 @@ import static org.apache.jackrabbit.oak.plugins.value.jcr.ValueImpl.newValue;
  * A partial value factory implementation that only deals with in-memory values
  * and can wrap a {@link Value} around a {@link PropertyState}.
  */
-public class ValueFactoryStub {
+public class PartialValueFactory {
 
     /**
      * This default blob access provider is a no-op implementation.
@@ -83,7 +83,7 @@ public class ValueFactoryStub {
      *
      * @param namePathMapper the name path mapper.
      */
-    public ValueFactoryStub(@NotNull NamePathMapper namePathMapper) {
+    public PartialValueFactory(@NotNull NamePathMapper namePathMapper) {
         this(namePathMapper, DEFAULT_BLOB_ACCESS_PROVIDER);
     }
 
@@ -94,8 +94,8 @@ public class ValueFactoryStub {
      * @param namePathMapper the name path mapper.
      * @param blobAccessProvider the blob access provider.
      */
-    public ValueFactoryStub(@NotNull NamePathMapper namePathMapper,
-                            @NotNull BlobAccessProvider blobAccessProvider) {
+    public PartialValueFactory(@NotNull NamePathMapper namePathMapper,
+                               @NotNull BlobAccessProvider blobAccessProvider) {
         this.namePathMapper = checkNotNull(namePathMapper);
         this.blobAccessProvider = checkNotNull(blobAccessProvider);
     }

@@ -51,7 +51,7 @@ import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.namepath.NamePathMapper;
-import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryStub;
+import org.apache.jackrabbit.oak.plugins.value.jcr.PartialValueFactory;
 import org.apache.jackrabbit.oak.spi.commit.DefaultEditor;
 import org.apache.jackrabbit.oak.spi.commit.Editor;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
@@ -146,7 +146,7 @@ public class TypeEditor extends DefaultEditor {
 
     private static final Logger log = LoggerFactory.getLogger(TypeEditor.class);
 
-    private final ValueFactoryStub valueFactory;
+    private final PartialValueFactory valueFactory;
 
     private final Set<String> typesToCheck;
 
@@ -170,7 +170,7 @@ public class TypeEditor extends DefaultEditor {
             ConstraintViolationCallback callback, Set<String> typesToCheck, NodeState types,
             String primary, Iterable<String> mixins, NodeBuilder builder)
             throws CommitFailedException {
-        this.valueFactory = new ValueFactoryStub(NamePathMapper.DEFAULT);
+        this.valueFactory = new PartialValueFactory(NamePathMapper.DEFAULT);
         this.callback = checkNotNull(callback);
         this.typesToCheck = typesToCheck;
         this.checkThisNode =
@@ -209,7 +209,7 @@ public class TypeEditor extends DefaultEditor {
      * Test constructor.
      */
     TypeEditor(EffectiveType effective) {
-        this.valueFactory = new ValueFactoryStub(NamePathMapper.DEFAULT);
+        this.valueFactory = new PartialValueFactory(NamePathMapper.DEFAULT);
         this.callback = TypeEditor.THROW_ON_CONSTRAINT_VIOLATION;
         this.typesToCheck = null;
         this.checkThisNode = true;

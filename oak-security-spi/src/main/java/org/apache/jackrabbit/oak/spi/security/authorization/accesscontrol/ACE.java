@@ -31,7 +31,7 @@ import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableSet;
 import org.apache.jackrabbit.api.security.JackrabbitAccessControlEntry;
 import org.apache.jackrabbit.oak.namepath.NamePathMapper;
-import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryStub;
+import org.apache.jackrabbit.oak.plugins.value.jcr.PartialValueFactory;
 import org.apache.jackrabbit.oak.spi.security.authorization.restriction.Restriction;
 import org.apache.jackrabbit.oak.spi.security.privilege.PrivilegeBits;
 import org.jetbrains.annotations.NotNull;
@@ -49,7 +49,7 @@ public abstract class ACE implements JackrabbitAccessControlEntry {
     private final boolean isAllow;
     private final Set<Restriction> restrictions;
     private final NamePathMapper namePathMapper;
-    private final ValueFactoryStub valueFactory;
+    private final PartialValueFactory valueFactory;
 
     private int hashCode;
 
@@ -64,7 +64,7 @@ public abstract class ACE implements JackrabbitAccessControlEntry {
         this.isAllow = isAllow;
         this.restrictions = (restrictions == null) ? Collections.<Restriction>emptySet() : ImmutableSet.copyOf(restrictions);
         this.namePathMapper = namePathMapper;
-        this.valueFactory = new ValueFactoryStub(namePathMapper);
+        this.valueFactory = new PartialValueFactory(namePathMapper);
     }
 
     //--------------------------------------------------------------------------

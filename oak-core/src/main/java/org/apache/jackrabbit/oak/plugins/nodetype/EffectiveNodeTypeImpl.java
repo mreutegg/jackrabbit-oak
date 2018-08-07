@@ -37,7 +37,7 @@ import javax.jcr.nodetype.PropertyDefinition;
 
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Tree;
-import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryStub;
+import org.apache.jackrabbit.oak.plugins.value.jcr.PartialValueFactory;
 import org.apache.jackrabbit.oak.spi.nodetype.EffectiveNodeType;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
@@ -61,13 +61,13 @@ class EffectiveNodeTypeImpl implements EffectiveNodeType {
 
     private final ReadOnlyNodeTypeManager ntMgr;
 
-    private final ValueFactoryStub valueFactory;
+    private final PartialValueFactory valueFactory;
 
     EffectiveNodeTypeImpl(
             NodeTypeImpl primary, NodeTypeImpl[] mixins,
             ReadOnlyNodeTypeManager ntMgr) {
         this.ntMgr = ntMgr;
-        this.valueFactory = new ValueFactoryStub(ntMgr.getNamePathMapper());
+        this.valueFactory = new PartialValueFactory(ntMgr.getNamePathMapper());
 
         addNodeType(checkNotNull(primary));
         for (NodeTypeImpl mixin : checkNotNull(mixins)) {

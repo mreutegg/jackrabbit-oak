@@ -27,7 +27,7 @@ import javax.jcr.Value;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.namepath.NamePathMapper;
-import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryStub;
+import org.apache.jackrabbit.oak.plugins.value.jcr.PartialValueFactory;
 import org.apache.jackrabbit.util.ISO8601;
 import org.junit.Test;
 import org.mockito.Mockito;
@@ -37,7 +37,7 @@ import static org.junit.Assert.assertEquals;
 public class PropertyStatesTest {
 
     private final NamePathMapper namePathMapper = Mockito.mock(NamePathMapper.class);
-    private final ValueFactoryStub valueFactory = new ValueFactoryStub(namePathMapper);
+    private final PartialValueFactory valueFactory = new PartialValueFactory(namePathMapper);
 
     @Test
     public void namePropertyFromNameValue() throws RepositoryException {
