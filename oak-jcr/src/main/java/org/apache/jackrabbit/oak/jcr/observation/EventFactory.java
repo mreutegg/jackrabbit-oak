@@ -38,6 +38,7 @@ import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.namepath.NamePathMapper;
 import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryImpl;
+import org.apache.jackrabbit.oak.plugins.value.jcr.ValueFactoryStub;
 import org.apache.jackrabbit.oak.spi.commit.CommitInfo;
 
 /**
@@ -54,6 +55,8 @@ public class EventFactory {
 
     private final NamePathMapper mapper;
 
+    private final ValueFactoryStub valueFactory;
+
     private final String userID;
 
     private final String userData;
@@ -64,6 +67,7 @@ public class EventFactory {
 
     EventFactory(NamePathMapper mapper, CommitInfo commitInfo) {
         this.mapper = mapper;
+        this.valueFactory = new ValueFactoryStub(mapper);
         if (!commitInfo.isExternal()) {
             this.userID = commitInfo.getUserId();
             Object userData = commitInfo.getInfo().get(USER_DATA);
@@ -136,10 +140,10 @@ public class EventFactory {
 
     private Object createValue(PropertyState property) {
         if (property.isArray()) {
-            List<Value> values = ValueFactoryImpl.createValues(property, mapper);
+            List<Value> values = valueFactory.createValues(property);
             return values.toArray(new Value[values.size()]);
         } else {
-            return ValueFactoryImpl.createValue(property, mapper);
+            return valueFactory.createValue(property);
         }
     }
 
