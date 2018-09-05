@@ -20,7 +20,7 @@ properties([parameters([
     string(name: 'GIT_REPOSITORY', defaultValue: 'https://github.com/apache/jackrabbit-oak.git/', description: '', trim: true), 
     string(name: 'GIT_BRANCH', defaultValue: 'trunk', description: '', trim: true),
     string(name: 'OAK_MODULES', defaultValue: 'oak-jcr:ut,oak-jcr:it,oak-store-document,oak-lucene,oak-it,oak-run,oak-upgrade,oak-pojosr,oak-it-osgi', description: '', trim: true),
-    string(name: 'MONGO_VERSION', defaultValue: '3.6', description: '', trim: true)
+    string(name: 'MONGO_VERSION', defaultValue: '3.6', description: '', trim: true),
     string(name: 'JENKINS_NODE_LABEL', defaultValue: 'ubuntu', description: '', trim: true)
 ]), buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '20'))])
 
