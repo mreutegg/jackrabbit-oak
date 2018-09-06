@@ -24,7 +24,9 @@ properties([parameters([
 ]), buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '20'))])
 
 def getLocalRepositoryPath() {
-    return sh(script: "mvn help:evaluate -Dexpression=settings.localRepository | grep -E '^([a-zA-Z]:|/)'", returnStdout: true).trim()
+    withMaven {
+        return sh(script: "mvn help:evaluate -Dexpression=settings.localRepository | grep -E '^([a-zA-Z]:|/)'", returnStdout: true).trim()
+    }
 }
 
 def buildModuleInsideContainer(moduleName, testOptions) {
