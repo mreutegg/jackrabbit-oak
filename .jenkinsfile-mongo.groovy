@@ -20,11 +20,12 @@ properties([parameters([
     string(name: 'GIT_BRANCH', defaultValue: 'trunk', description: '', trim: true),
     string(name: 'OAK_MODULES', defaultValue: 'oak-jcr:ut,oak-jcr:it,oak-store-document,oak-lucene,oak-it,oak-run,oak-upgrade,oak-pojosr,oak-it-osgi', description: '', trim: true),
     string(name: 'MONGO_VERSION', defaultValue: '3.6', description: '', trim: true),
-    string(name: 'JENKINS_NODE_LABEL', defaultValue: 'ubuntu', description: '', trim: true)
+    string(name: 'JENKINS_NODE_LABEL', defaultValue: 'ubuntu', description: '', trim: true),
+    string(name: 'MAVEN_VERSION_NAME', defaultValue: 'Maven 3 (latest)', description: '', trim: true)
 ]), buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '20'))])
 
 def getLocalRepositoryPath() {
-    withMaven(maven: 'Maven 3 (latest)') {
+    withMaven(maven: "${params.MAVEN_VERSION_NAME}") {
         return sh(script: "mvn help:evaluate -Dexpression=settings.localRepository | grep -E '^([a-zA-Z]:|/)'", returnStdout: true).trim()
     }
 }
