@@ -1,4 +1,3 @@
-#!/usr/bin/env groovy
 /*
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
@@ -24,45 +23,60 @@ properties([parameters([
     string(name: 'JENKINS_NODE_LABEL', defaultValue: 'ubuntu', description: '', trim: true)
 ]), buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '20'))])
 
-def buildModule(moduleSpec) {
-    def moduleName = ''
+def getLocalRepositoryPath() {
+    return sh(script: "mvn help:evaluate -Dexpression=settings.localRepository | grep -E '^([a-zA-Z]:|/)'", returnStdout: true).trim()
+}
+
+def buildModuleInsideContainer(moduleName, testOptions) {
+    // checkout from git repo
+    git url: "${params.GIT_REPOSITORY}", branch: "${params.GIT_BRANCH}"
+    def mvnCmd = "mvn --batch-mode -Dmaven.repo.local=/var/maven/repository -s /var/maven/settings/settings.xml"
+    // build modules required by this module
+    sh "${mvnCmd} -Dbaseline.skip=true -T 1C clean install -DskipTests -pl :${moduleName} -am"
+    try {
+        // run tests
+        sh "${mvnCmd} ${testOptions} -Dnsfixtures=DOCUMENT_NS -Dmongo.host=db verify -pl :${moduleName}"
+    } finally {
+        archiveArtifacts '*/target/unit-tests.log'
+        junit '*/target/surefire-reports/*.xml,*/target/failsafe-reports/*.xml'
+    }
+}
+
+def testOptionsFrom(moduleSpec) {
     def testOptions = '-PintegrationTesting'
-    def idx = moduleSpec.indexOf(':') 
-    if (idx == -1) {
-        moduleName = moduleSpec
-    } else {
-        moduleName = moduleSpec.substring(0, idx)
+    def idx = moduleSpec.indexOf(':')
+    if (idx != -1) {
         flags = moduleSpec.substring(idx + 1)
         if (flags == 'ut') {
             // unit tests only
-            testOptions = '' 
+            testOptions = ''
         } else if (flags == 'it') {
             // integration tests only
-            testOptions = '-PintegrationTesting -Dsurefire.skip.ut=true' 
+            testOptions = '-PintegrationTesting -Dsurefire.skip.ut=true'
         }
     }
+    return testOptions
+}
+
+static def moduleNameFrom(moduleSpec) {
+    def idx = moduleSpec.indexOf(':')
+    if (idx == -1) {
+        return moduleSpec
+    } else {
+        return moduleSpec.substring(0, idx)
+    }
+}
+
+def buildModule(moduleSpec) {
+    def moduleName = moduleNameFrom(moduleSpec)
+    def testOptions = testOptionsFrom(moduleSpec)
     stage('build ' + moduleSpec) {
         node(label: "${JENKINS_NODE_LABEL}") {
             timeout(60) {
                 docker.image("mongo:${MONGO_VERSION}").withRun() { c ->
-                    def localMavenRepoPath = sh(script: "mvn help:evaluate -Dexpression=settings.localRepository | grep -E '^([a-zA-Z]:|/)'", returnStdout: true).trim()
+                    def localMavenRepoPath = getLocalRepositoryPath()
                     docker.image('maven:3.5-jdk-8').inside("--link ${c.id}:db -v ${localMavenRepoPath}:/var/maven/repository -v $HOME/.m2:/var/maven/settings:ro") {
-                        git url: "${params.GIT_REPOSITORY}", branch: "${params.GIT_BRANCH}"
-                        try {
-                            sh "mvn --batch-mode -Dbaseline.skip=true -Dmaven.repo.local=/var/maven/repository -s /var/maven/settings/settings.xml -T 1C clean install -DskipTests -pl :${moduleName} -am"
-                        } catch (e) {
-                            currentBuild.result = 'FAILURE'
-                        }
-                        try {
-                            sh "mvn --batch-mode -Dmaven.repo.local=/var/maven/repository -s /var/maven/settings/settings.xml ${testOptions} -Dnsfixtures=DOCUMENT_NS -Dmongo.host=db verify -pl :${moduleName}"
-                            currentBuild.result = 'SUCCESS'
-                        } catch (e) {
-                            currentBuild.result = 'UNSTABLE'
-                            throw e
-                        } finally {
-                            archiveArtifacts '*/target/unit-tests.log'
-                            junit '*/target/surefire-reports/*.xml,*/target/failsafe-reports/*.xml'
-                        }
+                        buildModuleInsideContainer(moduleName, testOptions)
                     }
                 }
             }
@@ -79,8 +93,4 @@ def stagesFor(modules) {
     return stages
 }
 
-try {
-    parallel stagesFor("${params.OAK_MODULES}")
-} finally {
-    cleanWs()
-}
+parallel stagesFor("${params.OAK_MODULES}")
