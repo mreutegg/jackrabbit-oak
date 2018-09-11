@@ -105,7 +105,13 @@ public class MongoUtils {
      * @return the connection or null
      */
     public static MongoConnection getConnection(String dbName) {
-        MongoClientURI clientURI = new MongoClientURI(URL);
+        MongoClientURI clientURI;
+        try {
+            clientURI = new MongoClientURI(URL);
+        } catch (IllegalArgumentException e) {
+            // configured URL is invalid
+            return null;
+        }
         StringBuilder uri = new StringBuilder("mongodb://");
         String separator = "";
         for (String host : clientURI.getHosts()) {
