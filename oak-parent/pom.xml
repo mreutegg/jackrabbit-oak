@@ -49,6 +49,7 @@
     <mongo.db>MongoMKDB</mongo.db>
     <mongo.db2>MongoMKDB2</mongo.db2>
     <mongo.url />
+    <mongo.version>3.6</mongo.version>
     <segment.db>SegmentMK</segment.db>
     <lucene.version>4.7.1</lucene.version>
     <solr.version>5.5.5</solr.version>
@@ -687,6 +688,11 @@
         <groupId>org.apache.httpcomponents</groupId>
         <artifactId>httpmime</artifactId>
         <version>4.5.6</version>
+      </dependency>
+      <dependency>
+        <groupId>com.arakelian</groupId>
+        <artifactId>docker-junit-rule</artifactId>
+        <version>2.2.1</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
