@@ -1231,17 +1231,13 @@ public class MongoDocumentStore implements DocumentStore {
             T oldDoc = oldDocs.get(id);
             if (oldDoc == null || oldDoc == NodeDocument.NULL) {
                 query = Filters.and(query, Filters.exists(Document.MOD_COUNT, false));
-                writes.add(new UpdateOneModel<>(query,
-                        createUpdate(updateOp, failInsert),
-                        new UpdateOptions().upsert(true))
-                );
             } else {
                 query = Filters.and(query, Filters.eq(Document.MOD_COUNT, oldDoc.getModCount()));
-                writes.add(new UpdateOneModel<>(query,
-                        createUpdate(updateOp, failInsert),
-                        new UpdateOptions().upsert(true))
-                );
             }
+            writes.add(new UpdateOneModel<>(query,
+                    createUpdate(updateOp, failInsert),
+                    new UpdateOptions().upsert(true))
+            );
             bulkIds[i++] = id;
         }
 
