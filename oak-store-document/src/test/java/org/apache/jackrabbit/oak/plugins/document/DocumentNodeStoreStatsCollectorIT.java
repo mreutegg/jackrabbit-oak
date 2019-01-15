@@ -213,4 +213,13 @@ public class DocumentNodeStoreStatsCollectorIT {
         nodeStore.merge(nb, EmptyHook.INSTANCE, CommitInfo.EMPTY);
         verify(statsCollector).doneCommitHookProcessed(anyLong());
     }
+
+    @Test
+    public void changesApplied() throws Exception {
+        Mockito.reset(statsCollector);
+        NodeBuilder nb = nodeStore.getRoot().builder();
+        nb.child("a");
+        nodeStore.merge(nb, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+        verify(statsCollector).doneChangesApplied(anyLong());
+    }
 }

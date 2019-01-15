@@ -98,4 +98,12 @@ public interface DocumentNodeStoreStatsCollector {
      * @param timeMicros the time in microseconds.
      */
     void doneCommitHookProcessed(long timeMicros);
+
+    /**
+     * Reports to the collector that the commit applied the changes to the
+     * {@code DocumentStore} in the given time.
+     *
+     * @param timeMicros the time in microseconds.
+     */
+    void doneChangesApplied(long timeMicros);
 }

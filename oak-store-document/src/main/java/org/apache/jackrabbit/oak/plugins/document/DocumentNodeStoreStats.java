@@ -58,6 +58,7 @@ public class DocumentNodeStoreStats implements DocumentNodeStoreStatsCollector {
     private static final String MERGE_SUSPEND_TIME = "DOCUMENT_NS_MERGE_SUSPEND_TIME";
     private static final String MERGE_LOCK_TIME = "DOCUMENT_NS_MERGE_LOCK_TIME";
     private static final String MERGE_COMMIT_HOOK_TIME = "DOCUMENT_NS_MERGE_COMMIT_HOOK_TIME";
+    private static final String MERGE_CHANGES_APPLIED_TIME = "DOCUMENT_NS_MERGE_CHANGES_APPLIED_TIME";
 
     static final String BRANCH_COMMIT_COUNT = "DOCUMENT_NS_BRANCH_COMMIT_COUNT";
     static final String MERGE_BRANCH_COMMIT_COUNT = "DOCUMENT_NS_MERGE_BRANCH_COMMIT_COUNT";
@@ -96,6 +97,7 @@ public class DocumentNodeStoreStats implements DocumentNodeStoreStatsCollector {
     private final TimerStats mergeSuspendTime;
     private final TimerStats mergeLockTime;
     private final TimerStats mergeCommitHookTime;
+    private final TimerStats mergeChangesApplied;
 
     // branch stats
     private final MeterStats branchCommitRate;
@@ -133,6 +135,7 @@ public class DocumentNodeStoreStats implements DocumentNodeStoreStatsCollector {
         mergeSuspendTime = sp.getTimer(MERGE_SUSPEND_TIME, StatsOptions.METRICS_ONLY);
         mergeLockTime = sp.getTimer(MERGE_LOCK_TIME, StatsOptions.METRICS_ONLY);
         mergeCommitHookTime = sp.getTimer(MERGE_COMMIT_HOOK_TIME, StatsOptions.METRICS_ONLY);
+        mergeChangesApplied = sp.getTimer(MERGE_CHANGES_APPLIED_TIME, StatsOptions.METRICS_ONLY);
 
         branchCommitRate = sp.getMeter(BRANCH_COMMIT_COUNT, StatsOptions.DEFAULT);
         mergeBranchCommitRate = sp.getMeter(MERGE_BRANCH_COMMIT_COUNT, StatsOptions.DEFAULT);
@@ -220,5 +223,10 @@ public class DocumentNodeStoreStats implements DocumentNodeStoreStatsCollector {
     @Override
     public void doneCommitHookProcessed(long timeMicros) {
         mergeCommitHookTime.update(timeMicros, TimeUnit.MICROSECONDS);
+    }
+
+    @Override
+    public void doneChangesApplied(long timeMicros) {
+        mergeChangesApplied.update(timeMicros, TimeUnit.MICROSECONDS);
     }
 }
