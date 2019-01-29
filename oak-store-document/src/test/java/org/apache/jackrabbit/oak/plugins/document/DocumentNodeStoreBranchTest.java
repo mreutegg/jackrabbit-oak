@@ -16,6 +16,7 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
+import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
 import org.apache.jackrabbit.oak.spi.state.NodeBuilder;
 import org.junit.Rule;
 import org.junit.Test;
@@ -102,5 +103,21 @@ public class DocumentNodeStoreBranchTest {
         } catch (IllegalStateException e) {
             // expected
         }
+    }
+
+    @Test
+    public void orphanedBranchTest() {
+        MemoryDocumentStore store = new MemoryDocumentStore();
+        DocumentNodeStore ns = builderProvider.newBuilder()
+                .setDocumentStore(store).build();
+        NodeBuilder builder = ns.getRoot().builder();
+        builder.setProperty("p", "v");
+        persistToBranch(builder);
+        ns.dispose();
+
+        // start again
+        ns = builderProvider.newBuilder()
+                .setDocumentStore(store).build();
+        assertFalse(ns.getRoot().hasProperty("p"));
     }
 }

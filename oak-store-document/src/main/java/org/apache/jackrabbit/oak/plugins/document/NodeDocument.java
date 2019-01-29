@@ -2064,20 +2064,20 @@ public final class NodeDocument extends Document {
             return false;
         }
         if (Utils.isCommitted(commitValue)) {
-            if (context.getBranches().getBranch(readRevision) == null
-                    && !readRevision.isBranch()) {
+            Branch b = context.getBranches().getBranch(readRevision);
+            if (b == null) { // TODO: was context.getBranches().getBranch(readRevision) == null && !readRevision.isBranch()
+                // readRevision is not from a branch
                 // resolve commit revision
                 revision = resolveCommitRevision(revision, commitValue);
-                // readRevision is not from a branch
                 // compare resolved revision as is
                 return !readRevision.isRevisionNewer(revision);
             } else {
-                // on same merged branch?
-                Revision tr = readRevision.getBranchRevision().asTrunkRevision();
-                if (commitValue.equals(context.getCommitValue(tr, this))) {
-                    // compare unresolved revision
-                    return !readRevision.isRevisionNewer(revision);
-                }
+                // read revision is on a branch and the change is committed
+                // get the base revision of the branch and check
+                // if change is visible from there
+                RevisionVector baseRev = b.getBase(readRevision.getBranchRevision());
+                revision = resolveCommitRevision(revision, commitValue);
+                return !baseRev.isRevisionNewer(revision);
             }
         } else {
             // branch commit (not merged)
@@ -2088,9 +2088,24 @@ public final class NodeDocument extends Document {
                 // this is an unmerged branch commit from another cluster node,
                 // hence never visible to us
                 return false;
+            } else {
+                // unmerged branch change with local clusterId
+                Branch b = context.getBranches().getBranch(readRevision);
+                if (b == null) {
+                    // reading on trunk never sees changes on an unmerged branch
+                    return false;
+                } else if (b.containsCommit(revision)) {
+                    // read revision is on the same branch as the
+                    // unmerged branch changes -> compare revisions as is
+                    return !readRevision.isRevisionNewer(revision);
+                } else {
+                    // read revision is on a different branch than the
+                    // unmerged branch changes -> never visible
+                    return false;
+                }
             }
         }
-        return includeRevision(context, resolveCommitRevision(revision, commitValue), readRevision);
+        //return includeRevision(context, resolveCommitRevision(revision, commitValue), readRevision);
     }
 
     /**
