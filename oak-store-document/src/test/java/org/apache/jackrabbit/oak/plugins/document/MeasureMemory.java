@@ -29,6 +29,7 @@ import com.mongodb.BasicDBObject;
 
 import org.apache.jackrabbit.oak.api.Blob;
 import org.apache.jackrabbit.oak.api.PropertyState;
+import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.plugins.document.util.RevisionsKey;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 import org.apache.jackrabbit.oak.plugins.memory.BinaryPropertyState;
@@ -43,7 +44,7 @@ import org.junit.Test;
  */
 public class MeasureMemory {
 
-    static final boolean TRACE = false;
+    static final boolean TRACE = true;
 
     static final int TEST_COUNT = 10000;
     static final int OVERHEAD = 24;
@@ -179,6 +180,19 @@ public class MeasureMemory {
     }
 
     @Test
+    public void revisionsKey2() throws Exception {
+        measureMemory(new Callable<Object[]>() {
+            @Override
+            public Object[] call() {
+                RevisionsKey k = new RevisionsKey(
+                        new RevisionVector(Revision.newRevision(0)),
+                        new RevisionVector(Revision.newRevision(0)));
+                return new Object[]{k, k.getMemory() + OVERHEAD};
+            }
+        });
+    }
+
+    @Test
     public void revisionVector() throws Exception {
         measureMemory(new Callable<Object[]>() {
             @Override
@@ -211,6 +225,61 @@ public class MeasureMemory {
             public Object[] call() throws Exception {
                 Revision r = Revision.newRevision(0);
                 return new Object[]{r, r.getMemory() + OVERHEAD};
+            }
+        });
+    }
+
+    @Test
+    public void memoryDiffCacheKey() throws Exception {
+        measureMemory(new Callable<Object[]>() {
+            private int counter = 0;
+            @Override
+            public Object[] call() {
+                Path p = Path.fromString(generatePath());
+                RevisionVector rv1 = new RevisionVector(
+                        Revision.newRevision(0),
+                        Revision.newRevision(1));
+                RevisionVector rv2 = new RevisionVector(
+                        Revision.newRevision(0),
+                        Revision.newRevision(1));
+                MemoryDiffCache.Key k = new MemoryDiffCache.Key(p, rv1, rv2);
+                return new Object[]{k, k.getMemory() + OVERHEAD};
+            }
+
+            private String generatePath() {
+                String p = "/";
+                for (int i = 0; i < 5; i++) {
+                    p = PathUtils.concat(p, generateName());
+                }
+                return p;
+            }
+
+            private String generateName() {
+                return String.format("node-%05d", counter++);
+            }
+        });
+    }
+
+    @Test
+    public void path() throws Exception {
+        measureMemory(new Callable<Object[]>() {
+            private int counter = 0;
+            @Override
+            public Object[] call() {
+                Path p = Path.fromString(generatePath());
+                return new Object[]{p, p.getMemory() + OVERHEAD};
+            }
+
+            private String generatePath() {
+                String p = "/";
+                for (int i = 0; i < 5; i++) {
+                    p = PathUtils.concat(p, generateName());
+                }
+                return p;
+            }
+
+            private String generateName() {
+                return String.format("node-%05d", counter++);
             }
         });
     }
@@ -252,7 +321,7 @@ public class MeasureMemory {
             String key = "property" + i;
             props.add(STORE.createPropertyState(key, "\"values " + i + "\""));
         }
-        return new DocumentNodeState(STORE, new String("/hello/world"),
+        return new DocumentNodeState(STORE, Path.fromString("/hello/world"),
                 new RevisionVector(new Revision(1, 2, 3)), props, false, new RevisionVector(new Revision(1, 2, 3)));
     }
 

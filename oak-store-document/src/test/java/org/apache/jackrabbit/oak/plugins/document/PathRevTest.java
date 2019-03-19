@@ -26,7 +26,7 @@ public class PathRevTest {
 
     @Test
     public void roundTrip() {
-        String path = "/this/is/a/test/path";
+        Path path = Path.fromString("/this/is/a/test/path");
         RevisionVector rv = new RevisionVector(
                 Revision.newRevision(1), Revision.newRevision(2));
         PathRev key = new PathRev(path, rv);

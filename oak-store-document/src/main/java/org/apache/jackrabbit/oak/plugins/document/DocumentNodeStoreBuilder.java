@@ -161,7 +161,7 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
     private long maxRevisionAgeMillis = DEFAULT_JOURNAL_GC_MAX_AGE_MILLIS;
     private GCMonitor gcMonitor = new LoggingGCMonitor(
             LoggerFactory.getLogger(VersionGarbageCollector.class));
-    private Predicate<String> nodeCachePredicate = Predicates.alwaysTrue();
+    private Predicate<Path> nodeCachePredicate = Predicates.alwaysTrue();
 
     /**
      * @return a new {@link DocumentNodeStoreBuilder}.
@@ -591,11 +591,11 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
         return buildCache(CacheType.NODE, getNodeCacheSize(), store, null);
     }
 
-    public Cache<PathRev, DocumentNodeState.Children> buildChildrenCache(DocumentNodeStore store) {
+    public Cache<PathNameRev, DocumentNodeState.Children> buildChildrenCache(DocumentNodeStore store) {
         return buildCache(CacheType.CHILDREN, getChildrenCacheSize(), store, null);
     }
 
-    public Cache<PathRev, StringValue> buildMemoryDiffCache() {
+    public Cache<CacheValue, StringValue> buildMemoryDiffCache() {
         return buildCache(CacheType.DIFF, getMemoryDiffCacheSize(), null, null);
     }
 
@@ -621,12 +621,29 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
         return new NodeDocumentCache(nodeDocumentsCache, nodeDocumentsCacheStats, prevDocumentsCache, prevDocumentsCacheStats, locks);
     }
 
+    /**
+     * @deprecated Use {@link #setNodeCachePathPredicate(Predicate)} instead.
+     */
+    @Deprecated
     public T setNodeCachePredicate(Predicate<String> p){
+        this.nodeCachePredicate = input -> input != null && p.apply(input.toString());
+        return thisBuilder();
+    }
+
+    /**
+     * @deprecated Use {@link #getNodeCachePathPredicate()} instead.
+     */
+    @Deprecated
+    public Predicate<String> getNodeCachePredicate() {
+        return input -> input != null && nodeCachePredicate.apply(Path.fromString(input));
+    }
+
+    public T setNodeCachePathPredicate(Predicate<Path> p){
         this.nodeCachePredicate = p;
         return thisBuilder();
     }
 
-    public Predicate<String> getNodeCachePredicate() {
+    public Predicate<Path> getNodeCachePathPredicate() {
         return nodeCachePredicate;
     }
 

@@ -107,7 +107,7 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
             assertTrue(isCommitted(ns.getCommitValue(rev, doc)));
         }
         // check if document is still there
-        assertNotNull(ns.getNode("/", RevisionVector.fromString(head)));
+        assertNotNull(ns.getNode(Path.ROOT, RevisionVector.fromString(head)));
 
         NodeDocument prevDoc = Iterators.getOnlyElement(doc.getAllPreviousDocs());
         assertThat(prevDoc.getSplitDocType(), either(is(SplitDocType.DEFAULT)).or(is(SplitDocType.DEFAULT_NO_BRANCH)));
@@ -147,7 +147,7 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
                     || doc.getCommitRootPath(rev) != null);
             assertTrue(isCommitted(ns.getCommitValue(rev, doc)));
         }
-        DocumentNodeState node = ns.getNode("/foo", RevisionVector.fromString(head));
+        DocumentNodeState node = ns.getNode(Path.fromString("/foo"), RevisionVector.fromString(head));
         // check status of node
         if (create) {
             assertNull(node);
@@ -305,7 +305,7 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
             NodeDocument doc = ds.find(NODES, Utils.getIdFromPath("/test"));
             assertNotNull(doc);
             RevisionVector head = ns.getHeadRevision();
-            Revision lastRev = ns.getPendingModifications().get("/test");
+            Revision lastRev = ns.getPendingModifications().get(Path.fromString("/test"));
             DocumentNodeState n = doc.getNodeAtRevision(mk.getNodeStore(), head, lastRev);
             assertNotNull(n);
             String value = n.getPropertyAsString(name);

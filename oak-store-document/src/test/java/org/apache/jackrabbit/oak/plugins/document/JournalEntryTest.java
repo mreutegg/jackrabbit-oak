@@ -52,20 +52,20 @@ public class JournalEntryTest {
     @Test
     public void applyTo() throws Exception {
         DiffCache cache = new MemoryDiffCache(new DocumentMK.Builder());
-        List<String> paths = Lists.newArrayList();
+        List<Path> paths = Lists.newArrayList();
         addRandomPaths(paths);
         StringSort sort = JournalEntry.newSorter();
         add(sort, paths);
         RevisionVector from = new RevisionVector(new Revision(1, 0, 1));
         RevisionVector to = new RevisionVector(new Revision(2, 0, 1));
         sort.sort();
-        JournalEntry.applyTo(sort, cache, "/", from, to);
+        JournalEntry.applyTo(sort, cache, Path.ROOT, from, to);
 
-        for (String p : paths) {
+        for (Path p : paths) {
             String changes = cache.getChanges(from, to, p, null);
             assertNotNull("missing changes for " + p, changes);
             for (String c : getChildren(changes)) {
-                assertTrue(paths.contains(PathUtils.concat(p, c)));
+                assertTrue(paths.contains(new Path(p, c)));
             }
         }
         sort.close();
@@ -85,13 +85,13 @@ public class JournalEntryTest {
         RevisionVector from = new RevisionVector(Revision.newRevision(1));
         RevisionVector to = new RevisionVector(Revision.newRevision(1));
         sort.sort();
-        JournalEntry.applyTo(sort, cache, "/foo", from, to);
-        assertNotNull(cache.getChanges(from, to, "/foo", null));
-        assertNotNull(cache.getChanges(from, to, "/foo/a", null));
-        assertNotNull(cache.getChanges(from, to, "/foo/b", null));
-        assertNull(cache.getChanges(from, to, "/bar", null));
-        assertNull(cache.getChanges(from, to, "/bar/a", null));
-        assertNull(cache.getChanges(from, to, "/bar/b", null));
+        JournalEntry.applyTo(sort, cache, Path.fromString("/foo"), from, to);
+        assertNotNull(cache.getChanges(from, to, Path.fromString("/foo"), null));
+        assertNotNull(cache.getChanges(from, to, Path.fromString("/foo/a"), null));
+        assertNotNull(cache.getChanges(from, to, Path.fromString("/foo/b"), null));
+        assertNull(cache.getChanges(from, to, Path.fromString("/bar"), null));
+        assertNull(cache.getChanges(from, to, Path.fromString("/bar/a"), null));
+        assertNull(cache.getChanges(from, to, Path.fromString("/bar/b"), null));
     }
 
     //OAK-3494
@@ -104,7 +104,7 @@ public class JournalEntryTest {
 
         //Put one entry for (from, to, "/a/b")->["c1", "c2"] manually
         DiffCache.Entry entry = cache.newEntry(from, to, false);
-        entry.append("/a/b", "^\"c1\":{}^\"c2\":{}");
+        entry.append(Path.fromString("/a/b"), "^\"c1\":{}^\"c2\":{}");
         entry.done();
 
         //NOTE: calling validateCacheUsage fills the cache with an empty diff for the path being validated.
@@ -120,11 +120,14 @@ public class JournalEntryTest {
         validateCacheUsage(cache, from, to, "/c", false);//there is no cache entry for the whole hierarchy
 
         //Fill cache using journal
-        List<String> paths = Lists.newArrayList("/content/changed", "/content/changed1/child1");
+        List<Path> paths = Lists.newArrayList(
+                Path.fromString("/content/changed"),
+                Path.fromString("/content/changed1/child1")
+        );
         StringSort sort = JournalEntry.newSorter();
         add(sort, paths);
         sort.sort();
-        JournalEntry.applyTo(sort, cache, "/", from, to);
+        JournalEntry.applyTo(sort, cache, Path.ROOT, from, to);
 
         validateCacheUsage(cache, from, to, "/topUnchanged", true);
         validateCacheUsage(cache, from, to, "/content/changed/unchangedLeaf", true);
@@ -138,7 +141,7 @@ public class JournalEntryTest {
     public void fillExternalChanges() throws Exception {
         DocumentStore store = new MemoryDocumentStore();
         JournalEntry entry = JOURNAL.newDocument(store);
-        Set<String> paths = Sets.newHashSet();
+        Set<Path> paths = Sets.newHashSet();
         addRandomPaths(paths);
         entry.modified(paths);
         Revision r1 = new Revision(1, 0, 1);
@@ -170,7 +173,7 @@ public class JournalEntryTest {
     public void invalidateOnly() throws Exception {
         DocumentStore store = new MemoryDocumentStore();
         JournalEntry invalidateEntry = JOURNAL.newDocument(store);
-        Set<String> paths = Sets.newHashSet();
+        Set<Path> paths = Sets.newHashSet();
         addRandomPaths(paths);
         invalidateEntry.modified(paths);
         Revision r1 = new Revision(1, 0, 1);
@@ -364,7 +367,7 @@ public class JournalEntryTest {
         assertEquals("Incorrect number of paths", 2, entry.getNumChangedNodes());
         assertTrue("Incorrect hasChanges", entry.hasChanges());
 
-        entry.modified(Arrays.asList("/foo1", "/bar1"));
+        entry.modified(Arrays.asList(Path.fromString("/foo1"), Path.fromString("/bar1")));
         assertEquals("Incorrect number of paths", 4, entry.getNumChangedNodes());
         assertTrue("Incorrect hasChanges", entry.hasChanges());
 
@@ -376,7 +379,7 @@ public class JournalEntryTest {
         assertEquals("Incorrect number of paths", 7, entry.getNumChangedNodes());
         assertTrue("Incorrect hasChanges", entry.hasChanges());
 
-        entry.modified(Arrays.asList("/foo/bar4", "/foo5/bar5"));
+        entry.modified(Arrays.asList(Path.fromString("/foo/bar4"), Path.fromString("/foo5/bar5")));
         assertEquals("Incorrect number of paths", 10, entry.getNumChangedNodes());
         assertTrue("Incorrect hasChanges", entry.hasChanges());
     }
@@ -405,24 +408,24 @@ public class JournalEntryTest {
         assertNull(entry.get(JournalEntry.BRANCH_COMMITS));
     }
 
-    private static void addRandomPaths(java.util.Collection<String> paths) throws IOException {
-        paths.add("/");
+    private static void addRandomPaths(java.util.Collection<Path> paths) throws IOException {
+        paths.add(Path.ROOT);
         Random random = new Random(42);
         for (int i = 0; i < 1000; i++) {
-            String path = "/";
+            Path path = Path.ROOT;
             int depth = random.nextInt(6);
             for (int j = 0; j < depth; j++) {
                 char name = (char) ('a' + random.nextInt(26));
-                path = PathUtils.concat(path, String.valueOf(name));
+                path = new Path(path, String.valueOf(name));
                 paths.add(path);
             }
         }
     }
 
-    private static void add(StringSort sort, List<String> paths)
+    private static void add(StringSort sort, List<Path> paths)
             throws IOException {
-        for (String p : paths) {
-            sort.add(p);
+        for (Path p : paths) {
+            sort.add(p.toString());
         }
     }
 
@@ -453,9 +456,10 @@ public class JournalEntryTest {
                                     RevisionVector to,
                                     String path,
                                     boolean cacheExpected) {
-        String nonLoaderDiff = cache.getChanges(from, to, path, null);
+        Path p = Path.fromString(path);
+        String nonLoaderDiff = cache.getChanges(from, to, p, null);
         final AtomicBoolean loaderCalled = new AtomicBoolean(false);
-        cache.getChanges(from, to, path, new DiffCache.Loader() {
+        cache.getChanges(from, to, p, new DiffCache.Loader() {
             @Override
             public String call() {
                 loaderCalled.set(true);

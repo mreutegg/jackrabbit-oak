@@ -43,6 +43,7 @@ import org.apache.jackrabbit.oak.plugins.document.Collection;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStoreException;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
+import org.apache.jackrabbit.oak.plugins.document.Path;
 import org.apache.jackrabbit.oak.plugins.document.Revision;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
 import org.apache.jackrabbit.oak.plugins.document.StableRevisionComparator;
@@ -230,6 +231,11 @@ public class Utils {
 
     public static boolean isPropertyName(String key) {
         return !key.startsWith("_") || key.startsWith("__") || key.startsWith("_$");
+    }
+
+    public static String getIdFromPath(Path path) {
+        // TODO: optimize
+        return getIdFromPath(path.toString());
     }
 
     public static String getIdFromPath(String path) {
@@ -424,6 +430,20 @@ public class Utils {
     }
 
     /**
+     * Returns the lower key limit to retrieve the children of the given
+     * <code>path</code>.
+     *
+     * @param path a path.
+     * @return the lower key limit.
+     */
+    public static String getKeyLowerLimit(Path path) {
+        // TODO: remove duplicate code or adjust test
+        String from = getIdFromPath(new Path(path, "a"));
+        from = from.substring(0, from.length() - 1);
+        return from;
+    }
+
+    /**
      * Returns the upper key limit to retrieve the children of the given
      * <code>path</code>.
      *
@@ -433,6 +453,20 @@ public class Utils {
     public static String getKeyUpperLimit(String path) {
         String to = PathUtils.concat(path, "z");
         to = getIdFromPath(to);
+        to = to.substring(0, to.length() - 2) + "0";
+        return to;
+    }
+
+    /**
+     * Returns the upper key limit to retrieve the children of the given
+     * <code>path</code>.
+     *
+     * @param path a path.
+     * @return the upper key limit.
+     */
+    public static String getKeyUpperLimit(Path path) {
+        // TODO: remove duplicate code or adjust test
+        String to = getIdFromPath(new Path(path, "z"));
         to = to.substring(0, to.length() - 2) + "0";
         return to;
     }

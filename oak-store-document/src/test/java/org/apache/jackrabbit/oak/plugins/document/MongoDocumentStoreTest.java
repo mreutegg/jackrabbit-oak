@@ -229,7 +229,7 @@ public class MongoDocumentStoreTest {
         Revision rev = Revision.newRevision(0);
         List<UpdateOp> inserts = new ArrayList<UpdateOp>();
         for (int i = 0; i < DocumentMK.MANY_CHILDREN_THRESHOLD * 2; i++) {
-            DocumentNodeState n = new DocumentNodeState(store, "/node-" + i,
+            DocumentNodeState n = new DocumentNodeState(store, Path.fromString("/node-" + i),
                     new RevisionVector(rev));
             inserts.add(n.asOperation(rev));
         }

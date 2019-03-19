@@ -30,6 +30,7 @@ import java.util.concurrent.Callable;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.jackrabbit.oak.cache.CacheLIRS;
+import org.apache.jackrabbit.oak.plugins.document.Path;
 import org.apache.jackrabbit.oak.plugins.document.PathRev;
 import org.apache.jackrabbit.oak.plugins.document.Revision;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
@@ -64,7 +65,7 @@ public class BroadcastTest {
         for (int nodes = 1; nodes < 20; nodes++) {
             PersistentCache pc = new PersistentCache("target/broadcastTest/p" + nodes + ",broadcast=" + type);
             Cache<PathRev, StringValue> cache = openCache(pc);
-            String key = "/test" + Math.random();
+            Path key = Path.fromString("/test" + Math.random());
             PathRev k = new PathRev(key, new RevisionVector(new Revision(0, 0, 0)));
             long time = System.currentTimeMillis();
             for (int i = 0; i < 2000; i++) {
@@ -206,7 +207,7 @@ public class BroadcastTest {
         PersistentCache p2 = new PersistentCache("target/broadcastTest/p2,broadcast=" + type);
         Cache<PathRev, StringValue> c1 = openCache(p1);
         Cache<PathRev, StringValue> c2 = openCache(p2);
-        String key = "/test" + Math.random();
+        Path key = Path.fromString("/test" + Math.random());
         PathRev k = new PathRev(key, new RevisionVector(new Revision(0, 0, 0)));
         int correct = 0;
         for (int i = 0; i < 50; i++) {
