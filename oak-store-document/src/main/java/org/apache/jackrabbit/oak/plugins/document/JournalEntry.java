@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 import com.google.common.collect.AbstractIterator;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
@@ -128,7 +129,7 @@ public final class JournalEntry extends Document {
 
     static void applyTo(@NotNull Iterable<String> changedPaths,
                         @NotNull DiffCache diffCache,
-                        @NotNull String path,
+                        @NotNull Path path,
                         @NotNull RevisionVector from,
                         @NotNull RevisionVector to) throws IOException {
         LOG.debug("applyTo: starting for {} from {} to {}", path, from, to);
@@ -206,12 +207,14 @@ public final class JournalEntry extends Document {
         LOG.debug("applyTo: done. totalCnt: {}, deDuplicatedCnt: {}", totalCnt, deDuplicatedCnt);
     }
 
-    private static boolean inScope(TreeNode node, String path) {
-        if (PathUtils.denotesRoot(path)) {
+    private static boolean inScope(TreeNode node, Path path) {
+        if (path.isRoot()) {
             return true;
         }
-        String p = node.getPath();
-        return p.startsWith(path) && (p.length() == path.length() || p.charAt(path.length()) == '/');
+        Path p = node.getPath();
+        int depthDiff = p.getDepth() - path.getDepth();
+        return depthDiff >= 0
+                && Iterables.elementsEqual(path.elements(), p.getAncestor(depthDiff).elements());
     }
 
     /**
@@ -365,9 +368,14 @@ public final class JournalEntry extends Document {
         return Long.parseLong(parts[1], 16);
     }
 
+    @Deprecated
     void modified(String path) {
+        modified(Path.fromString(path));
+    }
+
+    void modified(Path path) {
         TreeNode node = getChanges();
-        for (String name : PathUtils.elements(path)) {
+        for (String name : path.elements()) {
             if (node.get(name) == null) {
                 numChangedNodes++;
             }
@@ -375,8 +383,8 @@ public final class JournalEntry extends Document {
         }
     }
 
-    void modified(Iterable<String> paths) {
-        for (String p : paths) {
+    void modified(Iterable<Path> paths) {
+        for (Path p : paths) {
             modified(p);
         }
     }
@@ -692,23 +700,15 @@ public final class JournalEntry extends Document {
             return n;
         }
 
-        private String getPath() {
-            return buildPath(new StringBuilder()).toString();
-        }
-
-        private StringBuilder buildPath(StringBuilder sb) {
+        private Path getPath() {
+            Path p;
             if (parent != null) {
-                parent.buildPath(sb);
-                if (parent.parent != null) {
-                    // only add slash if parent is not the root
-                    sb.append("/");
-                }
+                p = new Path(parent.getPath(), name);
             } else {
                 // this is the root
-                sb.append("/");
+                p = Path.ROOT;
             }
-            sb.append(name);
-            return sb;
+            return p;
         }
 
         void parse(JsopReader reader) {

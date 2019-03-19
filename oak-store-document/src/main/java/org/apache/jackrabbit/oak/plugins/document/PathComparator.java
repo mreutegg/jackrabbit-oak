@@ -27,17 +27,20 @@ import org.apache.jackrabbit.oak.plugins.document.util.Utils;
  * Implements a comparator, which sorts path string according to 1) their
  * depth (highest first) and 2) the path string itself.
  */
-public class PathComparator implements Comparator<String>, Serializable {
+public class PathComparator implements Comparator<Path>, Serializable {
 
     private static final long serialVersionUID = -1523171906146067782L;
 
-    public static final Comparator<String> INSTANCE = new PathComparator();
+    public static final Comparator<Path> INSTANCE = new PathComparator();
 
     private PathComparator() {
     }
 
     @Override
-    public int compare(String o1, String o2) {
+    public int compare(Path p1, Path p2) {
+        // TODO: optimize
+        String o1 = p1.toString();
+        String o2 = p2.toString();
         int d1 = Utils.pathDepth(o1);
         int d2 = Utils.pathDepth(o2);
         if (d1 != d2) {

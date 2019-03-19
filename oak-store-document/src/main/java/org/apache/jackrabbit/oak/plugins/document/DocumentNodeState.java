@@ -35,7 +35,6 @@ import org.apache.jackrabbit.oak.commons.json.JsopBuilder;
 import org.apache.jackrabbit.oak.commons.json.JsopReader;
 import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
 import org.apache.jackrabbit.oak.api.PropertyState;
-import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.commons.json.JsopWriter;
 import org.apache.jackrabbit.oak.json.JsonSerializer;
 import org.apache.jackrabbit.oak.plugins.document.bundlor.BundlorUtils;
@@ -62,6 +61,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
 import static org.apache.jackrabbit.oak.commons.StringUtils.estimateMemoryUsage;
+import static org.apache.jackrabbit.oak.plugins.document.Path.NULL;
 
 /**
  * A {@link NodeState} implementation for the {@link DocumentNodeStore}.
@@ -82,7 +82,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
      */
     static final int MAX_FETCH_SIZE = INITIAL_FETCH_SIZE << 4;
 
-    private final String path;
+    private final Path path;
     private final RevisionVector lastRevision;
     private final RevisionVector rootRevision;
     private final boolean fromExternalChange;
@@ -95,12 +95,12 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     private AbstractDocumentNodeState cachedSecondaryState;
 
     DocumentNodeState(@NotNull DocumentNodeStore store,
-                      @NotNull String path,
+                      @NotNull Path path,
                       @NotNull RevisionVector rootRevision) {
         this(store, path, rootRevision, Collections.<PropertyState>emptyList(), false, null);
     }
 
-    DocumentNodeState(@NotNull DocumentNodeStore store, @NotNull String path,
+    DocumentNodeState(@NotNull DocumentNodeStore store, @NotNull Path path,
                       @NotNull RevisionVector rootRevision,
                       Iterable<? extends PropertyState> properties,
                       boolean hasChildren,
@@ -110,7 +110,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     }
 
     private DocumentNodeState(@NotNull DocumentNodeStore store,
-                              @NotNull String path,
+                              @NotNull Path path,
                               @NotNull RevisionVector rootRevision,
                               @NotNull Map<String, PropertyState> properties,
                               boolean hasChildren,
@@ -121,7 +121,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     }
 
     protected DocumentNodeState(@NotNull DocumentNodeStore store,
-                              @NotNull String path,
+                              @NotNull Path path,
                               @Nullable RevisionVector lastRevision,
                               @Nullable RevisionVector rootRevision,
                               boolean fromExternalChange,
@@ -180,7 +180,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
      */
     @NotNull
     DocumentNodeState asBranchRootState(@NotNull DocumentNodeStoreBranch branch) {
-        checkState(PathUtils.denotesRoot(path));
+        checkState(path.isRoot());
         checkState(getRootRevision().isBranch());
         return new DocumentBranchRootNodeState(store, branch, path, rootRevision, lastRevision, bundlingContext);
     }
@@ -210,7 +210,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     }
 
     @Override
-    public String getPath() {
+    public Path getPath() {
         return path;
     }
 
@@ -347,7 +347,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     @NotNull
     @Override
     public NodeBuilder builder() {
-        if ("/".equals(getPath())) {
+        if (getPath().isRoot()) {
             if (getRootRevision().isBranch()) {
                 throw new IllegalStateException("Cannot create builder from branched DocumentNodeState");
             } else {
@@ -414,10 +414,12 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
      * @param revision the revision this node is created.
      */
     UpdateOp asOperation(@NotNull Revision revision) {
-        String id = Utils.getIdFromPath(path);
+        // TODO: optimize?
+        String pathString = path.toString();
+        String id = Utils.getIdFromPath(pathString);
         UpdateOp op = new UpdateOp(id, true);
-        if (Utils.isLongPath(path)) {
-            op.set(NodeDocument.PATH, path);
+        if (Utils.isLongPath(pathString)) {
+            op.set(NodeDocument.PATH, pathString);
         }
         NodeDocument.setModified(op, revision);
         NodeDocument.setDeleted(op, revision, false);
@@ -433,7 +435,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
         long size = 40 // shallow
                 + (lastRevision != null ? lastRevision.getMemory() : 0)
                 + rootRevision.getMemory()
-                + estimateMemoryUsage(path);
+                + path.getMemory();
         // rough approximation for properties
         for (Map.Entry<String, PropertyState> entry : bundlingContext.getAllProperties().entrySet()) {
             // name
@@ -500,7 +502,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
             return null;
         }
 
-        return store.getNode(concat(getPath(), childNodeName), lastRevision);
+        return store.getNode(new Path(getPath(), childNodeName), lastRevision);
     }
 
     @Nullable
@@ -533,7 +535,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
                     @NotNull
                     @Override
                     public String getName() {
-                        return PathUtils.getName(input.getPath());
+                        return input.getPath().getName();
                     }
 
                     @NotNull
@@ -556,7 +558,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
 
     public String asString() {
         JsopWriter json = new JsopBuilder();
-        json.key("path").value(path);
+        json.key("path").value(path.toString());
         json.key("rev").value(rootRevision.toString());
         if (lastRevision != null) {
             json.key("lastRev").value(lastRevision.toString());
@@ -576,7 +578,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     
     public static DocumentNodeState fromString(DocumentNodeStore store, String s) {
         JsopTokenizer json = new JsopTokenizer(s);
-        String path = null;
+        Path path = null;
         RevisionVector rootRev = null;
         RevisionVector lastRev = null;
         boolean hasChildren = false;
@@ -585,7 +587,14 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
             String k = json.readString();
             json.read(':');
             if ("path".equals(k)) {
-                path = json.readString();
+                String p = json.readString();
+                // backwards compatibility with DocumentNodeState written
+                // before Path class was introduced
+                if ("MISSING".equals(p)) {
+                    path = NULL;
+                } else {
+                    path = Path.fromString(p);
+                }
             } else if ("rev".equals(k)) {
                 rootRev = RevisionVector.fromString(json.readString());
             } else if ("lastRev".equals(k)) {
@@ -764,7 +773,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     private AbstractDocumentNodeState createBundledState(String childNodeName, Matcher child) {
         return new DocumentNodeState(
                 store,
-                concat(path, childNodeName),
+                new Path(path, childNodeName),
                 lastRevision,
                 rootRevision,
                 fromExternalChange,

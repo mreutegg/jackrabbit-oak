@@ -2144,7 +2144,7 @@ public class DocumentNodeStoreTest {
         RevisionVector to = ns.getHeadRevision();
 
         DiffCache.Entry entry = ns.getDiffCache().newEntry(from, to, true);
-        entry.append("/", "-\"foo\"");
+        entry.append(Path.ROOT, "-\"foo\"");
         entry.done();
 
         ns.compare(ns.getRoot(), ns.getRoot(from), new DefaultNodeStateDiff() {
@@ -3259,7 +3259,7 @@ public class DocumentNodeStoreTest {
         Revision rev = ns.newRevision();
         RevisionVector after = new RevisionVector(ns.newRevision());
 
-        String path = "/foo";
+        Path path = Path.fromString("/foo");
         ns.getNode(path, before);
         assertNotNull(ns.getNodeCache().getIfPresent(new PathRev(path, before)));
 
@@ -3282,7 +3282,7 @@ public class DocumentNodeStoreTest {
         RevisionVector head = ns.getHeadRevision();
 
         // simulate an incorrect cache entry
-        PathRev key = new PathRev("/", head);
+        PathNameRev key = new PathNameRev(Path.ROOT, null, head);
         DocumentNodeState.Children c = new DocumentNodeState.Children();
         c.children.add("a");
         c.children.add("b");

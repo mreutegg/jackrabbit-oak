@@ -39,7 +39,7 @@ import org.apache.jackrabbit.oak.plugins.document.DocumentMKBuilderProvider;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
-import org.apache.jackrabbit.oak.plugins.document.PathRev;
+import org.apache.jackrabbit.oak.plugins.document.PathNameRev;
 import org.apache.jackrabbit.oak.plugins.document.RandomStream;
 import org.apache.jackrabbit.oak.plugins.document.TestNodeObserver;
 import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
@@ -186,7 +186,7 @@ public class DocumentBundlingTest {
         int nonBundledMem = nonBundledFile.getMemory() + nonBundledContent.getMemory();
         int bundledMem = bundledFile.getMemory();
 
-        assertEquals(1410, bundledMem);
+        assertEquals(1486, bundledMem);
         assertThat(bundledMem, is(greaterThan(nonBundledMem)));
     }
 
@@ -274,7 +274,7 @@ public class DocumentBundlingTest {
 
         List<String> bundledPaths = new ArrayList<>();
         for (DocumentNodeState bs : appNode.getAllBundledNodesStates()) {
-            bundledPaths.add(bs.getPath());
+            bundledPaths.add(bs.getPath().toString());
         }
         assertThat(bundledPaths, containsInAnyOrder(
                 "/test/book.jpg/jcr:content",
@@ -723,9 +723,9 @@ public class DocumentBundlingTest {
 
         merge(builder);
 
-        Set<PathRev> cachedPaths = store.getNodeChildrenCache().asMap().keySet();
-        for (PathRev pr : cachedPaths){
-            assertFalse(pr.getPath().contains("jcr:content/renditions"));
+        Set<PathNameRev> cachedPaths = store.getNodeChildrenCache().asMap().keySet();
+        for (PathNameRev pr : cachedPaths){
+            assertFalse(pr.getPath().toString().contains("jcr:content/renditions"));
         }
     }
 

@@ -136,7 +136,7 @@ public class CommitBuilderTest {
 
     @Test
     public void addNodeState() {
-        String path = "/foo";
+        Path path = Path.fromString("/foo");
         DocumentNodeState foo = addNode("foo");
 
         CommitBuilder builder = new CommitBuilder(ns, null);
@@ -153,10 +153,11 @@ public class CommitBuilderTest {
         RevisionVector baseRev = ns.getHeadRevision()
                 .update(ns.newRevision().asBranchRevision());
         CommitBuilder builder = new CommitBuilder(ns, baseRev);
-        builder.addNode("/foo");
+        Path path = Path.fromString("/foo");
+        builder.addNode(path);
         Revision commitRev = ns.newRevision();
         Commit c = builder.build(commitRev);
-        UpdateOp up = c.getUpdateOperationForNode("/foo");
+        UpdateOp up = c.getUpdateOperationForNode(path);
         UpdateOp.Operation op = up.getChanges().get(
                 new UpdateOp.Key("_bc", commitRev));
         assertNotNull(op);
@@ -167,7 +168,7 @@ public class CommitBuilderTest {
         DocumentNodeState bar = addNode("bar");
 
         CommitBuilder builder = new CommitBuilder(ns, null);
-        String path = "/bar";
+        Path path = Path.fromString("/bar");
 
         builder.removeNode(path, bar);
         Commit c = builder.build(ns.newRevision());
@@ -182,7 +183,7 @@ public class CommitBuilderTest {
         DocumentNodeState bar = addNode("bar");
 
         CommitBuilder builder = new CommitBuilder(ns, null);
-        String path = "/bar";
+        Path path = Path.fromString("/bar");
 
         builder.removeNode(path, bar);
         try {
@@ -210,7 +211,7 @@ public class CommitBuilderTest {
     public void removeNodeStateNull() {
         CommitBuilder builder = new CommitBuilder(ns, null);
         try {
-            builder.removeNode("/bar", null);
+            builder.removeNode(Path.fromString("/bar"), null);
             expectNPE();
         } catch (NullPointerException e) {
             // expected
@@ -219,10 +220,11 @@ public class CommitBuilderTest {
 
     @Test
     public void updateProperty() {
+        Path path = Path.fromString("/foo");
         CommitBuilder builder = new CommitBuilder(ns, null);
-        builder.updateProperty("/foo", "p", "v");
+        builder.updateProperty(path, "p", "v");
         Commit c = builder.build(ns.newRevision());
-        UpdateOp up = c.getUpdateOperationForNode("/foo");
+        UpdateOp up = c.getUpdateOperationForNode(path);
         UpdateOp.Operation op = up.getChanges().get(
                 new UpdateOp.Key("p", c.getRevision()));
         assertNotNull(op);
@@ -230,20 +232,32 @@ public class CommitBuilderTest {
 
     @Test
     public void updatePropertyValueNull() {
+        Path path = Path.fromString("/foo");
         CommitBuilder builder = new CommitBuilder(ns, null);
-        builder.updateProperty("/foo", "p", null);
+        builder.updateProperty(path, "p", null);
         Commit c = builder.build(ns.newRevision());
-        UpdateOp up = c.getUpdateOperationForNode("/foo");
+        UpdateOp up = c.getUpdateOperationForNode(path);
         UpdateOp.Operation op = up.getChanges().get(
                 new UpdateOp.Key("p", c.getRevision()));
         assertNotNull(op);
     }
 
     @Test
+    public void updatePropertyStringPathNull() {
+        CommitBuilder builder = new CommitBuilder(ns, null);
+        try {
+            builder.updateProperty((String) null, "p", "v");
+            expectNPE();
+        } catch (NullPointerException e) {
+            // expected
+        }
+    }
+
+    @Test
     public void updatePropertyPathNull() {
         CommitBuilder builder = new CommitBuilder(ns, null);
         try {
-            builder.updateProperty(null, "p", "v");
+            builder.updateProperty((Path) null, "p", "v");
             expectNPE();
         } catch (NullPointerException e) {
             // expected

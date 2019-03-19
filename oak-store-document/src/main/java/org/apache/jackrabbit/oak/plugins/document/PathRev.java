@@ -19,7 +19,6 @@
 package org.apache.jackrabbit.oak.plugins.document;
 
 import org.apache.jackrabbit.oak.cache.CacheValue;
-import org.apache.jackrabbit.oak.commons.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,31 +26,30 @@ import org.slf4j.LoggerFactory;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * A cache key implementation, which is a combination of a path string and a
- * revision.
+ * A cache key implementation, which is a combination of a path and a revision.
  */
 public final class PathRev implements CacheValue {
 
     private static final Logger LOG = LoggerFactory.getLogger(PathRev.class);
 
-    private final String path;
+    private final Path path;
 
     private final RevisionVector revision;
 
-    public PathRev(@NotNull String path, @NotNull RevisionVector revision) {
+    public PathRev(@NotNull Path path, @NotNull RevisionVector revision) {
         this.path = checkNotNull(path);
         this.revision = checkNotNull(revision);
     }
 
-    public String getPath() {
+    public Path getPath() {
         return path;
     }
 
     @Override
     public int getMemory() {
-        long size =  24                                               // shallow size
-                       + (long)StringUtils.estimateMemoryUsage(path)  // path
-                       + revision.getMemory();                        // revision
+        long size =  24L                          // shallow size
+                       + path.getMemory()         // path
+                       + revision.getMemory();    // revision
         if (size > Integer.MAX_VALUE) {
             LOG.debug("Estimated memory footprint larger than Integer.MAX_VALUE: {}.", size);
             size = Integer.MAX_VALUE;
@@ -94,7 +92,7 @@ public final class PathRev implements CacheValue {
 
     public static PathRev fromString(String s) {
         int index = s.lastIndexOf('@');
-        return new PathRev(s.substring(0, index),
+        return new PathRev(Path.fromString(s.substring(0, index)),
                 RevisionVector.fromString(s.substring(index + 1)));
     }
 
@@ -102,7 +100,8 @@ public final class PathRev implements CacheValue {
         if (this == b) {
             return 0;
         }
-        int compare = path.compareTo(b.path);
+        // TODO: optimize?
+        int compare = path.toString().compareTo(b.path.toString());
         if (compare == 0) {
             compare = revision.compareTo(b.revision);
         }

@@ -21,6 +21,8 @@ import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
+import org.apache.jackrabbit.oak.plugins.document.Path;
+import org.apache.jackrabbit.oak.plugins.document.PathNameRev;
 import org.apache.jackrabbit.oak.plugins.document.PathRev;
 import org.apache.jackrabbit.oak.plugins.document.util.RevisionsKey;
 import org.apache.jackrabbit.oak.plugins.document.util.StringValue;
@@ -53,7 +55,7 @@ public enum CacheType {
         }
         @Override
         public <K> boolean shouldCache(DocumentNodeStore store, K key) {
-            String path = ((PathRev) key).getPath();
+            Path path = ((PathRev) key).getPath();
             if (!store.getNodeCachePredicate().apply(path)){
                 return false;
             }
@@ -64,16 +66,16 @@ public enum CacheType {
     CHILDREN {
         @Override
         public <K> String keyToString(K key) {
-            return ((PathRev) key).asString();
+            return ((PathNameRev) key).asString();
         }
         @SuppressWarnings("unchecked")
         @Override
         public <K> K keyFromString(String key) {
-            return (K) PathRev.fromString(key);
+            return (K) PathNameRev.fromString(key);
         }
         @Override
         public <K> int compareKeys(K a, K b) {
-            return ((PathRev) a).compareTo((PathRev) b);
+            return ((PathNameRev) a).compareTo((PathNameRev) b);
         }
         @Override
         public <V> String valueToString(V value) {
@@ -88,7 +90,7 @@ public enum CacheType {
 
         @Override
         public <K> boolean shouldCache(DocumentNodeStore store, K key) {
-            String path = ((PathRev) key).getPath();
+            Path path = ((PathNameRev) key).getPath();
             if (!store.getNodeCachePredicate().apply(path)){
                 return false;
             }

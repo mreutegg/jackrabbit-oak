@@ -917,7 +917,7 @@ public final class NodeDocument extends Document {
             // deleted
             return null;
         }
-        String path = getPath();
+        Path path = Path.fromString(getPath());
         List<PropertyState> props = Lists.newArrayList();
         for (String key : keySet()) {
             if (!Utils.isPropertyName(key)) {

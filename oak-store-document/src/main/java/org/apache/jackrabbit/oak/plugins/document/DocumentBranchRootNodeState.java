@@ -32,7 +32,7 @@ class DocumentBranchRootNodeState extends DocumentNodeState {
 
     DocumentBranchRootNodeState(@NotNull DocumentNodeStore store,
                                 @NotNull DocumentNodeStoreBranch branch,
-                                @NotNull String path,
+                                @NotNull Path path,
                                 @NotNull RevisionVector rootRevision,
                                 @Nullable RevisionVector lastRevision,
                                 @NotNull BundlingContext bundlingContext) {
