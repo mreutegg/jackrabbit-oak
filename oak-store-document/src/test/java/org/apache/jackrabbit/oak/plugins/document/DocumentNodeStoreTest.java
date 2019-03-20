@@ -295,9 +295,9 @@ public class DocumentNodeStoreTest {
             @Override
             public void run() {
                 Commit c = new CommitBuilder(store, store.newRevision(), head)
-                        .addNode("/newConflictingNode")
-                        .addNode("/deletedNode")
-                        .updateProperty("/updateNode", "foo", "baz")
+                        .addNode(Path.fromString("/newConflictingNode"))
+                        .addNode(Path.fromString("/deletedNode"))
+                        .updateProperty(Path.fromString("/updateNode"), "foo", "baz")
                         .build();
                 try {
                     c.apply();
@@ -316,8 +316,8 @@ public class DocumentNodeStoreTest {
         // commit will succeed and add collision marker to writer commit
         Revision r = store.newRevision();
         Commit c = new CommitBuilder(store, r, head)
-                .addNode("/newConflictingNode")
-                .addNode("/newNonConflictingNode")
+                .addNode(Path.fromString("/newConflictingNode"))
+                .addNode(Path.fromString("/newNonConflictingNode"))
                 .build();
         c.apply();
         // allow writer to continue

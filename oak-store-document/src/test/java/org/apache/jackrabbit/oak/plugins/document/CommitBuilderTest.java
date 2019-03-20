@@ -92,8 +92,9 @@ public class CommitBuilderTest {
     @Test
     public void addNode() {
         RevisionVector baseRev = ns.getHeadRevision();
+        Path foo = Path.fromString("/foo");
         CommitBuilder builder = new CommitBuilder(ns, baseRev);
-        builder.addNode("/foo");
+        builder.addNode(foo);
         Commit c = builder.build(ns.newRevision());
         assertNotNull(c);
         assertFalse(c.isEmpty());
@@ -102,10 +103,11 @@ public class CommitBuilderTest {
     @Test
     public void addNodeTwice() {
         RevisionVector baseRev = ns.getHeadRevision();
+        Path foo = Path.fromString("/foo");
         CommitBuilder builder = new CommitBuilder(ns, baseRev);
-        builder.addNode("/foo");
+        builder.addNode(foo);
         try {
-            builder.addNode("/foo");
+            builder.addNode(foo);
             fail("Must fail with DocumentStoreException");
         } catch (DocumentStoreException e) {
             assertThat(e.getMessage(), containsString("already added"));
@@ -116,7 +118,7 @@ public class CommitBuilderTest {
     public void addNodePathNull() {
         CommitBuilder builder = new CommitBuilder(ns, null);
         try {
-            builder.addNode((String) null);
+            builder.addNode((Path) null);
             expectNPE();
         } catch (NullPointerException e) {
             // expected
