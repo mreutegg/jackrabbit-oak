@@ -41,9 +41,9 @@ public final class PathNameRev implements CacheValue {
     @NotNull
     private final RevisionVector revision;
 
-    public PathNameRev(@NotNull Path path,
-                       @Nullable String name,
-                       @NotNull RevisionVector revision) {
+    PathNameRev(@NotNull Path path,
+                @Nullable String name,
+                @NotNull RevisionVector revision) {
         this.path = checkNotNull(path);
         this.name = name != null ? name : "";
         this.revision = checkNotNull(revision);
@@ -94,9 +94,7 @@ public final class PathNameRev implements CacheValue {
         int len = path.length() + name.length();
         StringBuilder sb = new StringBuilder(len + (Revision.REV_STRING_APPROX_SIZE + 1) * dim);
         sb.append(name);
-        // TODO: optimize
-        sb.append(path);
-        sb.append("@");
+        path.toStringBuilder(sb).append('@');
         revision.toStringBuilder(sb);
         return sb.toString();
     }
@@ -123,7 +121,6 @@ public final class PathNameRev implements CacheValue {
         }
         int compare = name.compareTo(b.name);
         if (compare == 0) {
-            // TODO: optimize?
             compare = path.toString().compareTo(b.path.toString());
         }
         if (compare == 0) {

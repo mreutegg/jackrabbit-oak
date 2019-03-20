@@ -313,6 +313,11 @@ public class UtilsTest {
         assertFalse(Utils.isIdFromLongPath(":"));
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void getIdFromNullPath() {
+        Utils.getIdFromPath(Path.NULL);
+    }
+
     @Test
     public void encodeHexString() {
         Random r = new Random(42);

@@ -258,8 +258,7 @@ public class MemoryDiffCache extends DiffCache {
             int dim = from.getDimensions() + to.getDimensions();
             StringBuilder sb = new StringBuilder(path.length() + (Revision.REV_STRING_APPROX_SIZE + 1) * dim);
             from.toStringBuilder(sb);
-            path.toStringBuilder(sb);
-            sb.append('@');
+            path.toStringBuilder(sb).append('@');
             to.toStringBuilder(sb);
             return sb.toString();
         }

@@ -100,7 +100,6 @@ public final class PathRev implements CacheValue {
         if (this == b) {
             return 0;
         }
-        // TODO: optimize?
         int compare = path.toString().compareTo(b.path.toString());
         if (compare == 0) {
             compare = revision.compareTo(b.revision);
