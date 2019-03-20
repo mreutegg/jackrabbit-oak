@@ -38,14 +38,11 @@ public class PathComparator implements Comparator<Path>, Serializable {
 
     @Override
     public int compare(Path p1, Path p2) {
-        // TODO: optimize
-        String o1 = p1.toString();
-        String o2 = p2.toString();
-        int d1 = Utils.pathDepth(o1);
-        int d2 = Utils.pathDepth(o2);
+        int d1 = p1.getDepth();
+        int d2 = p2.getDepth();
         if (d1 != d2) {
             return Integer.signum(d2 - d1);
         }
-        return o1.compareTo(o2);
+        return p1.toString().compareTo(p2.toString());
     }
 }

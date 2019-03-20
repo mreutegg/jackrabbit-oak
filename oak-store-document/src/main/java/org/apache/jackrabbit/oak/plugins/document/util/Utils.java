@@ -236,19 +236,9 @@ public class Utils {
     public static String getIdFromPath(@NotNull String path) {
         int depth = Utils.pathDepth(path);
         if (isLongPath(path)) {
-            MessageDigest digest;
-            try {
-                digest = MessageDigest.getInstance("SHA-256");
-            } catch (NoSuchAlgorithmException e) {
-                throw new RuntimeException(e);
-            }
             String parent = PathUtils.getParentPath(path);
-            byte[] hash = digest.digest(parent.getBytes(UTF_8));
-            String name = PathUtils.getName(path);
-            StringBuilder sb = new StringBuilder(digest.getDigestLength() * 2 + name.length() + 6);
-            sb.append(depth).append(":h");
-            encodeHexString(hash, sb).append("/").append(name);
-            return sb.toString();
+            byte[] hash = createSHA256Digest(parent);
+            return createHashedId(depth, hash, PathUtils.getName(path));
         }
         return depth + ":" + path;
     }
@@ -261,20 +251,25 @@ public class Utils {
         Path parent = path.getParent();
         int depth = path.getDepth();
         if (parent != null && isLongPath(path)) {
-            MessageDigest digest;
-            try {
-                digest = MessageDigest.getInstance("SHA-256");
-            } catch (NoSuchAlgorithmException e) {
-                throw new RuntimeException(e);
-            }
-            byte[] hash = digest.digest(parent.toString().getBytes(UTF_8));
-            String name = path.getName();
-            StringBuilder sb = new StringBuilder(digest.getDigestLength() * 2 + name.length() + 6);
-            sb.append(depth).append(":h");
-            encodeHexString(hash, sb).append("/").append(name);
-            return sb.toString();
+            byte[] hash = createSHA256Digest(parent.toString());
+            return createHashedId(depth, hash, path.getName());
         }
         return depth + ":" + path;
+    }
+
+    private static String createHashedId(int depth, byte[] hash, String name) {
+        StringBuilder sb = new StringBuilder(hash.length * 2 + name.length() + 6);
+        sb.append(depth).append(":h");
+        encodeHexString(hash, sb).append("/").append(name);
+        return sb.toString();
+    }
+
+    private static byte[] createSHA256Digest(String input) {
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(input.getBytes(UTF_8));
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     /**
@@ -477,22 +472,7 @@ public class Utils {
      * @param path a path.
      * @return the upper key limit.
      */
-    public static String getKeyUpperLimit(String path) {
-        String to = PathUtils.concat(path, "z");
-        to = getIdFromPath(to);
-        to = to.substring(0, to.length() - 2) + "0";
-        return to;
-    }
-
-    /**
-     * Returns the upper key limit to retrieve the children of the given
-     * <code>path</code>.
-     *
-     * @param path a path.
-     * @return the upper key limit.
-     */
     public static String getKeyUpperLimit(Path path) {
-        // TODO: remove duplicate code or adjust test
         String to = getIdFromPath(new Path(path, "z"));
         to = to.substring(0, to.length() - 2) + "0";
         return to;
