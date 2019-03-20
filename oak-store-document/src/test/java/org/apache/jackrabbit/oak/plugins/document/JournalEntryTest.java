@@ -85,13 +85,13 @@ public class JournalEntryTest {
         RevisionVector from = new RevisionVector(Revision.newRevision(1));
         RevisionVector to = new RevisionVector(Revision.newRevision(1));
         sort.sort();
-        JournalEntry.applyTo(sort, cache, Path.fromString("/foo"), from, to);
-        assertNotNull(cache.getChanges(from, to, Path.fromString("/foo"), null));
-        assertNotNull(cache.getChanges(from, to, Path.fromString("/foo/a"), null));
-        assertNotNull(cache.getChanges(from, to, Path.fromString("/foo/b"), null));
-        assertNull(cache.getChanges(from, to, Path.fromString("/bar"), null));
-        assertNull(cache.getChanges(from, to, Path.fromString("/bar/a"), null));
-        assertNull(cache.getChanges(from, to, Path.fromString("/bar/b"), null));
+        JournalEntry.applyTo(sort, cache, p("/foo"), from, to);
+        assertNotNull(cache.getChanges(from, to, p("/foo"), null));
+        assertNotNull(cache.getChanges(from, to, p("/foo/a"), null));
+        assertNotNull(cache.getChanges(from, to, p("/foo/b"), null));
+        assertNull(cache.getChanges(from, to, p("/bar"), null));
+        assertNull(cache.getChanges(from, to, p("/bar/a"), null));
+        assertNull(cache.getChanges(from, to, p("/bar/b"), null));
     }
 
     //OAK-3494
@@ -104,7 +104,7 @@ public class JournalEntryTest {
 
         //Put one entry for (from, to, "/a/b")->["c1", "c2"] manually
         DiffCache.Entry entry = cache.newEntry(from, to, false);
-        entry.append(Path.fromString("/a/b"), "^\"c1\":{}^\"c2\":{}");
+        entry.append(p("/a/b"), "^\"c1\":{}^\"c2\":{}");
         entry.done();
 
         //NOTE: calling validateCacheUsage fills the cache with an empty diff for the path being validated.
@@ -121,8 +121,8 @@ public class JournalEntryTest {
 
         //Fill cache using journal
         List<Path> paths = Lists.newArrayList(
-                Path.fromString("/content/changed"),
-                Path.fromString("/content/changed1/child1")
+                p("/content/changed"),
+                p("/content/changed1/child1")
         );
         StringSort sort = JournalEntry.newSorter();
         add(sort, paths);
@@ -216,14 +216,14 @@ public class JournalEntryTest {
         Revision r4 = new Revision(4, 0, 1);
         DocumentStore store = new MemoryDocumentStore();
         JournalEntry entry = JOURNAL.newDocument(store);
-        entry.modified("/");
-        entry.modified("/foo");
+        entry.modified(p("/"));
+        entry.modified(p("/foo"));
         UpdateOp op = entry.asUpdateOp(r2);
         assertTrue(store.create(JOURNAL, Collections.singletonList(op)));
 
         entry = JOURNAL.newDocument(store);
-        entry.modified("/");
-        entry.modified("/bar");
+        entry.modified(p("/"));
+        entry.modified(p("/bar"));
         op = entry.asUpdateOp(r4);
         assertTrue(store.create(JOURNAL, Collections.singletonList(op)));
 
@@ -274,15 +274,15 @@ public class JournalEntryTest {
         Revision r2 = new Revision(2, 0, 1);
         DocumentStore store = new MemoryDocumentStore();
         JournalEntry entry = JOURNAL.newDocument(store);
-        entry.modified("/");
-        entry.modified("/foo");
-        entry.modified("/foo/a");
-        entry.modified("/foo/b");
-        entry.modified("/foo/c");
-        entry.modified("/bar");
-        entry.modified("/bar/a");
-        entry.modified("/bar/b");
-        entry.modified("/bar/c");
+        entry.modified(p("/"));
+        entry.modified(p("/foo"));
+        entry.modified(p("/foo/a"));
+        entry.modified(p("/foo/b"));
+        entry.modified(p("/foo/c"));
+        entry.modified(p("/bar"));
+        entry.modified(p("/bar/a"));
+        entry.modified(p("/bar/b"));
+        entry.modified(p("/bar/c"));
 
         UpdateOp op = entry.asUpdateOp(r2);
         assertTrue(store.create(JOURNAL, Collections.singletonList(op)));
@@ -300,7 +300,7 @@ public class JournalEntryTest {
     public void getRevisionTimestamp() throws Exception {
         DocumentStore store = new MemoryDocumentStore();
         JournalEntry entry = JOURNAL.newDocument(store);
-        entry.modified("/foo");
+        entry.modified(p("/foo"));
         Revision r = Revision.newRevision(1);
         assertTrue(store.create(JOURNAL,
                 Collections.singletonList(entry.asUpdateOp(r))));
@@ -318,7 +318,7 @@ public class JournalEntryTest {
                 @Override
                 public void run() {
                     for (int i = 0; i < 100000; i++) {
-                        entry.modified("/node-" + i);
+                        entry.modified(p("/node-" + i));
                     }
                 }
             });
@@ -339,15 +339,15 @@ public class JournalEntryTest {
     public void addToWithPath() throws Exception {
         DocumentStore store = new MemoryDocumentStore();
         JournalEntry entry = JOURNAL.newDocument(store);
-        entry.modified("/");
-        entry.modified("/foo");
-        entry.modified("/foo/a");
-        entry.modified("/foo/b");
-        entry.modified("/foo/c");
-        entry.modified("/bar");
-        entry.modified("/bar/a");
-        entry.modified("/bar/b");
-        entry.modified("/bar/c");
+        entry.modified(p("/"));
+        entry.modified(p("/foo"));
+        entry.modified(p("/foo/a"));
+        entry.modified(p("/foo/b"));
+        entry.modified(p("/foo/c"));
+        entry.modified(p("/bar"));
+        entry.modified(p("/bar/a"));
+        entry.modified(p("/bar/b"));
+        entry.modified(p("/bar/c"));
         StringSort sort = JournalEntry.newSorter();
         entry.addTo(sort, "/foo");
         assertEquals(4, sort.getSize());
@@ -362,24 +362,24 @@ public class JournalEntryTest {
         assertEquals("Incorrect number of initial paths", 0, entry.getNumChangedNodes());
         assertFalse("Incorrect hasChanges", entry.hasChanges());
 
-        entry.modified("/foo");
-        entry.modified("/bar");
+        entry.modified(p("/foo"));
+        entry.modified(p("/bar"));
         assertEquals("Incorrect number of paths", 2, entry.getNumChangedNodes());
         assertTrue("Incorrect hasChanges", entry.hasChanges());
 
-        entry.modified(Arrays.asList(Path.fromString("/foo1"), Path.fromString("/bar1")));
+        entry.modified(Arrays.asList(p("/foo1"), p("/bar1")));
         assertEquals("Incorrect number of paths", 4, entry.getNumChangedNodes());
         assertTrue("Incorrect hasChanges", entry.hasChanges());
 
-        entry.modified("/foo/bar2");
+        entry.modified(p("/foo/bar2"));
         assertEquals("Incorrect number of paths", 5, entry.getNumChangedNodes());
         assertTrue("Incorrect hasChanges", entry.hasChanges());
 
-        entry.modified("/foo3/bar3");
+        entry.modified(p("/foo3/bar3"));
         assertEquals("Incorrect number of paths", 7, entry.getNumChangedNodes());
         assertTrue("Incorrect hasChanges", entry.hasChanges());
 
-        entry.modified(Arrays.asList(Path.fromString("/foo/bar4"), Path.fromString("/foo5/bar5")));
+        entry.modified(Arrays.asList(p("/foo/bar4"), p("/foo5/bar5")));
         assertEquals("Incorrect number of paths", 10, entry.getNumChangedNodes());
         assertTrue("Incorrect hasChanges", entry.hasChanges());
     }
@@ -456,7 +456,7 @@ public class JournalEntryTest {
                                     RevisionVector to,
                                     String path,
                                     boolean cacheExpected) {
-        Path p = Path.fromString(path);
+        Path p = p(path);
         String nonLoaderDiff = cache.getChanges(from, to, p, null);
         final AtomicBoolean loaderCalled = new AtomicBoolean(false);
         cache.getChanges(from, to, p, new DiffCache.Loader() {
@@ -487,5 +487,9 @@ public class JournalEntryTest {
         } finally {
             invalidate.close();
         } return changes;
+    }
+    
+    private static Path p(String path) {
+        return Path.fromString(path);
     }
 }

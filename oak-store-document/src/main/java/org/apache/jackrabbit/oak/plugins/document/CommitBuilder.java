@@ -191,23 +191,6 @@ class CommitBuilder {
      * @param propertyName the name of the property.
      * @param value the value of the property.
      * @return {@code this} builder.
-     * @deprecated Use {@link #updateProperty(Path, String, String)} instead.
-     */
-    @Deprecated
-    @NotNull
-    CommitBuilder updateProperty(@NotNull String path,
-                                 @NotNull String propertyName,
-                                 @Nullable String value) {
-        return updateProperty(Path.fromString(path), propertyName, value);
-    }
-
-    /**
-     * Updates a property to a given value.
-     *
-     * @param path the path of the node.
-     * @param propertyName the name of the property.
-     * @param value the value of the property.
-     * @return {@code this} builder.
      */
     @NotNull
     CommitBuilder updateProperty(@NotNull Path path,
