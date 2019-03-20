@@ -42,7 +42,7 @@ public class PathComparatorTest {
         paths.add(p("/"));
         paths.add(p("/bar"));
 
-        Collections.sort(paths, PathComparator.INSTANCE);
+        paths.sort(PathComparator.INSTANCE);
 
         List<Path> expected = Lists.newArrayList(
                 p("/bar/qux"), p("/foo/bar"), p("/bar"), p("/foo"), p("/"));

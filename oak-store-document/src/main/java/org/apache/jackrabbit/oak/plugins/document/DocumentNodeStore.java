@@ -21,15 +21,12 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Iterables.filter;
 import static com.google.common.collect.Iterables.transform;
-import static com.google.common.collect.Lists.newArrayList;
 import static com.google.common.collect.Lists.reverse;
 import static java.util.Collections.singletonList;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.apache.jackrabbit.oak.api.CommitFailedException.OAK;
-import static org.apache.jackrabbit.oak.commons.PathUtils.ROOT_PATH;
-import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.JOURNAL;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.DocumentNodeStoreBuilder.MANY_CHILDREN_THRESHOLD;
@@ -102,7 +99,6 @@ import org.apache.jackrabbit.oak.commons.json.JsopWriter;
 import org.apache.jackrabbit.oak.api.Blob;
 import org.apache.jackrabbit.oak.api.CommitFailedException;
 import org.apache.jackrabbit.oak.cache.CacheStats;
-import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.json.BlobSerializer;
 import org.apache.jackrabbit.oak.plugins.document.util.LeaseCheckDocumentStoreWrapper;
 import org.apache.jackrabbit.oak.plugins.document.util.LoggingDocumentStoreWrapper;
@@ -614,7 +610,7 @@ public final class DocumentNodeStore
         diffCache = builder.getDiffCache(this.clusterId);
 
         // check if root node exists
-        NodeDocument rootDoc = store.find(NODES, Utils.getIdFromPath("/"));
+        NodeDocument rootDoc = store.find(NODES, Utils.getIdFromPath(ROOT));
         if (rootDoc == null) {
             if (readOnlyMode) {
                 throw new DocumentStoreException("Unable to initialized a " +
@@ -638,7 +634,7 @@ public final class DocumentNodeStore
             setRoot(head);
             // make sure _lastRev is written back to store
             backgroundWrite();
-            rootDoc = store.find(NODES, Utils.getIdFromPath("/"));
+            rootDoc = store.find(NODES, Utils.getIdFromPath(ROOT));
             // at this point the root document must exist
             if (rootDoc == null) {
                 throw new IllegalStateException("Root document does not exist");
@@ -1683,9 +1679,9 @@ public final class DocumentNodeStore
             revs.add(ancestorRev);
         }
         revs.addAll(b.getCommits().tailSet(ancestorRev));
-        UpdateOp rootOp = new UpdateOp(Utils.getIdFromPath("/"), false);
+        UpdateOp rootOp = new UpdateOp(Utils.getIdFromPath(ROOT), false);
         // reset each branch commit in reverse order
-        Map<String, UpdateOp> operations = Maps.newHashMap();
+        Map<Path, UpdateOp> operations = Maps.newHashMap();
         AtomicReference<Revision> currentRev = new AtomicReference<>();
         for (Revision r : reverse(revs)) {
             operations.clear();
@@ -1735,7 +1731,7 @@ public final class DocumentNodeStore
         MergeCommit commit = newMergeCommit(base, numBranchCommits);
         try {
             // make branch commits visible
-            UpdateOp op = new UpdateOp(Utils.getIdFromPath("/"), false);
+            UpdateOp op = new UpdateOp(Utils.getIdFromPath(ROOT), false);
             NodeDocument.setModified(op, commit.getRevision());
             if (b != null) {
                 // check the branch age and fail the commit
@@ -2325,7 +2321,7 @@ public final class DocumentNodeStore
         while ((b = branches.pollOrphanedBranch()) != null) {
             LOG.debug("Cleaning up orphaned branch with base revision: {}, " + 
                     "commits: {}", b.getBase(), b.getCommits());
-            UpdateOp op = new UpdateOp(Utils.getIdFromPath("/"), false);
+            UpdateOp op = new UpdateOp(Utils.getIdFromPath(ROOT), false);
             for (Revision r : b.getCommits()) {
                 r = r.asTrunkRevision();
                 NodeDocument.removeRevision(op, r);
@@ -2336,7 +2332,7 @@ public final class DocumentNodeStore
     }
 
     private void cleanRootCollisions() {
-        String id = Utils.getIdFromPath("/");
+        String id = Utils.getIdFromPath(ROOT);
         NodeDocument root = store.find(NODES, id);
         if (root != null) {
             cleanCollisions(root, Integer.MAX_VALUE);

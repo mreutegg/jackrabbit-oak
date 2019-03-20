@@ -1411,7 +1411,7 @@ public final class NodeDocument extends Document {
                 NodeDocument prev = store.find(NODES, prevId);
                 if (prev == null) {
                     LOG.warn("Split document {} does not exist anymore. Main document is {}",
-                            prevId, Utils.getIdFromPath(getMainPath()));
+                            prevId, Utils.getIdFromPath(Path.fromString(getMainPath())));
                     continue;
                 }
                 // recurse into the split hierarchy
@@ -1864,7 +1864,7 @@ public final class NodeDocument extends Document {
         // older than one minute. We don't want to invalidate a document
         // too frequently if the document structure is really broken.
         String path = getMainPath();
-        String id = Utils.getIdFromPath(path);
+        String id = Utils.getIdFromPath(Path.fromString(path));
         NodeDocument doc = store.getIfCached(NODES, id);
         long now = Revision.getCurrentTimestamp();
         while (doc != null
@@ -1991,7 +1991,7 @@ public final class NodeDocument extends Document {
             }
         }
         // get root of commit
-        return store.find(Collection.NODES, Utils.getIdFromPath(commitRootPath));
+        return store.find(Collection.NODES, Utils.getIdFromPath(Path.fromString(commitRootPath)));
     }
 
     /**

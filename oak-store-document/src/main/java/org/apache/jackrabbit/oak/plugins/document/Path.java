@@ -68,7 +68,7 @@ public final class Path implements CacheValue {
     }
 
     @NotNull
-    String getName() {
+    public String getName() {
         return name;
     }
 
@@ -88,11 +88,11 @@ public final class Path implements CacheValue {
     }
 
     @Nullable
-    Path getParent() {
+    public Path getParent() {
         return parent;
     }
 
-    int length() {
+    public int length() {
         if (isRoot()) {
             // root
             return 1;
@@ -102,13 +102,13 @@ public final class Path implements CacheValue {
         int length = 0;
         Path p = this;
         while (p.parent != null) {
-            length += name.length() + 1;
+            length += p.name.length() + 1;
             p = p.parent;
         }
         return length;
     }
 
-    int getDepth() {
+    public int getDepth() {
         int depth = 0;
         Path p = this;
         while (p.parent != null) {

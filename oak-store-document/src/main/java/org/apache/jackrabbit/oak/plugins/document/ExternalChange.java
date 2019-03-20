@@ -97,7 +97,7 @@ abstract class ExternalChange {
         Clock clock = store.getClock();
         int clusterId = store.getClusterId();
         long time = clock.getTime();
-        String id = Utils.getIdFromPath("/");
+        String id = Utils.getIdFromPath(Path.ROOT);
         NodeDocument doc = store.getDocumentStore().find(NODES, id, store.getAsyncDelay());
         if (doc == null) {
             return stats;

@@ -35,6 +35,7 @@ import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStoreException;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
+import org.apache.jackrabbit.oak.plugins.document.Path;
 import org.apache.jackrabbit.oak.plugins.document.Revision;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
 import org.apache.jackrabbit.oak.plugins.document.UpdateOp;
@@ -102,19 +103,19 @@ public class UtilsTest {
 
     @Test
     public void getParentIdFromLowerLimit() throws Exception{
-        assertEquals("1:/foo",Utils.getParentIdFromLowerLimit(Utils.getKeyLowerLimit("/foo")));
+        assertEquals("1:/foo",Utils.getParentIdFromLowerLimit(Utils.getKeyLowerLimit(Path.fromString("/foo"))));
         assertEquals("1:/foo",Utils.getParentIdFromLowerLimit("2:/foo/bar"));
     }
 
     @Test
     public void getParentId() throws Exception{
-        String longPath = PathUtils.concat("/"+Strings.repeat("p", Utils.PATH_LONG + 1), "foo");
+        Path longPath = Path.fromString(PathUtils.concat("/"+Strings.repeat("p", Utils.PATH_LONG + 1), "foo"));
         assertTrue(Utils.isLongPath(longPath));
 
         assertNull(Utils.getParentId(Utils.getIdFromPath(longPath)));
 
-        assertNull(Utils.getParentId(Utils.getIdFromPath("/")));
-        assertEquals("1:/foo",Utils.getParentId("2:/foo/bar"));
+        assertNull(Utils.getParentId(Utils.getIdFromPath(Path.ROOT)));
+        assertEquals("1:/foo", Utils.getParentId("2:/foo/bar"));
     }
 
     @Test
