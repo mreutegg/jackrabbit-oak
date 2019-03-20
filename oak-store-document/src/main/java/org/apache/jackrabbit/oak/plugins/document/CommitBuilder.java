@@ -102,19 +102,6 @@ class CommitBuilder {
      *
      * @param path the path of the node to add.
      * @return {@code this} builder.
-     * @deprecated use {@link #addNode(Path)} instead.
-     */
-    @Deprecated
-    @NotNull
-    CommitBuilder addNode(@NotNull String path) {
-        return addNode(Path.fromString(path));
-    }
-
-    /**
-     * Add a node to the commit with the given path.
-     *
-     * @param path the path of the node to add.
-     * @return {@code this} builder.
      */
     @NotNull
     CommitBuilder addNode(@NotNull Path path) {

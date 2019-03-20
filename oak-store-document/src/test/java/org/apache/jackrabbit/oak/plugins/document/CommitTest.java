@@ -59,7 +59,7 @@ public class CommitTest {
 
         // this commit should fail
         Commit c = ns.newCommit(changes -> {
-            changes.addNode("/foo/baz");
+            changes.addNode(Path.fromString("/foo/baz"));
         }, ns.getHeadRevision(), null);
         try {
             UpdateOp op = c.getUpdateOperationForNode(Path.fromString("/bar"));
@@ -94,7 +94,7 @@ public class CommitTest {
 
         // this commit should fail
         Commit c = ns.newCommit(changes -> {
-            changes.addNode("/foo");
+            changes.addNode(Path.fromString("/foo"));
         }, ns.getHeadRevision(), null);
         try {
             c.apply();
