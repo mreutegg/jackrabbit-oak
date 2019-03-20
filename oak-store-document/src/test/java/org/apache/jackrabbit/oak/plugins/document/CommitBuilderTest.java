@@ -245,17 +245,6 @@ public class CommitBuilderTest {
     }
 
     @Test
-    public void updatePropertyStringPathNull() {
-        CommitBuilder builder = new CommitBuilder(ns, null);
-        try {
-            builder.updateProperty((String) null, "p", "v");
-            expectNPE();
-        } catch (NullPointerException e) {
-            // expected
-        }
-    }
-
-    @Test
     public void updatePropertyPathNull() {
         CommitBuilder builder = new CommitBuilder(ns, null);
         try {
@@ -270,7 +259,7 @@ public class CommitBuilderTest {
     public void updatePropertyPropertyNull() {
         CommitBuilder builder = new CommitBuilder(ns, null);
         try {
-            builder.updateProperty("/foo", null, "v");
+            builder.updateProperty(Path.fromString("/foo"), null, "v");
             expectNPE();
         } catch (NullPointerException e) {
             // expected

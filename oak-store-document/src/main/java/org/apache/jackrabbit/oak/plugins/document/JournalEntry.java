@@ -368,11 +368,6 @@ public final class JournalEntry extends Document {
         return Long.parseLong(parts[1], 16);
     }
 
-    @Deprecated
-    void modified(String path) {
-        modified(Path.fromString(path));
-    }
-
     void modified(Path path) {
         TreeNode node = getChanges();
         for (String name : path.elements()) {
