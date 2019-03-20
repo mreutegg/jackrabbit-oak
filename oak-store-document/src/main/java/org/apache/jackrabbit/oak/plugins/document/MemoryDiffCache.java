@@ -195,30 +195,78 @@ public class MemoryDiffCache extends DiffCache {
         return unchanged;
     }
 
-    public static class Key implements CacheValue {
+    public static final class Key implements CacheValue, Comparable<Key> {
 
         private final Path path;
 
-        private final RevisionVector rv1;
+        private final RevisionVector from;
 
-        private final RevisionVector rv2;
+        private final RevisionVector to;
 
         public Key(@NotNull Path path,
-                   @NotNull RevisionVector rv1,
-                   @NotNull RevisionVector rv2) {
+                   @NotNull RevisionVector from,
+                   @NotNull RevisionVector to) {
             this.path = checkNotNull(path);
-            this.rv1 = checkNotNull(rv1);
-            this.rv2 = checkNotNull(rv2);
+            this.from = checkNotNull(from);
+            this.to = checkNotNull(to);
+            if (path == Path.NULL) {
+                throw new IllegalArgumentException("NULL Path not allowed");
+            }
+        }
+
+        public String asString() {
+            return toString();
+        }
+
+        public static Key fromString(@NotNull String s) {
+            int idx1 = s.indexOf('/');
+            int idx2 = s.lastIndexOf('@');
+            if (idx1 == -1 || idx2 == -1) {
+                throw new IllegalArgumentException("Malformed "
+                        + MemoryDiffCache.Key.class.getSimpleName() + ": " + s);
+            }
+            return new Key(
+                    Path.fromString(s.substring(idx1, idx2)),
+                    RevisionVector.fromString(s.substring(0, idx1)),
+                    RevisionVector.fromString(s.substring(idx2 + 1))
+            );
         }
 
         @Override
         public int getMemory() {
-            return 32 + path.getMemory() + rv1.getMemory() + rv2.getMemory();
+            return 32 + path.getMemory() + from.getMemory() + to.getMemory();
+        }
+
+        @Override
+        public int compareTo(@NotNull MemoryDiffCache.Key other) {
+            if (this == other) {
+                return 0;
+            }
+            int compare = this.from.asString().compareTo(other.from.asString());
+            if (compare != 0) {
+                return compare;
+            }
+            compare = this.path.toString().compareTo(other.path.toString());
+            if (compare != 0) {
+                return compare;
+            }
+            return this.to.compareTo(other.to);
+        }
+
+        @Override
+        public String toString() {
+            int dim = from.getDimensions() + to.getDimensions();
+            StringBuilder sb = new StringBuilder(path.length() + (Revision.REV_STRING_APPROX_SIZE + 1) * dim);
+            from.toStringBuilder(sb);
+            path.toStringBuilder(sb);
+            sb.append('@');
+            to.toStringBuilder(sb);
+            return sb.toString();
         }
 
         @Override
         public int hashCode() {
-            return path.hashCode() ^ rv1.hashCode() ^ rv2.hashCode();
+            return path.hashCode() ^ from.hashCode() ^ to.hashCode();
         }
 
         @Override
@@ -227,8 +275,8 @@ public class MemoryDiffCache extends DiffCache {
                 return true;
             } else if (obj instanceof Key) {
                 Key other = (Key) obj;
-                return rv1.equals(other.rv1)
-                        && rv2.equals(other.rv2)
+                return from.equals(other.from)
+                        && to.equals(other.to)
                         && path.equals(other.path);
             }
             return false;
