@@ -233,12 +233,8 @@ public class Utils {
         return !key.startsWith("_") || key.startsWith("__") || key.startsWith("_$");
     }
 
-    public static String getIdFromPath(Path path) {
-        // TODO: optimize
-        return getIdFromPath(path.toString());
-    }
-
-    public static String getIdFromPath(String path) {
+    public static String getIdFromPath(@NotNull String path) {
+        int depth = Utils.pathDepth(path);
         if (isLongPath(path)) {
             MessageDigest digest;
             try {
@@ -246,7 +242,6 @@ public class Utils {
             } catch (NoSuchAlgorithmException e) {
                 throw new RuntimeException(e);
             }
-            int depth = Utils.pathDepth(path);
             String parent = PathUtils.getParentPath(path);
             byte[] hash = digest.digest(parent.getBytes(UTF_8));
             String name = PathUtils.getName(path);
@@ -255,7 +250,30 @@ public class Utils {
             encodeHexString(hash, sb).append("/").append(name);
             return sb.toString();
         }
-        int depth = Utils.pathDepth(path);
+        return depth + ":" + path;
+    }
+
+    public static String getIdFromPath(@NotNull Path path) {
+        checkNotNull(path);
+        if (path == Path.NULL) {
+            throw new IllegalArgumentException("Cannot get Id from NULL path");
+        }
+        Path parent = path.getParent();
+        int depth = path.getDepth();
+        if (parent != null && isLongPath(path)) {
+            MessageDigest digest;
+            try {
+                digest = MessageDigest.getInstance("SHA-256");
+            } catch (NoSuchAlgorithmException e) {
+                throw new RuntimeException(e);
+            }
+            byte[] hash = digest.digest(parent.toString().getBytes(UTF_8));
+            String name = path.getName();
+            StringBuilder sb = new StringBuilder(digest.getDigestLength() * 2 + name.length() + 6);
+            sb.append(depth).append(":h");
+            encodeHexString(hash, sb).append("/").append(name);
+            return sb.toString();
+        }
         return depth + ":" + path;
     }
 
@@ -304,6 +322,10 @@ public class Utils {
         return Utils.getIdFromPath(parentPath);
     }
 
+    /**
+     * @deprecated Use {@link #isLongPath(Path)} instead.
+     */
+    @Deprecated
     public static boolean isLongPath(String path) {
         // the most common case: a short path
         // avoid calculating the parent path
@@ -321,7 +343,27 @@ public class Utils {
         }
         return true;
     }
-    
+
+    public static boolean isLongPath(Path path) {
+        // the most common case: a short path
+        // avoid calculating the parent path
+        if (path.length() < PATH_SHORT) {
+            return false;
+        }
+        // check if the parent path is long
+        Path parent = path.getParent();
+        if (parent == null) {
+            return false;
+        }
+        if (parent.toString().getBytes(UTF_8).length < PATH_LONG) {
+            return false;
+        }
+        if (path.getName().getBytes(UTF_8).length > NODE_NAME_LIMIT) {
+            throw new IllegalArgumentException("Node name is too long: " + path);
+        }
+        return true;
+    }
+
     public static boolean isIdFromLongPath(String id) {
         int index = id.indexOf(':');
         return index != -1 && index < id.length() - 1 && id.charAt(index + 1) == 'h';
@@ -422,22 +464,7 @@ public class Utils {
      * @param path a path.
      * @return the lower key limit.
      */
-    public static String getKeyLowerLimit(String path) {
-        String from = PathUtils.concat(path, "a");
-        from = getIdFromPath(from);
-        from = from.substring(0, from.length() - 1);
-        return from;
-    }
-
-    /**
-     * Returns the lower key limit to retrieve the children of the given
-     * <code>path</code>.
-     *
-     * @param path a path.
-     * @return the lower key limit.
-     */
     public static String getKeyLowerLimit(Path path) {
-        // TODO: remove duplicate code or adjust test
         String from = getIdFromPath(new Path(path, "a"));
         from = from.substring(0, from.length() - 1);
         return from;
@@ -642,7 +669,7 @@ public class Utils {
      */
     @NotNull
     public static NodeDocument getRootDocument(@NotNull DocumentStore store) {
-        String rootId = Utils.getIdFromPath("/");
+        String rootId = Utils.getIdFromPath(Path.ROOT);
         NodeDocument root = store.find(Collection.NODES, rootId);
         if (root == null) {
             throw new IllegalStateException("missing root document");
@@ -984,7 +1011,7 @@ public class Utils {
                                         ClusterNodeInfo info,
                                         Clock clock)
             throws DocumentStoreException {
-        NodeDocument root = store.find(Collection.NODES, getIdFromPath("/"));
+        NodeDocument root = store.find(Collection.NODES, getIdFromPath(Path.ROOT));
         if (root == null) {
             return;
         }

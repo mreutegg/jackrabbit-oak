@@ -106,7 +106,7 @@ public class SplitDocumentCleanUp implements Closeable {
 
     private void disconnect(NodeDocument splitDoc) {
         String splitId = splitDoc.getId();
-        String mainId = Utils.getIdFromPath(splitDoc.getMainPath());
+        String mainId = Utils.getIdFromPath(Path.fromString(splitDoc.getMainPath()));
         NodeDocument doc = store.find(NODES, mainId);
         if (doc == null) {
             LOG.warn("Main document {} already removed. Split document is {}",

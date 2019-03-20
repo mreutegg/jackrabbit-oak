@@ -414,12 +414,10 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
      * @param revision the revision this node is created.
      */
     UpdateOp asOperation(@NotNull Revision revision) {
-        // TODO: optimize?
-        String pathString = path.toString();
-        String id = Utils.getIdFromPath(pathString);
+        String id = Utils.getIdFromPath(path);
         UpdateOp op = new UpdateOp(id, true);
-        if (Utils.isLongPath(pathString)) {
-            op.set(NodeDocument.PATH, pathString);
+        if (Utils.isIdFromLongPath(id)) {
+            op.set(NodeDocument.PATH, path.toString());
         }
         NodeDocument.setModified(op, revision);
         NodeDocument.setDeleted(op, revision, false);

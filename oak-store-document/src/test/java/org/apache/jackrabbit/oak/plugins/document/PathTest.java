@@ -34,6 +34,7 @@ public class PathTest {
     private final Path root = ROOT;
     private final Path foo = new Path(root, "foo");
     private final Path fooBar = new Path(foo, "bar");
+    private final Path fooBarQuux = new Path(fooBar, "quux");
 
 
     @Test
@@ -80,6 +81,7 @@ public class PathTest {
         assertEquals(root.toString().length(), root.length());
         assertEquals(foo.toString().length(), foo.length());
         assertEquals(fooBar.toString().length(), fooBar.length());
+        assertEquals(fooBarQuux.toString().length(), fooBarQuux.length());
     }
 
     @Test
