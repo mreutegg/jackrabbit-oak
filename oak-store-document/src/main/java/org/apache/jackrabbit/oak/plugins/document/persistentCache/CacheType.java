@@ -20,6 +20,7 @@ import org.apache.jackrabbit.oak.plugins.document.LocalDiffCache;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
+import org.apache.jackrabbit.oak.plugins.document.MemoryDiffCache;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
 import org.apache.jackrabbit.oak.plugins.document.Path;
 import org.apache.jackrabbit.oak.plugins.document.PathNameRev;
@@ -101,16 +102,16 @@ public enum CacheType {
     DIFF {
         @Override
         public <K> String keyToString(K key) {
-            return ((PathRev) key).asString();
+            return ((MemoryDiffCache.Key) key).asString();
         }
         @SuppressWarnings("unchecked")
         @Override
         public <K> K keyFromString(String key) {
-            return (K) PathRev.fromString(key);
+            return (K) MemoryDiffCache.Key.fromString(key);
         }
         @Override
         public <K> int compareKeys(K a, K b) {
-            return ((PathRev) a).compareTo((PathRev) b);
+            return ((MemoryDiffCache.Key) a).compareTo((MemoryDiffCache.Key) b);
         }            
         @Override
         public <V> String valueToString(V value) {

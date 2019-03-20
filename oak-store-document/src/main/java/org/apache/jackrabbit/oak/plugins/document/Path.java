@@ -170,6 +170,16 @@ public final class Path implements CacheValue {
         return p;
     }
 
+    @NotNull
+    public StringBuilder toStringBuilder(@NotNull StringBuilder sb) {
+        if (name.isEmpty()) {
+            sb.append('/');
+        } else {
+            buildPath(sb);
+        }
+        return sb;
+    }
+
     @Override
     public int getMemory() {
         int memory = 0;

@@ -44,6 +44,19 @@ public class PathTest {
     }
 
     @Test
+    public void toStringBuilder() {
+        StringBuilder sb = new StringBuilder();
+        root.toStringBuilder(sb);
+        assertEquals(root.toString(), sb.toString());
+        sb.setLength(0);
+        foo.toStringBuilder(sb);
+        assertEquals(foo.toString(), sb.toString());
+        sb.setLength(0);
+        fooBar.toStringBuilder(sb);
+        assertEquals(fooBar.toString(), sb.toString());
+    }
+
+    @Test
     public void fromString() {
         assertEquals(NULL, Path.fromString(NULL.toString()));
         assertEquals(root, Path.fromString(root.toString()));
