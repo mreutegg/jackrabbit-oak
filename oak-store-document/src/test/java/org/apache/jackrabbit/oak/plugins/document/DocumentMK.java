@@ -184,7 +184,7 @@ public class DocumentMK {
                 long m = ((long) maxChildNodes) + offset;
                 max = (int) Math.min(m, Integer.MAX_VALUE);
             }
-            Children c = nodeStore.getChildren(n, null, max);
+            Children c = nodeStore.getChildren(n, "", max);
             for (long i = offset; i < c.children.size(); i++) {
                 if (maxChildNodes-- <= 0) {
                     break;
@@ -422,7 +422,7 @@ public class DocumentMK {
 
         if (subTreeAlso) {
             // recurse down the tree
-            for (DocumentNodeState child : nodeStore.getChildNodes(node, null, Integer.MAX_VALUE)) {
+            for (DocumentNodeState child : nodeStore.getChildNodes(node, "", Integer.MAX_VALUE)) {
                 markAsDeleted(child, commit, true);
             }
         }
@@ -440,7 +440,7 @@ public class DocumentMK {
         if (move) {
             markAsDeleted(source, commit, false);
         }
-        for (DocumentNodeState child : nodeStore.getChildNodes(source, null, Integer.MAX_VALUE)) {
+        for (DocumentNodeState child : nodeStore.getChildNodes(source, "", Integer.MAX_VALUE)) {
             String childName = child.getPath().getName();
             String destChildPath = concat(targetPath, childName);
             moveOrCopyNode(move, child, destChildPath, commit);

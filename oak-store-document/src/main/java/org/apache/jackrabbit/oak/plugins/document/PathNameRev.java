@@ -19,7 +19,6 @@ package org.apache.jackrabbit.oak.plugins.document;
 import org.apache.jackrabbit.oak.cache.CacheValue;
 import org.apache.jackrabbit.oak.commons.StringUtils;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,17 +40,27 @@ public final class PathNameRev implements CacheValue {
     @NotNull
     private final RevisionVector revision;
 
-    PathNameRev(@NotNull Path path,
-                @Nullable String name,
-                @NotNull RevisionVector revision) {
+    public PathNameRev(@NotNull Path path,
+                       @NotNull String name,
+                       @NotNull RevisionVector revision) {
         this.path = checkNotNull(path);
-        this.name = name != null ? name : "";
+        this.name = checkNotNull(name);
         this.revision = checkNotNull(revision);
     }
 
     @NotNull
     public Path getPath() {
         return path;
+    }
+
+    @NotNull
+    public String getName() {
+        return name;
+    }
+
+    @NotNull
+    public RevisionVector getRevision() {
+        return revision;
     }
 
     @Override
@@ -97,22 +106,6 @@ public final class PathNameRev implements CacheValue {
         path.toStringBuilder(sb).append('@');
         revision.toStringBuilder(sb);
         return sb.toString();
-    }
-
-    public String asString() {
-        return toString();
-    }
-
-    public static PathNameRev fromString(String s) {
-        String name = "";
-        int index = s.indexOf('/');
-        if (index > 0) {
-            name = s.substring(0, index);
-            s = s.substring(index);
-        }
-        index = s.lastIndexOf('@');
-        return new PathNameRev(Path.fromString(s.substring(0, index)),
-                name, RevisionVector.fromString(s.substring(index + 1)));
     }
 
     public int compareTo(PathNameRev b) {

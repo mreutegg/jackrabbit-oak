@@ -1171,8 +1171,8 @@ public final class DocumentNodeStore
 
     @NotNull
     DocumentNodeState.Children getChildren(@NotNull final AbstractDocumentNodeState parent,
-                              @Nullable final String name,
-                              final int limit)
+                                           @NotNull final String name,
+                                           final int limit)
             throws DocumentStoreException {
         if (checkNotNull(parent).hasNoChildren()) {
             return DocumentNodeState.NO_CHILDREN;
@@ -1214,13 +1214,13 @@ public final class DocumentNodeStore
      * ascending order.
      *
      * @param parent the parent node.
-     * @param name the name of the lower bound child node (exclusive) or
-     *              {@code null} if no lower bound is given.
+     * @param name the name of the lower bound child node (exclusive) or the
+     *              empty {@code String} if no lower bound is given.
      * @param limit the maximum number of child nodes to return.
      * @return the children of {@code parent}.
      */
-    DocumentNodeState.Children readChildren(AbstractDocumentNodeState parent,
-                                            String name, int limit) {
+    DocumentNodeState.Children readChildren(@NotNull AbstractDocumentNodeState parent,
+                                            @NotNull String name, int limit) {
         String queriedName = name;
         Path path = parent.getPath();
         RevisionVector rev = parent.getLastRevision();
@@ -1259,7 +1259,7 @@ public final class DocumentNodeStore
                 // fewer documents returned than requested
                 // -> no more documents
                 c.hasMore = false;
-                if (queriedName == null) {
+                if (queriedName.isEmpty()) {
                     //we've got to the end of list and we started from the top
                     //This list is complete and can be sorted
                     Collections.sort(c.children);
@@ -1277,20 +1277,21 @@ public final class DocumentNodeStore
      * lower exclusive bound.
      *
      * @param path the path of the parent document.
-     * @param name the lower exclusive bound or {@code null}.
+     * @param name the name of the lower bound child node (exclusive) or the
+     *              empty {@code String} if no lower bound is given.
      * @param limit the maximum number of child documents to return.
      * @return the child documents.
      */
     @NotNull
     private Iterable<NodeDocument> readChildDocs(@NotNull final Path path,
-                                                 @Nullable String name,
+                                                 @NotNull String name,
                                                  final int limit) {
         final String to = Utils.getKeyUpperLimit(checkNotNull(path));
         final String from;
-        if (name != null) {
-            from = Utils.getIdFromPath(new Path(path, name));
-        } else {
+        if (name.isEmpty()) {
             from = Utils.getKeyLowerLimit(path);
+        } else {
+            from = Utils.getIdFromPath(new Path(path, name));
         }
         return store.query(Collection.NODES, from, to, limit);
     }
@@ -1300,15 +1301,15 @@ public final class DocumentNodeStore
      * {@code name} (exclusive).
      *
      * @param parent the parent node.
-     * @param name the name of the lower bound child node (exclusive) or
-     *             {@code null}, if the method should start with the first known
-     *             child node.
+     * @param name the name of the lower bound child node (exclusive) or the
+     *             empty {@code String}, if the method should start with the
+     *             first known child node.
      * @param limit the maximum number of child nodes to return.
      * @return the child nodes.
      */
     @NotNull
     Iterable<DocumentNodeState> getChildNodes(@NotNull final DocumentNodeState parent,
-                    @Nullable final String name,
+                                              @NotNull final String name,
                     final int limit) {
         // Preemptive check. If we know there are no children then
         // return straight away
@@ -1415,7 +1416,7 @@ public final class DocumentNodeStore
                 // this is a leaf node.
                 // check if it has the children flag set
                 if (doc != null && doc.hasChildren()) {
-                    PathNameRev key = childNodeCacheKey(path, afterLastRev, null);
+                    PathNameRev key = childNodeCacheKey(path, afterLastRev, "");
                     LOG.debug("nodeChildrenCache.put({},{})", key, "NO_CHILDREN");
                     nodeChildrenCache.put(key, DocumentNodeState.NO_CHILDREN);
                 }
@@ -1426,7 +1427,7 @@ public final class DocumentNodeStore
                     set.add(p.getName());
                 }
                 c.children.addAll(set);
-                PathNameRev key = childNodeCacheKey(path, afterLastRev, null);
+                PathNameRev key = childNodeCacheKey(path, afterLastRev, "");
                 LOG.debug("nodeChildrenCache.put({},{})", key, c);
                 nodeChildrenCache.put(key, c);
             }
@@ -1445,10 +1446,10 @@ public final class DocumentNodeStore
                     // This is unexpected. The before state should exist.
                     // Invalidate the relevant cache entries. (OAK-6294)
                     LOG.warn("Before state is missing {}. Invalidating " +
-                            "affected cache entries.", key.asString());
+                            "affected cache entries.", key);
                     store.invalidateCache(NODES, Utils.getIdFromPath(p));
                     nodeCache.invalidate(key);
-                    nodeChildrenCache.invalidate(childNodeCacheKey(path, lastRev, null));
+                    nodeChildrenCache.invalidate(childNodeCacheKey(path, lastRev, ""));
                     beforeState = null;
                 }
             }
@@ -1457,12 +1458,12 @@ public final class DocumentNodeStore
                 if (beforeState.hasNoChildren()) {
                     children = DocumentNodeState.NO_CHILDREN;
                 } else {
-                    PathNameRev key = childNodeCacheKey(path, beforeState.getLastRevision(), null);
+                    PathNameRev key = childNodeCacheKey(path, beforeState.getLastRevision(), "");
                     children = nodeChildrenCache.getIfPresent(key);
                 }
             }
             if (children != null) {
-                PathNameRev afterKey = childNodeCacheKey(path, beforeState.getLastRevision().update(rev), null);
+                PathNameRev afterKey = childNodeCacheKey(path, beforeState.getLastRevision().update(rev), "");
                 // are there any added or removed children?
                 if (added.isEmpty() && removed.isEmpty()) {
                     // simply use the same list
@@ -2785,7 +2786,7 @@ public final class DocumentNodeStore
             return false;
         }
 
-        PathNameRev key = childNodeCacheKey(parentPath, rev, null);//read first child cache entry
+        PathNameRev key = childNodeCacheKey(parentPath, rev, "");//read first child cache entry
         DocumentNodeState.Children children = nodeChildrenCache.getIfPresent(key);
         String lookupChildName = path.getName();
 
@@ -2853,8 +2854,8 @@ public final class DocumentNodeStore
 
             if (continueDiff) {
                 DocumentNodeState.Children fromChildren, toChildren;
-                fromChildren = getChildren(from, null, max);
-                toChildren = getChildren(to, null, max);
+                fromChildren = getChildren(from, "", max);
+                toChildren = getChildren(to, "", max);
                 getChildrenDoneIn = debug ? now() : 0;
 
                 if (!fromChildren.hasMore && !toChildren.hasMore) {
@@ -2870,8 +2871,8 @@ public final class DocumentNodeStore
                     } else {
                         diffAlgo = "diffAllChildren";
                         max = Integer.MAX_VALUE;
-                        fromChildren = getChildren(from, null, max);
-                        toChildren = getChildren(to, null, max);
+                        fromChildren = getChildren(from, "", max);
+                        toChildren = getChildren(to, "", max);
                         diffFewChildren(w, from.getPath(), fromChildren,
                                 fromRev, toChildren, toRev);
                     }
@@ -3014,7 +3015,7 @@ public final class DocumentNodeStore
 
     private static PathNameRev childNodeCacheKey(@NotNull Path path,
                                                  @NotNull RevisionVector readRevision,
-                                                 @Nullable String name) {
+                                                 @NotNull String name) {
         return new PathNameRev(path, name, readRevision);
     }
 

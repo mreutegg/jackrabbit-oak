@@ -251,11 +251,11 @@ public class SimpleTest {
         test = mk.getNodes("/test", r0, 0, 0, Integer.MAX_VALUE, null);
         DocumentNodeState n = ns.getNode(Path.ROOT, RevisionVector.fromString(r0));
         assertNotNull(n);
-        Children c = ns.getChildren(n, null, Integer.MAX_VALUE);
+        Children c = ns.getChildren(n, "", Integer.MAX_VALUE);
         assertEquals("[test]", c.toString());
         n = ns.getNode(Path.fromString("/test"), RevisionVector.fromString(r1));
         assertNotNull(n);
-        c = ns.getChildren(n, null, Integer.MAX_VALUE);
+        c = ns.getChildren(n, "", Integer.MAX_VALUE);
         assertEquals("[a, b]", c.toString());
 
         rev = mk.commit("", "^\"/test\":1", null, null);
@@ -277,13 +277,13 @@ public class SimpleTest {
 
         DocumentNodeState n = ns.getNode(Path.fromString("/testDel"), RevisionVector.fromString(r1));
         assertNotNull(n);
-        Children c = ns.getChildren(n, null, Integer.MAX_VALUE);
+        Children c = ns.getChildren(n, "", Integer.MAX_VALUE);
         assertEquals(3, c.children.size());
 
         String r2 = mk.commit("/testDel", "-\"c\"", null, null);
         n = ns.getNode(Path.fromString("/testDel"), RevisionVector.fromString(r2));
         assertNotNull(n);
-        c = ns.getChildren(n, null, Integer.MAX_VALUE);
+        c = ns.getChildren(n, "", Integer.MAX_VALUE);
         assertEquals(2, c.children.size());
 
         String r3 = mk.commit("/", "-\"testDel\"", null, null);

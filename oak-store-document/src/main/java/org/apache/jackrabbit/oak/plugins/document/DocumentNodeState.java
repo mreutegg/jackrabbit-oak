@@ -20,14 +20,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Lists;
 import com.google.common.collect.TreeTraverser;
 import org.apache.jackrabbit.oak.api.Type;
 import org.apache.jackrabbit.oak.cache.CacheValue;
@@ -93,6 +91,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     private final BundlingContext bundlingContext;
 
     private AbstractDocumentNodeState cachedSecondaryState;
+    private int memory;
 
     DocumentNodeState(@NotNull DocumentNodeStore store,
                       @NotNull Path path,
@@ -106,7 +105,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
                       boolean hasChildren,
                       @Nullable RevisionVector lastRevision) {
         this(store, path, rootRevision, asMap(properties),
-                hasChildren, lastRevision, false);
+                hasChildren, 0, lastRevision, false);
     }
 
     private DocumentNodeState(@NotNull DocumentNodeStore store,
@@ -114,18 +113,20 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
                               @NotNull RevisionVector rootRevision,
                               @NotNull Map<String, PropertyState> properties,
                               boolean hasChildren,
+                              int memory,
                               @Nullable RevisionVector lastRevision,
                               boolean fromExternalChange) {
         this(store, path, lastRevision, rootRevision,
-                fromExternalChange, createBundlingContext(checkNotNull(properties), hasChildren));
+                fromExternalChange, createBundlingContext(checkNotNull(properties), hasChildren), memory);
     }
 
     protected DocumentNodeState(@NotNull DocumentNodeStore store,
-                              @NotNull Path path,
-                              @Nullable RevisionVector lastRevision,
-                              @Nullable RevisionVector rootRevision,
-                              boolean fromExternalChange,
-                              BundlingContext bundlingContext) {
+                                @NotNull Path path,
+                                @Nullable RevisionVector lastRevision,
+                                @Nullable RevisionVector rootRevision,
+                                boolean fromExternalChange,
+                                BundlingContext bundlingContext,
+                                int memory) {
         this.store = checkNotNull(store);
         this.path = checkNotNull(path);
         this.rootRevision = checkNotNull(rootRevision);
@@ -134,6 +135,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
         this.properties = bundlingContext.getProperties();
         this.bundlingContext = bundlingContext;
         this.hasChildren = bundlingContext.hasChildren();
+        this.memory = memory;
     }
 
     /**
@@ -155,7 +157,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
         if (rootRevision.equals(root) && fromExternalChange == externalChange) {
             return this;
         } else {
-            return new DocumentNodeState(store, path, lastRevision, root, externalChange, bundlingContext);
+            return new DocumentNodeState(store, path, lastRevision, root, externalChange, bundlingContext, memory);
         }
     }
 
@@ -165,7 +167,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
      */
     @NotNull
     public DocumentNodeState fromExternalChange() {
-        return new DocumentNodeState(store, path, lastRevision, rootRevision, true, bundlingContext);
+        return new DocumentNodeState(store, path, lastRevision, rootRevision, true, bundlingContext, memory);
     }
 
     /**
@@ -182,7 +184,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     DocumentNodeState asBranchRootState(@NotNull DocumentNodeStoreBranch branch) {
         checkState(path.isRoot());
         checkState(getRootRevision().isBranch());
-        return new DocumentBranchRootNodeState(store, branch, path, rootRevision, lastRevision, bundlingContext);
+        return new DocumentBranchRootNodeState(store, branch, path, rootRevision, lastRevision, bundlingContext, memory);
     }
 
     /**
@@ -284,7 +286,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
             return bundledChildCount;
         }
 
-        String name = null;
+        String name = "";
         long count = 0;
         int fetchSize = INITIAL_FETCH_SIZE;
         long remaining = Math.max(max, 1); // fetch at least once
@@ -430,36 +432,40 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
 
     @Override
     public int getMemory() {
-        long size = 40 // shallow
-                + (lastRevision != null ? lastRevision.getMemory() : 0)
-                + rootRevision.getMemory()
-                + path.getMemory();
-        // rough approximation for properties
-        for (Map.Entry<String, PropertyState> entry : bundlingContext.getAllProperties().entrySet()) {
-            // name
-            size += estimateMemoryUsage(entry.getKey());
-            PropertyState propState = entry.getValue();
-            if (propState.getType() != Type.BINARY
-                    && propState.getType() != Type.BINARIES) {
-                for (int i = 0; i < propState.count(); i++) {
-                    // size() returns length of string
-                    // shallow memory:
-                    // - 8 bytes per reference in values list
-                    // - 48 bytes per string
-                    // double usage per property because of parsed PropertyState
-                    size += (56 + propState.size(i) * 2) * 2;
+        long size = memory;
+        if (size == 0) {
+            size = 40 // shallow
+                    + (lastRevision != null ? lastRevision.getMemory() : 0)
+                    + rootRevision.getMemory()
+                    + path.getMemory();
+            // rough approximation for properties
+            for (Map.Entry<String, PropertyState> entry : bundlingContext.getAllProperties().entrySet()) {
+                // name
+                size += estimateMemoryUsage(entry.getKey());
+                PropertyState propState = entry.getValue();
+                if (propState.getType() != Type.BINARY
+                        && propState.getType() != Type.BINARIES) {
+                    for (int i = 0; i < propState.count(); i++) {
+                        // size() returns length of string
+                        // shallow memory:
+                        // - 8 bytes per reference in values list
+                        // - 48 bytes per string
+                        // double usage per property because of parsed PropertyState
+                        size += (56 + propState.size(i) * 2) * 2;
+                    }
+                } else {
+                    // calculate size based on blobId value
+                    // referencing the binary in the blob store
+                    // double the size because the parsed PropertyState
+                    // will have a similarly sized blobId as well
+                    size += (long)estimateMemoryUsage(asString(entry.getValue())) * 2;
                 }
-            } else {
-                // calculate size based on blobId value
-                // referencing the binary in the blob store
-                // double the size because the parsed PropertyState
-                // will have a similarly sized blobId as well
-                size += (long)estimateMemoryUsage(asString(entry.getValue())) * 2;
             }
-        }
-        if (size > Integer.MAX_VALUE) {
-            log.debug("Estimated memory footprint larger than Integer.MAX_VALUE: {}.", size);
-            size = Integer.MAX_VALUE;
+            if (size > Integer.MAX_VALUE) {
+                log.debug("Estimated memory footprint larger than Integer.MAX_VALUE: {}.", size);
+                size = Integer.MAX_VALUE;
+            }
+            memory = (int) size;
         }
         return (int) size;
     }
@@ -517,13 +523,13 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
      * {@code name}.
      *
      * @param name the name of the lower bound child node entry (exclusive) or
-     *             {@code null}, if the method should start with the first known
-     *             child node.
+     *             the empty {@code String}, if the method should start with the
+     *             first known child node.
      * @param limit the maximum number of child node entries to return.
      * @return the child node entries.
      */
     @NotNull
-    private Iterable<ChildNodeEntry> getChildNodeEntries(@Nullable String name,
+    private Iterable<ChildNodeEntry> getChildNodeEntries(@NotNull String name,
                                                          int limit) {
         Iterable<? extends AbstractDocumentNodeState> children = store.getChildNodes(this, name, limit);
         return Iterables.transform(children, new Function<AbstractDocumentNodeState, ChildNodeEntry>() {
@@ -558,6 +564,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
         JsopWriter json = new JsopBuilder();
         json.key("path").value(path.toString());
         json.key("rev").value(rootRevision.toString());
+        json.key("mem").value(getMemory());
         if (lastRevision != null) {
             json.key("lastRev").value(lastRevision.toString());
         }
@@ -579,6 +586,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
         Path path = null;
         RevisionVector rootRev = null;
         RevisionVector lastRev = null;
+        int memory = 0;
         boolean hasChildren = false;
         HashMap<String, String> map = new HashMap<String, String>();
         while (true) {
@@ -595,6 +603,8 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
                 }
             } else if ("rev".equals(k)) {
                 rootRev = RevisionVector.fromString(json.readString());
+            } else if ("mem".equals(k)) {
+                memory = Integer.parseInt(json.read(JsopReader.NUMBER));
             } else if ("lastRev".equals(k)) {
                 lastRev = RevisionVector.fromString(json.readString());
             } else if ("hasChildren".equals(k)) {
@@ -617,14 +627,14 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
             }
             json.read(',');
         }
-        List<PropertyState> props = Lists.newArrayListWithCapacity(map.size());
+        Map<String, PropertyState> props = new HashMap<>();
         for (Entry<String, String> e : map.entrySet()) {
             String value = e.getValue();
             if (value != null) {
-                props.add(store.createPropertyState(e.getKey(), value));
+                props.put(e.getKey(), store.createPropertyState(e.getKey(), value));
             }
         }
-        return new DocumentNodeState(store, path, rootRev, props, hasChildren, lastRev);
+        return new DocumentNodeState(store, path, rootRev, props, hasChildren, memory, lastRev, false);
     }
 
     /**
@@ -713,7 +723,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
 
     private class ChildNodeEntryIterator implements Iterator<ChildNodeEntry> {
 
-        private String previousName;
+        private String previousName = "";
         private Iterator<ChildNodeEntry> current;
         private int fetchSize = INITIAL_FETCH_SIZE;
         private int currentRemaining = fetchSize;
@@ -775,7 +785,8 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
                 lastRevision,
                 rootRevision,
                 fromExternalChange,
-                bundlingContext.childContext(child));
+                bundlingContext.childContext(child),
+                memory);
     }
 
     private Iterator<ChildNodeEntry> getBundledChildren(){

@@ -2928,7 +2928,7 @@ public class DocumentNodeStoreTest {
 
         RevisionVector headRev = ns.getHeadRevision();
         Iterable<DocumentNodeState> nodes = ns.getChildNodes(
-                asDocumentNodeState(ns.getRoot().getChildNode("foo")), null, 10);
+                asDocumentNodeState(ns.getRoot().getChildNode("foo")), "", 10);
         assertEquals(2, Iterables.size(nodes));
         for (DocumentNodeState c : nodes) {
             assertEquals(headRev, c.getRootRevision());
@@ -3282,7 +3282,7 @@ public class DocumentNodeStoreTest {
         RevisionVector head = ns.getHeadRevision();
 
         // simulate an incorrect cache entry
-        PathNameRev key = new PathNameRev(Path.ROOT, null, head);
+        PathNameRev key = new PathNameRev(Path.ROOT, "", head);
         DocumentNodeState.Children c = new DocumentNodeState.Children();
         c.children.add("a");
         c.children.add("b");

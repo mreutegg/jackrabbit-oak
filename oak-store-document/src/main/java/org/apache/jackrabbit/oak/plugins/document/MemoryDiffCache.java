@@ -214,6 +214,21 @@ public class MemoryDiffCache extends DiffCache {
             }
         }
 
+        @NotNull
+        public Path getPath() {
+            return path;
+        }
+
+        @NotNull
+        public RevisionVector getFromRevision() {
+            return from;
+        }
+
+        @NotNull
+        public RevisionVector getToRevision() {
+            return to;
+        }
+
         public String asString() {
             return toString();
         }

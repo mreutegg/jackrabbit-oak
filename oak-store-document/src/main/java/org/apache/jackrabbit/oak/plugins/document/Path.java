@@ -21,6 +21,7 @@ package org.apache.jackrabbit.oak.plugins.document;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 import com.google.common.collect.Lists;
 
@@ -40,6 +41,8 @@ import static com.google.common.collect.Iterables.elementsEqual;
 public final class Path implements CacheValue {
 
     private static final String NULL_PATH_STRING = "<null>";
+
+    private static final Pattern DELIMITED = Pattern.compile("/");
 
     public static final Path ROOT = new Path(null, "", "".hashCode());
 
@@ -108,6 +111,12 @@ public final class Path implements CacheValue {
         return length;
     }
 
+    /**
+     * The depth of this path. The {@link #ROOT} and {@link #NULL} paths have
+     * a depth of 0. The path {@code /foo/bar} has depth 2.
+     *
+     * @return the depth of the path.
+     */
     public int getDepth() {
         int depth = 0;
         Path p = this;
@@ -152,6 +161,24 @@ public final class Path implements CacheValue {
         int depthDiff = other.getDepth() - getDepth();
         return depthDiff > 0
                 && elementsEqual(elements(), other.getAncestor(depthDiff).elements());
+    }
+
+    @NotNull
+    public static Path fromCharSequence(@NotNull CharSequence path) throws IllegalArgumentException {
+        checkNotNull(path);
+        if (NULL_PATH_STRING.contentEquals(path)) {
+            return NULL;
+        }
+        if (path.length() == 0 || path.charAt(0) != '/') {
+            throw new IllegalArgumentException("path must be absolute");
+        }
+        Path p = ROOT;
+        for (String name : DELIMITED.split(path)) {
+            if (!name.isEmpty()) {
+                p = new Path(p, StringCache.get(name));
+            }
+        }
+        return p;
     }
 
     @NotNull
