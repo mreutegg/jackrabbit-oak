@@ -737,7 +737,7 @@ public class DocumentNodeStoreService {
         }
 
         // register persistent cache stats
-        Map<CacheType, PersistentCacheStats> persistenceCacheStats = mkBuilder.getPersistenceCacheStats();
+        Map<String, PersistentCacheStats> persistenceCacheStats = mkBuilder.getPersistenceCacheStats();
         for (PersistentCacheStats pcs: persistenceCacheStats.values()) {
             addRegistration(
                     registerMBean(whiteboard,

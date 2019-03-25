@@ -17,6 +17,7 @@
 package org.apache.jackrabbit.oak.plugins.document;
 
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -151,8 +152,7 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
     private CacheStats blobStoreCacheStats;
     private DocumentStoreStatsCollector documentStoreStatsCollector;
     private DocumentNodeStoreStatsCollector nodeStoreStatsCollector;
-    private Map<CacheType, PersistentCacheStats> persistentCacheStats =
-            new EnumMap<CacheType, PersistentCacheStats>(CacheType.class);
+    private Map<String, PersistentCacheStats> persistentCacheStats = new HashMap<>();
     private boolean bundlingDisabled;
     private JournalPropertyHandlerFactory journalPropertyHandlerFactory =
             new JournalPropertyHandlerFactory();
@@ -479,7 +479,7 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
     }
 
     @NotNull
-    public Map<CacheType, PersistentCacheStats> getPersistenceCacheStats() {
+    public Map<String, PersistentCacheStats> getPersistenceCacheStats() {
         return persistentCacheStats;
     }
 
@@ -671,7 +671,7 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
             }
             PersistentCacheStats stats = PersistentCache.getPersistentCacheStats(cache);
             if (stats != null) {
-                persistentCacheStats.put(cacheType, stats);
+                persistentCacheStats.put(cacheType.name(), stats);
             }
         }
         return cache;

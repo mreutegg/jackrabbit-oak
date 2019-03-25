@@ -276,6 +276,12 @@ public enum CacheType {
     
     public static final CacheType[] VALUES = CacheType.values();
 
+    public String getMapName() {
+        // add a version suffix to the name and increment the version
+        // whenever the serialization for a key or value changes
+        return name() + "-v1";
+    }
+
     public abstract <K> void writeKey(WriteBuffer buffer, K key);
     public abstract <K> K readKey(ByteBuffer buffer);
     public abstract <K> int compareKeys(K a, K b);
