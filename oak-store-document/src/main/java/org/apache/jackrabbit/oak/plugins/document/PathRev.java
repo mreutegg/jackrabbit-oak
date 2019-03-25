@@ -45,6 +45,10 @@ public final class PathRev implements CacheValue {
         return path;
     }
 
+    public RevisionVector getRevision() {
+        return revision;
+    }
+
     @Override
     public int getMemory() {
         long size =  24L                          // shallow size
@@ -84,16 +88,6 @@ public final class PathRev implements CacheValue {
         sb.append("@");
         revision.toStringBuilder(sb);
         return sb.toString();
-    }
-
-    public String asString() {
-        return toString();
-    }
-
-    public static PathRev fromString(String s) {
-        int index = s.lastIndexOf('@');
-        return new PathRev(Path.fromString(s.substring(0, index)),
-                RevisionVector.fromString(s.substring(index + 1)));
     }
 
     public int compareTo(PathRev b) {

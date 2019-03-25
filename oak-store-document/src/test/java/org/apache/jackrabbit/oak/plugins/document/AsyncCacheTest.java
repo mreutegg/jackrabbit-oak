@@ -45,7 +45,7 @@ public class AsyncCacheTest {
         Path path = Path.fromString("/foo/bar");
         PathNameRev key = null;
         for (int i = 0; i < 1000; i++) {
-            key = new PathNameRev(path, null, new RevisionVector(new Revision(i, 0, 1)));
+            key = new PathNameRev(path, "", new RevisionVector(new Revision(i, 0, 1)));
             cache.put(key, c);
         }
         cache.invalidate(key);
