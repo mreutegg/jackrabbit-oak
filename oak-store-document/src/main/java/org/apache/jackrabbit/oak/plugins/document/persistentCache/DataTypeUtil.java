@@ -25,8 +25,8 @@ import java.util.Map;
 import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
+import org.apache.jackrabbit.oak.plugins.document.NamePathRev;
 import org.apache.jackrabbit.oak.plugins.document.Path;
-import org.apache.jackrabbit.oak.plugins.document.PathNameRev;
 import org.apache.jackrabbit.oak.plugins.document.PathRev;
 import org.apache.jackrabbit.oak.plugins.document.Revision;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
@@ -110,16 +110,16 @@ class DataTypeUtil {
         );
     }
 
-    static void pathNameRevToBuffer(PathNameRev pnr, WriteBuffer buffer) {
-        pathToBuffer(pnr.getPath(), buffer);
+    static void namePathRevToBuffer(NamePathRev pnr, WriteBuffer buffer) {
         StringDataType.INSTANCE.write(buffer, pnr.getName());
+        pathToBuffer(pnr.getPath(), buffer);
         revisionVectorToBuffer(pnr.getRevision(), buffer);
     }
 
-    static PathNameRev pathNameRevFromBuffer(ByteBuffer buffer) {
-        return new PathNameRev(
-                pathFromBuffer(buffer),
+    static NamePathRev namePathRevFromBuffer(ByteBuffer buffer) {
+        return new NamePathRev(
                 StringDataType.INSTANCE.read(buffer),
+                pathFromBuffer(buffer),
                 revisionVectorFromBuffer(buffer)
         );
     }

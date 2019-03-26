@@ -16,6 +16,10 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
 import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.junit.Test;
 
@@ -168,5 +172,24 @@ public class PathTest {
     @Test(expected = IllegalArgumentException.class)
     public void nullParent() {
         new Path(NULL, "foo");
+    }
+
+    @Test
+    public void compareTo() {
+        Path baz = Path.fromString("/baz");
+        Path fooBaz = Path.fromString("/foo/baz");
+        List<Path> paths = new ArrayList<>();
+        paths.add(NULL);
+        paths.add(root);
+        paths.add(baz);
+        paths.add(foo);
+        paths.add(fooBar);
+        paths.add(fooBaz);
+        paths.add(fooBarQuux);
+        for (int i = 0; i < 20; i++) {
+            Collections.shuffle(paths);
+            Collections.sort(paths);
+            assertThat(paths, contains(NULL, root, baz, foo, fooBar, fooBarQuux, fooBaz));
+        }
     }
 }

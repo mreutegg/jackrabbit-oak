@@ -39,8 +39,8 @@ import org.apache.jackrabbit.oak.plugins.document.Document;
 import org.apache.jackrabbit.oak.plugins.document.DocumentMKBuilderProvider;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
+import org.apache.jackrabbit.oak.plugins.document.NamePathRev;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
-import org.apache.jackrabbit.oak.plugins.document.PathNameRev;
 import org.apache.jackrabbit.oak.plugins.document.RandomStream;
 import org.apache.jackrabbit.oak.plugins.document.TestNodeObserver;
 import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
@@ -729,8 +729,8 @@ public class DocumentBundlingTest {
 
         merge(builder);
 
-        Set<PathNameRev> cachedPaths = store.getNodeChildrenCache().asMap().keySet();
-        for (PathNameRev pr : cachedPaths){
+        Set<NamePathRev> cachedPaths = store.getNodeChildrenCache().asMap().keySet();
+        for (NamePathRev pr : cachedPaths){
             assertFalse(pr.getPath().toString().contains("jcr:content/renditions"));
         }
     }

@@ -3282,7 +3282,7 @@ public class DocumentNodeStoreTest {
         RevisionVector head = ns.getHeadRevision();
 
         // simulate an incorrect cache entry
-        PathNameRev key = new PathNameRev(Path.ROOT, "", head);
+        NamePathRev key = new NamePathRev("", Path.ROOT, head);
         DocumentNodeState.Children c = new DocumentNodeState.Children();
         c.children.add("a");
         c.children.add("b");

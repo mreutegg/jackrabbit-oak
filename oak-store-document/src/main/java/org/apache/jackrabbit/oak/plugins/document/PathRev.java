@@ -26,9 +26,10 @@ import org.slf4j.LoggerFactory;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * A cache key implementation, which is a combination of a path and a revision.
+ * A cache key implementation, which is a combination of a path and a revision
+ * vector.
  */
-public final class PathRev implements CacheValue {
+public final class PathRev implements CacheValue, Comparable<PathRev> {
 
     private static final Logger LOG = LoggerFactory.getLogger(PathRev.class);
 
@@ -61,8 +62,20 @@ public final class PathRev implements CacheValue {
         return (int) size;
     }
 
-    //----------------------------< Object >------------------------------------
+    //---------------------------< Comparable >---------------------------------
 
+    public int compareTo(@NotNull PathRev b) {
+        if (this == b) {
+            return 0;
+        }
+        int compare = path.compareTo(b.path);
+        if (compare == 0) {
+            compare = revision.compareTo(b.revision);
+        }
+        return compare;
+    }
+
+    //----------------------------< Object >------------------------------------
 
     @Override
     public int hashCode() {
@@ -90,15 +103,4 @@ public final class PathRev implements CacheValue {
         return sb.toString();
     }
 
-    public int compareTo(PathRev b) {
-        if (this == b) {
-            return 0;
-        }
-        int compare = path.toString().compareTo(b.path.toString());
-        if (compare == 0) {
-            compare = revision.compareTo(b.revision);
-        }
-        return compare;
-    }
-    
 }
