@@ -257,11 +257,11 @@ public class MemoryDiffCache extends DiffCache {
             if (this == other) {
                 return 0;
             }
-            int compare = this.from.asString().compareTo(other.from.asString());
+            int compare = this.from.compareTo(other.from);
             if (compare != 0) {
                 return compare;
             }
-            compare = this.path.toString().compareTo(other.path.toString());
+            compare = this.path.compareTo(other.path);
             if (compare != 0) {
                 return compare;
             }

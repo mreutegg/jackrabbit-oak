@@ -38,8 +38,8 @@ import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStateCache;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
+import org.apache.jackrabbit.oak.plugins.document.NamePathRev;
 import org.apache.jackrabbit.oak.plugins.document.Path;
-import org.apache.jackrabbit.oak.plugins.document.PathNameRev;
 import org.apache.jackrabbit.oak.plugins.document.PathRev;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
 import org.apache.jackrabbit.oak.plugins.document.memory.MemoryDocumentStore;
@@ -71,7 +71,7 @@ public class NodeCacheTest {
     private DocumentStore store;
     private DocumentNodeStore ns;
     private NodeCache<PathRev, DocumentNodeState> nodeCache;
-    private NodeCache<PathNameRev, DocumentNodeState.Children> nodeChildren;
+    private NodeCache<NamePathRev, DocumentNodeState.Children> nodeChildren;
     private ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     private StatisticsProvider statsProvider = new DefaultStatisticsProvider(executor);
 
@@ -233,7 +233,7 @@ public class NodeCacheTest {
 
         ns = builder.getNodeStore();
         nodeCache = (NodeCache<PathRev, DocumentNodeState>) ns.getNodeCache();
-        nodeChildren = (NodeCache<PathNameRev, DocumentNodeState.Children>) ns.getNodeChildrenCache();
+        nodeChildren = (NodeCache<NamePathRev, DocumentNodeState.Children>) ns.getNodeChildrenCache();
     }
 
 
@@ -263,10 +263,10 @@ public class NodeCacheTest {
         }
     }
 
-    private static <V extends CacheValue> void assertPathNameRevs(NodeCache<PathNameRev, V> cache, String path, boolean contains) {
-        List<PathNameRev> revs = getPathNameRevs(cache, path);
-        List<PathNameRev> matchingRevs = Lists.newArrayList();
-        for (PathNameRev pr : revs) {
+    private static <V extends CacheValue> void assertPathNameRevs(NodeCache<NamePathRev, V> cache, String path, boolean contains) {
+        List<NamePathRev> revs = getPathNameRevs(cache, path);
+        List<NamePathRev> matchingRevs = Lists.newArrayList();
+        for (NamePathRev pr : revs) {
             if (cache.getGenerationalMap().containsKey(pr)) {
                 matchingRevs.add(pr);
             }
@@ -291,9 +291,9 @@ public class NodeCacheTest {
         return revs;
     }
 
-    private static <V extends CacheValue> List<PathNameRev> getPathNameRevs(NodeCache<PathNameRev, V> cache, String path) {
-        List<PathNameRev> revs = Lists.newArrayList();
-        for (PathNameRev pr : cache.asMap().keySet()) {
+    private static <V extends CacheValue> List<NamePathRev> getPathNameRevs(NodeCache<NamePathRev, V> cache, String path) {
+        List<NamePathRev> revs = Lists.newArrayList();
+        for (NamePathRev pr : cache.asMap().keySet()) {
             if (pr.getPath().toString().equals(path)) {
                 revs.add(pr);
             }

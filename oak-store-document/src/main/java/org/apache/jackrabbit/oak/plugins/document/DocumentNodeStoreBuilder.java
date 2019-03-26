@@ -16,7 +16,6 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -591,7 +590,7 @@ public class DocumentNodeStoreBuilder<T extends DocumentNodeStoreBuilder<T>> {
         return buildCache(CacheType.NODE, getNodeCacheSize(), store, null);
     }
 
-    public Cache<PathNameRev, DocumentNodeState.Children> buildChildrenCache(DocumentNodeStore store) {
+    public Cache<NamePathRev, DocumentNodeState.Children> buildChildrenCache(DocumentNodeStore store) {
         return buildCache(CacheType.CHILDREN, getChildrenCacheSize(), store, null);
     }
 

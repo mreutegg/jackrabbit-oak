@@ -23,9 +23,9 @@ import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.DocumentStore;
 import org.apache.jackrabbit.oak.plugins.document.MemoryDiffCache;
+import org.apache.jackrabbit.oak.plugins.document.NamePathRev;
 import org.apache.jackrabbit.oak.plugins.document.NodeDocument;
 import org.apache.jackrabbit.oak.plugins.document.Path;
-import org.apache.jackrabbit.oak.plugins.document.PathNameRev;
 import org.apache.jackrabbit.oak.plugins.document.PathRev;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
 import org.apache.jackrabbit.oak.plugins.document.util.RevisionsKey;
@@ -81,18 +81,18 @@ public enum CacheType {
 
         @Override
         public <K> void writeKey(WriteBuffer buffer, K key) {
-            DataTypeUtil.pathNameRevToBuffer((PathNameRev) key, buffer);
+            DataTypeUtil.namePathRevToBuffer((NamePathRev) key, buffer);
         }
 
         @SuppressWarnings("unchecked")
         @Override
         public <K> K readKey(ByteBuffer buffer) {
-            return (K) DataTypeUtil.pathNameRevFromBuffer(buffer);
+            return (K) DataTypeUtil.namePathRevFromBuffer(buffer);
         }
 
         @Override
         public <K> int compareKeys(K a, K b) {
-            return ((PathNameRev) a).compareTo((PathNameRev) b);
+            return ((NamePathRev) a).compareTo((NamePathRev) b);
         }
 
         @Override
@@ -111,7 +111,7 @@ public enum CacheType {
 
         @Override
         public <K> boolean shouldCache(DocumentNodeStore store, K key) {
-            Path path = ((PathNameRev) key).getPath();
+            Path path = ((NamePathRev) key).getPath();
             if (!store.getNodeCachePredicate().apply(path)){
                 return false;
             }

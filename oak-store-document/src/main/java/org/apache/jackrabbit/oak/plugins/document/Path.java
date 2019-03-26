@@ -19,6 +19,7 @@
 package org.apache.jackrabbit.oak.plugins.document;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -38,7 +39,7 @@ import static com.google.common.collect.Iterables.elementsEqual;
 /**
  * <code>Path</code>...
  */
-public final class Path implements CacheValue {
+public final class Path implements CacheValue, Comparable<Path> {
 
     private static final String NULL_PATH_STRING = "<null>";
 
@@ -217,6 +218,31 @@ public final class Path implements CacheValue {
             p = p.parent;
         }
         return memory;
+    }
+
+    @Override
+    public int compareTo(@NotNull Path other) {
+        checkNotNull(other);
+        // a few special cases
+        if (this == NULL) {
+            return other == NULL ? 0 : -1;
+        } else if (other == NULL) {
+            return 1;
+        }
+        // regular case (neither this nor other is NULL)
+        int depth = getDepth();
+        int otherDepth = other.getDepth();
+        int minDepth = Math.min(depth, otherDepth);
+        Iterable<String> elements = getAncestor(depth - minDepth).elements();
+        Iterator<String> otherElements = other.getAncestor(otherDepth - minDepth).elements().iterator();
+        for (String name : elements) {
+            String otherName = otherElements.next();
+            int c = name.compareTo(otherName);
+            if (c != 0) {
+                return c;
+            }
+        }
+        return Integer.compare(depth, otherDepth);
     }
 
     @Override

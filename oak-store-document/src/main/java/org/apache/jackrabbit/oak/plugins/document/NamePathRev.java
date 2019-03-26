@@ -25,26 +25,27 @@ import org.slf4j.LoggerFactory;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
- * <code>PathNameRev</code>...
+ * A cache key implementation, which is a combination of a name, path and a
+ * revision vector.
  */
-public final class PathNameRev implements CacheValue {
+public final class NamePathRev implements CacheValue, Comparable<NamePathRev> {
 
-    private static final Logger LOG = LoggerFactory.getLogger(PathNameRev.class);
-
-    @NotNull
-    private final Path path;
+    private static final Logger LOG = LoggerFactory.getLogger(NamePathRev.class);
 
     @NotNull
     private final String name;
 
     @NotNull
+    private final Path path;
+
+    @NotNull
     private final RevisionVector revision;
 
-    public PathNameRev(@NotNull Path path,
-                       @NotNull String name,
+    public NamePathRev(@NotNull String name,
+                       @NotNull Path path,
                        @NotNull RevisionVector revision) {
-        this.path = checkNotNull(path);
         this.name = checkNotNull(name);
+        this.path = checkNotNull(path);
         this.revision = checkNotNull(revision);
     }
 
@@ -76,8 +77,23 @@ public final class PathNameRev implements CacheValue {
         return (int) size;
     }
 
-    //----------------------------< Object >------------------------------------
+    //---------------------------< Comparable >---------------------------------
 
+    public int compareTo(@NotNull NamePathRev b) {
+        if (this == b) {
+            return 0;
+        }
+        int compare = name.compareTo(b.name);
+        if (compare == 0) {
+            compare = path.compareTo(b.path);
+        }
+        if (compare == 0) {
+            compare = revision.compareTo(b.revision);
+        }
+        return compare;
+    }
+
+    //----------------------------< Object >------------------------------------
 
     @Override
     public int hashCode() {
@@ -88,8 +104,8 @@ public final class PathNameRev implements CacheValue {
     public boolean equals(Object obj) {
         if (obj == this) {
             return true;
-        } else if (obj instanceof PathNameRev) {
-            PathNameRev other = (PathNameRev) obj;
+        } else if (obj instanceof NamePathRev) {
+            NamePathRev other = (NamePathRev) obj;
             return revision.equals(other.revision)
                     && name.equals(other.name)
                     && path.equals(other.path);
@@ -106,19 +122,5 @@ public final class PathNameRev implements CacheValue {
         path.toStringBuilder(sb).append('@');
         revision.toStringBuilder(sb);
         return sb.toString();
-    }
-
-    public int compareTo(PathNameRev b) {
-        if (this == b) {
-            return 0;
-        }
-        int compare = name.compareTo(b.name);
-        if (compare == 0) {
-            compare = path.toString().compareTo(b.path.toString());
-        }
-        if (compare == 0) {
-            compare = revision.compareTo(b.revision);
-        }
-        return compare;
     }
 }

@@ -384,7 +384,7 @@ public final class DocumentNodeStore
      *
      * Key: PathRev, value: Children
      */
-    private final Cache<PathNameRev, DocumentNodeState.Children> nodeChildrenCache;
+    private final Cache<NamePathRev, DocumentNodeState.Children> nodeChildrenCache;
     private final CacheStats nodeChildrenCacheStats;
 
     /**
@@ -1072,7 +1072,7 @@ public final class DocumentNodeStore
         return nodeCache;
     }
 
-    public Cache<PathNameRev, DocumentNodeState.Children> getNodeChildrenCache() {
+    public Cache<NamePathRev, DocumentNodeState.Children> getNodeChildrenCache() {
         return nodeChildrenCache;
     }
 
@@ -1181,7 +1181,7 @@ public final class DocumentNodeStore
         final Path path = checkNotNull(parent).getPath();
         final RevisionVector readRevision = parent.getLastRevision();
         try {
-            PathNameRev key = childNodeCacheKey(path, readRevision, name);
+            NamePathRev key = childNodeCacheKey(path, readRevision, name);
             DocumentNodeState.Children children = nodeChildrenCache.get(key, new Callable<DocumentNodeState.Children>() {
                 @Override
                 public DocumentNodeState.Children call() throws Exception {
@@ -1417,7 +1417,7 @@ public final class DocumentNodeStore
                 // this is a leaf node.
                 // check if it has the children flag set
                 if (doc != null && doc.hasChildren()) {
-                    PathNameRev key = childNodeCacheKey(path, afterLastRev, "");
+                    NamePathRev key = childNodeCacheKey(path, afterLastRev, "");
                     LOG.debug("nodeChildrenCache.put({},{})", key, "NO_CHILDREN");
                     nodeChildrenCache.put(key, DocumentNodeState.NO_CHILDREN);
                 }
@@ -1428,7 +1428,7 @@ public final class DocumentNodeStore
                     set.add(p.getName());
                 }
                 c.children.addAll(set);
-                PathNameRev key = childNodeCacheKey(path, afterLastRev, "");
+                NamePathRev key = childNodeCacheKey(path, afterLastRev, "");
                 LOG.debug("nodeChildrenCache.put({},{})", key, c);
                 nodeChildrenCache.put(key, c);
             }
@@ -1459,12 +1459,12 @@ public final class DocumentNodeStore
                 if (beforeState.hasNoChildren()) {
                     children = DocumentNodeState.NO_CHILDREN;
                 } else {
-                    PathNameRev key = childNodeCacheKey(path, beforeState.getLastRevision(), "");
+                    NamePathRev key = childNodeCacheKey(path, beforeState.getLastRevision(), "");
                     children = nodeChildrenCache.getIfPresent(key);
                 }
             }
             if (children != null) {
-                PathNameRev afterKey = childNodeCacheKey(path, beforeState.getLastRevision().update(rev), "");
+                NamePathRev afterKey = childNodeCacheKey(path, beforeState.getLastRevision().update(rev), "");
                 // are there any added or removed children?
                 if (added.isEmpty() && removed.isEmpty()) {
                     // simply use the same list
@@ -2787,7 +2787,7 @@ public final class DocumentNodeStore
             return false;
         }
 
-        PathNameRev key = childNodeCacheKey(parentPath, rev, "");//read first child cache entry
+        NamePathRev key = childNodeCacheKey(parentPath, rev, "");//read first child cache entry
         DocumentNodeState.Children children = nodeChildrenCache.getIfPresent(key);
         String lookupChildName = path.getName();
 
@@ -3014,10 +3014,10 @@ public final class DocumentNodeStore
         }
     }
 
-    private static PathNameRev childNodeCacheKey(@NotNull Path path,
+    private static NamePathRev childNodeCacheKey(@NotNull Path path,
                                                  @NotNull RevisionVector readRevision,
                                                  @NotNull String name) {
-        return new PathNameRev(path, name, readRevision);
+        return new NamePathRev(name, path, readRevision);
     }
 
     private static DocumentRootBuilder asDocumentRootBuilder(NodeBuilder builder)

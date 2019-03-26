@@ -19,12 +19,11 @@ package org.apache.jackrabbit.oak.plugins.document.persistentCache;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 
-import org.apache.jackrabbit.oak.api.PropertyState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentMKBuilderProvider;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
 import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.Path;
-import org.apache.jackrabbit.oak.plugins.document.PathNameRev;
+import org.apache.jackrabbit.oak.plugins.document.NamePathRev;
 import org.apache.jackrabbit.oak.plugins.document.PathRev;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
 import org.h2.mvstore.WriteBuffer;
@@ -111,10 +110,10 @@ public class DataTypeUtilTest {
         Path p = Path.fromString("/foo/bar/quux");
         String name = "baz";
         RevisionVector rv = RevisionVector.fromString("r3-4-1,br4-9-2");
-        PathNameRev expected = new PathNameRev(p, name, rv);
-        DataTypeUtil.pathNameRevToBuffer(expected, wb);
+        NamePathRev expected = new NamePathRev(name, p, rv);
+        DataTypeUtil.namePathRevToBuffer(expected, wb);
         ByteBuffer rb = readBufferFrom(wb);
-        assertEquals(expected, DataTypeUtil.pathNameRevFromBuffer(rb));
+        assertEquals(expected, DataTypeUtil.namePathRevFromBuffer(rb));
     }
 
     @Test
