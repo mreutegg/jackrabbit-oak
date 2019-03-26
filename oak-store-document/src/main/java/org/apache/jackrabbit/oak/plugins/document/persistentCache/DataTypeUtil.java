@@ -18,9 +18,15 @@ package org.apache.jackrabbit.oak.plugins.document.persistentCache;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+import org.apache.jackrabbit.oak.api.PropertyState;
+import org.apache.jackrabbit.oak.plugins.document.DocumentNodeState;
+import org.apache.jackrabbit.oak.plugins.document.DocumentNodeStore;
 import org.apache.jackrabbit.oak.plugins.document.Path;
+import org.apache.jackrabbit.oak.plugins.document.PathNameRev;
 import org.apache.jackrabbit.oak.plugins.document.PathRev;
 import org.apache.jackrabbit.oak.plugins.document.Revision;
 import org.apache.jackrabbit.oak.plugins.document.RevisionVector;
@@ -29,9 +35,17 @@ import org.h2.mvstore.WriteBuffer;
 import org.h2.mvstore.type.StringDataType;
 
 /**
- * <code>DataTypeUtil</code>...
+ * Utility class to write various types to a buffer and read it back again.
  */
 class DataTypeUtil {
+
+    static void booleanToBuffer(boolean b, WriteBuffer buffer) {
+        buffer.put((byte) (b ? 1 : 0));
+    }
+
+    static boolean booleanFromBuffer(ByteBuffer buffer) {
+        return buffer.get() != 0;
+    }
 
     static void revisionVectorToBuffer(RevisionVector rv, WriteBuffer buffer) {
         buffer.putVarInt(rv.getDimensions());
@@ -39,11 +53,7 @@ class DataTypeUtil {
             buffer.putLong(r.getTimestamp());
             buffer.putVarInt(r.getCounter());
             buffer.putVarInt(r.getClusterId());
-            byte b = 0;
-            if (r.isBranch()) {
-                b = 1;
-            }
-            buffer.put(b);
+            booleanToBuffer(r.isBranch(), buffer);
         }
     }
 
@@ -55,7 +65,7 @@ class DataTypeUtil {
                     buffer.getLong(),
                     DataUtils.readVarInt(buffer),
                     DataUtils.readVarInt(buffer),
-                    buffer.get() == 1)
+                    booleanFromBuffer(buffer))
             );
         }
         return new RevisionVector(revisions);
@@ -98,5 +108,58 @@ class DataTypeUtil {
                 pathFromBuffer(buffer),
                 revisionVectorFromBuffer(buffer)
         );
+    }
+
+    static void pathNameRevToBuffer(PathNameRev pnr, WriteBuffer buffer) {
+        pathToBuffer(pnr.getPath(), buffer);
+        StringDataType.INSTANCE.write(buffer, pnr.getName());
+        revisionVectorToBuffer(pnr.getRevision(), buffer);
+    }
+
+    static PathNameRev pathNameRevFromBuffer(ByteBuffer buffer) {
+        return new PathNameRev(
+                pathFromBuffer(buffer),
+                StringDataType.INSTANCE.read(buffer),
+                revisionVectorFromBuffer(buffer)
+        );
+    }
+
+    static void stateToBuffer(DocumentNodeState state, WriteBuffer buffer) {
+        pathToBuffer(state.getPath(), buffer);
+        revisionVectorToBuffer(state.getRootRevision(), buffer);
+        RevisionVector lastRevision = state.getLastRevision();
+        if (lastRevision == null) {
+            lastRevision = RevisionVector.fromString("");
+        }
+        revisionVectorToBuffer(lastRevision, buffer);
+        buffer.putVarInt(state.getMemory());
+        booleanToBuffer(state.hasNoChildren(), buffer);
+        Map<String, String> props = state.getAllBundledProperties();
+        buffer.putVarInt(props.size());
+        for (Map.Entry<String, String> e : props.entrySet()) {
+            StringDataType.INSTANCE.write(buffer, e.getKey());
+            StringDataType.INSTANCE.write(buffer, e.getValue());
+        }
+    }
+
+    static DocumentNodeState stateFromBuffer(DocumentNodeStore store,
+                                             ByteBuffer buffer) {
+        Path p = pathFromBuffer(buffer);
+        RevisionVector rootRevision = revisionVectorFromBuffer(buffer);
+        RevisionVector lastRevision = revisionVectorFromBuffer(buffer);
+        if (lastRevision.getDimensions() == 0) {
+            lastRevision = null;
+        }
+        int mem = DataUtils.readVarInt(buffer);
+        boolean noChildren = booleanFromBuffer(buffer);
+        int numProps = DataUtils.readVarInt(buffer);
+        Map<String, PropertyState> props = new HashMap<>(numProps);
+        for (int i = 0; i < numProps; i++) {
+            String name = StringDataType.INSTANCE.read(buffer);
+            String value = StringDataType.INSTANCE.read(buffer);
+            props.put(name, store.createPropertyState(name, value));
+        }
+        return new DocumentNodeState(store, p, rootRevision, props,
+                !noChildren, mem, lastRevision, false);
     }
 }
