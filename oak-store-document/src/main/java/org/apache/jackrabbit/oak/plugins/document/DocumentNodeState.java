@@ -21,7 +21,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
@@ -59,7 +58,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
 import static org.apache.jackrabbit.oak.commons.StringUtils.estimateMemoryUsage;
-import static org.apache.jackrabbit.oak.plugins.document.Path.NULL;
 
 /**
  * A {@link NodeState} implementation for the {@link DocumentNodeStore}.
@@ -108,14 +106,14 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
                 hasChildren, 0, lastRevision, false);
     }
 
-    private DocumentNodeState(@NotNull DocumentNodeStore store,
-                              @NotNull Path path,
-                              @NotNull RevisionVector rootRevision,
-                              @NotNull Map<String, PropertyState> properties,
-                              boolean hasChildren,
-                              int memory,
-                              @Nullable RevisionVector lastRevision,
-                              boolean fromExternalChange) {
+    public DocumentNodeState(@NotNull DocumentNodeStore store,
+                             @NotNull Path path,
+                             @NotNull RevisionVector rootRevision,
+                             @NotNull Map<String, PropertyState> properties,
+                             boolean hasChildren,
+                             int memory,
+                             @Nullable RevisionVector lastRevision,
+                             boolean fromExternalChange) {
         this(store, path, lastRevision, rootRevision,
                 fromExternalChange, createBundlingContext(checkNotNull(properties), hasChildren), memory);
     }
@@ -123,7 +121,7 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
     protected DocumentNodeState(@NotNull DocumentNodeStore store,
                                 @NotNull Path path,
                                 @Nullable RevisionVector lastRevision,
-                                @Nullable RevisionVector rootRevision,
+                                @NotNull RevisionVector rootRevision,
                                 boolean fromExternalChange,
                                 BundlingContext bundlingContext,
                                 int memory) {
@@ -480,6 +478,19 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
          .filter(dns -> !dns.getPath().equals(this.getPath()) ); //Exclude this
     }
 
+    /**
+     * Returns all properties, including bundled, as Json serialized value.
+     *
+     * @return all properties, including bundled.
+     */
+    public Map<String, String> getAllBundledProperties() {
+        Map<String, String> allProps = new HashMap<>();
+        for (Map.Entry<String, PropertyState> e : bundlingContext.getAllProperties().entrySet()) {
+            allProps.put(e.getKey(), asString(e.getValue()));
+        }
+        return allProps;
+    }
+
     //------------------------------< internal >--------------------------------
 
     @Nullable
@@ -558,83 +569,6 @@ public class DocumentNodeState extends AbstractDocumentNodeState implements Cach
             builder.put(ps.getName(), ps);
         }
         return builder.build();
-    }
-
-    public String asString() {
-        JsopWriter json = new JsopBuilder();
-        json.key("path").value(path.toString());
-        json.key("rev").value(rootRevision.toString());
-        json.key("mem").value(getMemory());
-        if (lastRevision != null) {
-            json.key("lastRev").value(lastRevision.toString());
-        }
-        if (hasChildren) {
-            json.key("hasChildren").value(true);
-        }
-        if (properties.size() > 0) {
-            json.key("prop").object();
-            for (Map.Entry<String, PropertyState> e : bundlingContext.getAllProperties().entrySet()) {
-                json.key(e.getKey()).value(asString(e.getValue()));
-            }
-            json.endObject();
-        }
-        return json.toString();
-    }
-    
-    public static DocumentNodeState fromString(DocumentNodeStore store, String s) {
-        JsopTokenizer json = new JsopTokenizer(s);
-        Path path = null;
-        RevisionVector rootRev = null;
-        RevisionVector lastRev = null;
-        int memory = 0;
-        boolean hasChildren = false;
-        HashMap<String, String> map = new HashMap<String, String>();
-        while (true) {
-            String k = json.readString();
-            json.read(':');
-            if ("path".equals(k)) {
-                String p = json.readString();
-                // backwards compatibility with DocumentNodeState written
-                // before Path class was introduced
-                if ("MISSING".equals(p)) {
-                    path = NULL;
-                } else {
-                    path = Path.fromString(p);
-                }
-            } else if ("rev".equals(k)) {
-                rootRev = RevisionVector.fromString(json.readString());
-            } else if ("mem".equals(k)) {
-                memory = Integer.parseInt(json.read(JsopReader.NUMBER));
-            } else if ("lastRev".equals(k)) {
-                lastRev = RevisionVector.fromString(json.readString());
-            } else if ("hasChildren".equals(k)) {
-                hasChildren = json.read() == JsopReader.TRUE;
-            } else if ("prop".equals(k)) {
-                json.read('{');
-                while (true) {
-                    if (json.matches('}')) {
-                        break;
-                    }
-                    k = json.readString();
-                    json.read(':');
-                    String v = json.readString();
-                    map.put(k, v);
-                    json.matches(',');
-                }
-            }
-            if (json.matches(JsopReader.END)) {
-                break;
-            }
-            json.read(',');
-        }
-        Map<String, PropertyState> props = new HashMap<>();
-        for (Entry<String, String> e : map.entrySet()) {
-            String value = e.getValue();
-            if (value != null) {
-                props.put(e.getKey(), store.createPropertyState(e.getKey(), value));
-            }
-        }
-        return new DocumentNodeState(store, path, rootRev, props, hasChildren, memory, lastRev, false);
     }
 
     /**

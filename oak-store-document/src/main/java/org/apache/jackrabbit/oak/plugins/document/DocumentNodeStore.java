@@ -1123,7 +1123,8 @@ public final class DocumentNodeStore
         return nodeStateCache.getDocumentNodeState(path, rootRevision, rev);
     }
 
-    PropertyState createPropertyState(String name, String value){
+    @NotNull
+    public PropertyState createPropertyState(String name, String value){
         return new DocumentPropertyState(this, name, checkNotNull(value));
     }
 
@@ -1138,7 +1139,7 @@ public final class DocumentNodeStore
      */
     @Nullable
     public DocumentNodeState getNode(@NotNull final Path path,
-                              @NotNull final RevisionVector rev) {
+                                     @NotNull final RevisionVector rev) {
         checkNotNull(rev);
         checkNotNull(path);
         final long start = PERFLOG.start();
@@ -1365,7 +1366,7 @@ public final class DocumentNodeStore
     }
 
     @Nullable
-    DocumentNodeState readNode(Path path, RevisionVector readRevision) {
+    private DocumentNodeState readNode(Path path, RevisionVector readRevision) {
         final long start = PERFLOG.start();
         String id = Utils.getIdFromPath(path);
         Revision lastRevision = getPendingModifications().get(path);

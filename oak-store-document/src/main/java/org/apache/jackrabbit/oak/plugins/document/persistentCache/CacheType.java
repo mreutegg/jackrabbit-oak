@@ -55,15 +55,16 @@ public enum CacheType {
         }
 
         @Override
-        public <V> String valueToString(V value) {
-            return ((DocumentNodeState) value).asString();
+        public <V> void writeValue(WriteBuffer buffer, V value) {
+            DataTypeUtil.stateToBuffer((DocumentNodeState) value, buffer);
         }
 
         @SuppressWarnings("unchecked")
         @Override
-        public <V> V valueFromString(
-                DocumentNodeStore store, DocumentStore docStore, String value) {
-            return (V) DocumentNodeState.fromString(store, value);
+        public <V> V readValue(DocumentNodeStore store,
+                               DocumentStore docStore,
+                               ByteBuffer buffer) {
+            return (V) DataTypeUtil.stateFromBuffer(store, buffer);
         }
 
         @Override
@@ -80,19 +81,13 @@ public enum CacheType {
 
         @Override
         public <K> void writeKey(WriteBuffer buffer, K key) {
-            PathNameRev k = (PathNameRev) key;
-            DataTypeUtil.pathToBuffer(k.getPath(), buffer);
-            StringDataType.INSTANCE.write(buffer, k.getName());
-            DataTypeUtil.revisionVectorToBuffer(k.getRevision(), buffer);
+            DataTypeUtil.pathNameRevToBuffer((PathNameRev) key, buffer);
         }
 
         @SuppressWarnings("unchecked")
         @Override
         public <K> K readKey(ByteBuffer buffer) {
-            Path p = DataTypeUtil.pathFromBuffer(buffer);
-            String name = StringDataType.INSTANCE.read(buffer);
-            RevisionVector rev = DataTypeUtil.revisionVectorFromBuffer(buffer);
-            return (K) new PathNameRev(p, name, rev);
+            return (K) DataTypeUtil.pathNameRevFromBuffer(buffer);
         }
 
         @Override
@@ -101,15 +96,17 @@ public enum CacheType {
         }
 
         @Override
-        public <V> String valueToString(V value) {
-            return ((DocumentNodeState.Children) value).asString();
+        public <V> void writeValue(WriteBuffer buffer, V value) {
+            String s = ((DocumentNodeState.Children) value).asString();
+            StringDataType.INSTANCE.write(buffer, s);
         }
 
         @SuppressWarnings("unchecked")
         @Override
-        public <V> V valueFromString(
-                DocumentNodeStore store, DocumentStore docStore, String value) {
-            return (V) DocumentNodeState.Children.fromString(value);
+        public <V> V readValue(DocumentNodeStore store,
+                               DocumentStore docStore,
+                               ByteBuffer buffer) {
+            return (V) DocumentNodeState.Children.fromString(readString(buffer));
         }
 
         @Override
@@ -148,15 +145,17 @@ public enum CacheType {
         }
 
         @Override
-        public <V> String valueToString(V value) {
-            return ((StringValue) value).asString();
+        public <V> void writeValue(WriteBuffer buffer, V value) {
+            String s = ((StringValue) value).asString();
+            StringDataType.INSTANCE.write(buffer, s);
         }
 
         @SuppressWarnings("unchecked")
         @Override
-        public <V> V valueFromString(
-                DocumentNodeStore store, DocumentStore docStore, String value) {
-            return (V) StringValue.fromString(value);
+        public <V> V readValue(DocumentNodeStore store,
+                               DocumentStore docStore,
+                               ByteBuffer buffer) {
+            return (V) StringValue.fromString(readString(buffer));
         }
 
         @Override
@@ -180,16 +179,20 @@ public enum CacheType {
         @Override
         public <K> int compareKeys(K a, K b) {
             throw new UnsupportedOperationException();
-        }            
+        }
+
         @Override
-        public <V> String valueToString(V value) {
+        public <V> void writeValue(WriteBuffer buffer, V value) {
             throw new UnsupportedOperationException();
         }
+
         @Override
-        public <V> V valueFromString(
-                DocumentNodeStore store, DocumentStore docStore, String value) {
+        public <V> V readValue(DocumentNodeStore store,
+                               DocumentStore docStore,
+                               ByteBuffer buffer) {
             throw new UnsupportedOperationException();
         }
+
         @Override
         public <K> boolean shouldCache(DocumentNodeStore store, K key) {
             return false;
@@ -207,8 +210,7 @@ public enum CacheType {
         @SuppressWarnings("unchecked")
         @Override
         public <K> K readKey(ByteBuffer buffer) {
-            String s = StringDataType.INSTANCE.read(buffer);
-            return (K) StringValue.fromString(s);
+            return (K) StringValue.fromString(readString(buffer));
         }
 
         @Override
@@ -217,15 +219,17 @@ public enum CacheType {
         }
 
         @Override
-        public <V> String valueToString(V value) {
-            return ((NodeDocument) value).asString();
+        public <V> void writeValue(WriteBuffer buffer, V value) {
+            String s = ((NodeDocument) value).asString();
+            StringDataType.INSTANCE.write(buffer, s);
         }
 
         @SuppressWarnings("unchecked")
         @Override
-        public <V> V valueFromString(
-                DocumentNodeStore store, DocumentStore docStore, String value) {
-            return (V) NodeDocument.fromString(docStore, value);
+        public <V> V readValue(DocumentNodeStore store,
+                               DocumentStore docStore,
+                               ByteBuffer buffer) {
+            return (V) NodeDocument.fromString(docStore, readString(buffer));
         }
 
         @Override
@@ -257,15 +261,17 @@ public enum CacheType {
         }
 
         @Override
-        public <V> String valueToString(V value) {
-            return ((LocalDiffCache.Diff) value).asString();
+        public <V> void writeValue(WriteBuffer buffer, V value) {
+            String s = ((LocalDiffCache.Diff) value).asString();
+            StringDataType.INSTANCE.write(buffer, s);
         }
 
         @SuppressWarnings("unchecked")
         @Override
-        public <V> V valueFromString(
-                DocumentNodeStore store, DocumentStore docStore, String value) {
-            return (V) LocalDiffCache.Diff.fromString(value);
+        public <V> V readValue(DocumentNodeStore store,
+                               DocumentStore docStore,
+                               ByteBuffer buffer) {
+            return (V) LocalDiffCache.Diff.fromString(readString(buffer));
         }
 
         @Override
@@ -285,10 +291,13 @@ public enum CacheType {
     public abstract <K> void writeKey(WriteBuffer buffer, K key);
     public abstract <K> K readKey(ByteBuffer buffer);
     public abstract <K> int compareKeys(K a, K b);
-    public abstract <V> String valueToString(V value);
-    public abstract <V> V valueFromString(
-            DocumentNodeStore store, DocumentStore docStore, String value);
+    public abstract <V> void writeValue(WriteBuffer buffer, V value);
+    public abstract <V> V readValue(
+            DocumentNodeStore store, DocumentStore docStore, ByteBuffer buffer);
     public abstract <K> boolean shouldCache(DocumentNodeStore store, K key);
 
+    private static String readString(ByteBuffer buffer) {
+        return StringDataType.INSTANCE.read(buffer);
+    }
 }
 
