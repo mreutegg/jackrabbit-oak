@@ -37,6 +37,8 @@ public final class PathRev implements CacheValue, Comparable<PathRev> {
 
     private final RevisionVector revision;
 
+    private int hash;
+
     public PathRev(@NotNull Path path, @NotNull RevisionVector revision) {
         this.path = checkNotNull(path);
         this.revision = checkNotNull(revision);
@@ -79,7 +81,12 @@ public final class PathRev implements CacheValue, Comparable<PathRev> {
 
     @Override
     public int hashCode() {
-        return path.hashCode() ^ revision.hashCode();
+    	int h = this.hash;
+        if (h == 0) {
+        	h = path.hashCode() ^ revision.hashCode();
+        	this.hash = h;
+        }
+        return h;
     }
 
     @Override
