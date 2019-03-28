@@ -23,6 +23,7 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.google.common.collect.Lists;
 import com.mongodb.BasicDBObject;
@@ -263,23 +264,46 @@ public class MeasureMemory {
     @Test
     public void path() throws Exception {
         measureMemory(new Callable<Object[]>() {
-            private int counter = 0;
+            private AtomicInteger counter = new AtomicInteger();
             @Override
             public Object[] call() {
-                Path p = Path.fromString(generatePath());
+                Path p = Path.fromString(generatePath(counter));
                 return new Object[]{p, p.getMemory() + OVERHEAD};
             }
+        });
+    }
 
-            private String generatePath() {
-                String p = "/";
-                for (int i = 0; i < 5; i++) {
-                    p = PathUtils.concat(p, generateName());
-                }
-                return p;
+    @Test
+    public void pathRev() throws Exception {
+        measureMemory(new Callable<Object[]>() {
+            private AtomicInteger counter = new AtomicInteger();
+            @Override
+            public Object[] call() {
+                Path p = Path.fromString(generatePath(counter));
+                RevisionVector r = new RevisionVector(
+                        Revision.newRevision(1),
+                        Revision.newRevision(2)
+                );
+                PathRev pr = new PathRev(p, r);
+                return new Object[]{pr, pr.getMemory() + OVERHEAD};
             }
+        });
+    }
 
-            private String generateName() {
-                return String.format("node-%05d", counter++);
+    @Test
+    public void namePathRev() throws Exception {
+        measureMemory(new Callable<Object[]>() {
+            private AtomicInteger counter = new AtomicInteger();
+            @Override
+            public Object[] call() {
+                String name = generateName(counter);
+                Path p = Path.fromString(generatePath(counter));
+                RevisionVector r = new RevisionVector(
+                        Revision.newRevision(1),
+                        Revision.newRevision(2)
+                );
+                NamePathRev npr = new NamePathRev(name, p, r);
+                return new Object[]{npr, npr.getMemory() + OVERHEAD};
             }
         });
     }
@@ -358,4 +382,15 @@ public class MeasureMemory {
                 - Runtime.getRuntime().freeMemory();
     }
 
+    private static String generatePath(AtomicInteger counter) {
+        String p = "/";
+        for (int i = 0; i < 5; i++) {
+            p = PathUtils.concat(p, generateName(counter));
+        }
+        return p;
+    }
+
+    private static String generateName(AtomicInteger counter) {
+        return String.format("node-%05d", counter.getAndIncrement());
+    }
 }

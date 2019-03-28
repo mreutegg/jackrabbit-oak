@@ -66,7 +66,7 @@ public final class NamePathRev implements CacheValue, Comparable<NamePathRev> {
 
     @Override
     public int getMemory() {
-        long size = 28L // shallow size
+        long size = 24L // shallow size
                 + path.getMemory()
                 + StringUtils.estimateMemoryUsage(name)
                 + revision.getMemory();
