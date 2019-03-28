@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 import com.google.common.collect.Lists;
 
@@ -42,8 +41,6 @@ import static com.google.common.collect.Iterables.elementsEqual;
 public final class Path implements CacheValue, Comparable<Path> {
 
     private static final String NULL_PATH_STRING = "<null>";
-
-    private static final Pattern DELIMITED = Pattern.compile("/");
 
     public static final Path ROOT = new Path(null, "", "".hashCode());
 
@@ -162,24 +159,6 @@ public final class Path implements CacheValue, Comparable<Path> {
         int depthDiff = other.getDepth() - getDepth();
         return depthDiff > 0
                 && elementsEqual(elements(), other.getAncestor(depthDiff).elements());
-    }
-
-    @NotNull
-    public static Path fromCharSequence(@NotNull CharSequence path) throws IllegalArgumentException {
-        checkNotNull(path);
-        if (NULL_PATH_STRING.contentEquals(path)) {
-            return NULL;
-        }
-        if (path.length() == 0 || path.charAt(0) != '/') {
-            throw new IllegalArgumentException("path must be absolute");
-        }
-        Path p = ROOT;
-        for (String name : DELIMITED.split(path)) {
-            if (!name.isEmpty()) {
-                p = new Path(p, StringCache.get(name));
-            }
-        }
-        return p;
     }
 
     @NotNull

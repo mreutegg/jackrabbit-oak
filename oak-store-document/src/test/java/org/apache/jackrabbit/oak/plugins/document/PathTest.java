@@ -80,14 +80,6 @@ public class PathTest {
     }
 
     @Test
-    public void fromCharSequence() {
-        assertEquals(NULL, Path.fromCharSequence(NULL.toString()));
-        assertEquals(root, Path.fromCharSequence(root.toString()));
-        assertEquals(foo, Path.fromCharSequence(foo.toString()));
-        assertEquals(fooBar, Path.fromCharSequence(fooBar.toString()));
-    }
-
-    @Test
     public void length() {
         assertEquals(NULL.toString().length(), NULL.length());
         assertEquals(root.toString().length(), root.length());
