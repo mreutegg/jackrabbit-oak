@@ -36,7 +36,7 @@ public class DocumentNodeStateTest {
         DocumentNodeStore store = builderProvider.newBuilder().getNodeStore();
         RevisionVector rv = new RevisionVector(Revision.newRevision(1));
         DocumentNodeState state = new DocumentNodeState(store, Path.fromString("/foo"), rv);
-        assertEquals(186, state.getMemory());
+        assertEquals(198, state.getMemory());
     }
 
     @Test
