@@ -27,7 +27,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
-import org.apache.jackrabbit.oak.commons.PathUtils;
 import org.apache.jackrabbit.oak.commons.json.JsopReader;
 import org.apache.jackrabbit.oak.commons.json.JsopTokenizer;
 import org.apache.jackrabbit.oak.commons.sort.StringSort;
@@ -289,7 +288,7 @@ public class JournalEntryTest {
 
         StringSort sort = JournalEntry.newSorter();
         StringSort inv = JournalEntry.newSorter();
-        JournalEntry.fillExternalChanges(sort, inv, "/foo", r1, r2, store, e -> {}, null, null);
+        JournalEntry.fillExternalChanges(sort, inv, p("/foo"), r1, r2, store, e -> {}, null, null);
         assertEquals(4, sort.getSize());
         assertEquals(0, inv.getSize());
         sort.close();
@@ -325,7 +324,7 @@ public class JournalEntryTest {
             t.start();
             StringSort sort = JournalEntry.newSorter();
             try {
-                entry.addTo(sort, PathUtils.ROOT_PATH);
+                entry.addTo(sort, Path.ROOT);
             } finally {
                 sort.close();
             }
@@ -349,7 +348,7 @@ public class JournalEntryTest {
         entry.modified(p("/bar/b"));
         entry.modified(p("/bar/c"));
         StringSort sort = JournalEntry.newSorter();
-        entry.addTo(sort, "/foo");
+        entry.addTo(sort, p("/foo"));
         assertEquals(4, sort.getSize());
         sort.close();
     }

@@ -40,7 +40,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.apache.jackrabbit.oak.commons.PathUtils.ROOT_PATH;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.CLUSTER_NODES;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.Commit.createUpdateOp;
@@ -210,7 +209,7 @@ class UnsavedModifications {
             store.findAndUpdate(NODES, rootUpdate);
             stats.calls++;
             map.remove(Path.ROOT, rootRev);
-            LOG.debug("Updated _lastRev to {} on {}", rootRev, ROOT_PATH);
+            LOG.debug("Updated _lastRev to {} on {}", rootRev, Path.ROOT);
 
             int cid = rootRev.getClusterId();
             UpdateOp update = new UpdateOp(String.valueOf(cid), false);

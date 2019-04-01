@@ -71,7 +71,7 @@ class JournalDiffLoader implements DiffCache.Loader {
 
         StringSort changes = JournalEntry.newSorter();
         try {
-            String path = node.getPath().toString();
+            Path path = node.getPath();
             readTrunkChanges(path, beforeRev, afterRev, changes);
 
             readBranchChanges(path, beforeRev, changes);
@@ -91,7 +91,7 @@ class JournalDiffLoader implements DiffCache.Loader {
         }
     }
 
-    private void readBranchChanges(String path,
+    private void readBranchChanges(Path path,
                                    RevisionVector rv,
                                    StringSort changes) throws IOException {
         if (!rv.isBranch() || ns.isDisableBranches()) {
@@ -119,7 +119,7 @@ class JournalDiffLoader implements DiffCache.Loader {
         }
     }
 
-    private void readTrunkChanges(String path,
+    private void readTrunkChanges(Path path,
                                   RevisionVector beforeRev,
                                   RevisionVector afterRev,
                                   StringSort changes) throws IOException {

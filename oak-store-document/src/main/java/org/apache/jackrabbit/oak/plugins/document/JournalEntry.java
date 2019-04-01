@@ -46,8 +46,6 @@ import org.slf4j.LoggerFactory;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.apache.jackrabbit.oak.commons.PathUtils.ROOT_PATH;
-import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.JOURNAL;
 
 /**
@@ -241,7 +239,7 @@ public final class JournalEntry extends Document {
                                    @NotNull Revision to,
                                    @NotNull DocumentStore store)
             throws IOException {
-        return fillExternalChanges(externalChanges, invalidate, ROOT_PATH,
+        return fillExternalChanges(externalChanges, invalidate, Path.ROOT,
                 from, to, store, entry -> {}, null, null);
     }
 
@@ -273,7 +271,7 @@ public final class JournalEntry extends Document {
      */
     static int fillExternalChanges(@NotNull StringSort externalChanges,
                                    @NotNull StringSort invalidate,
-                                   @NotNull String path,
+                                   @NotNull Path path,
                                    @NotNull Revision from,
                                    @NotNull Revision to,
                                    @NotNull DocumentStore store,
@@ -346,7 +344,7 @@ public final class JournalEntry extends Document {
 
     private static void fillFromJournalEntry(@NotNull StringSort externalChanges,
                                              @NotNull StringSort invalidate,
-                                             @NotNull String path,
+                                             @NotNull Path path,
                                              @Nullable ChangeSetBuilder changeSetBuilder,
                                              @Nullable JournalPropertyHandler journalPropertyHandler,
                                              @NotNull JournalEntry d,
@@ -492,11 +490,11 @@ public final class JournalEntry extends Document {
      * @throws IOException if an exception occurs while adding a path to
      *          {@code sort}. In this case only some paths may have been added.
      */
-    void addTo(final StringSort sort, String path) throws IOException {
+    void addTo(final StringSort sort, Path path) throws IOException {
         TraversingVisitor v = new TraversingVisitor() {
             @Override
-            public void node(TreeNode node, String p) throws IOException {
-                sort.add(p);
+            public void node(TreeNode node, Path p) throws IOException {
+                sort.add(p.toString());
             }
         };
         TreeNode n = getNode(path);
@@ -541,12 +539,12 @@ public final class JournalEntry extends Document {
         TraversingVisitor v = new TraversingVisitor() {
 
             @Override
-            public void node(TreeNode node, String path) throws IOException {
-                sort.add(path);
+            public void node(TreeNode node, Path path) throws IOException {
+                sort.add(path.toString());
             }
         };
         for (JournalEntry e : getInvalidateOnly()) {
-            e.getChanges().accept(v, "/");
+            e.getChanges().accept(v, Path.ROOT);
         }
     }
 
@@ -616,9 +614,9 @@ public final class JournalEntry extends Document {
     }
 
     @Nullable
-    private TreeNode getNode(String path) {
+    private TreeNode getNode(Path path) {
         TreeNode node = getChanges();
-        for (String name : PathUtils.elements(path)) {
+        for (String name : path.elements()) {
             node = node.get(name);
             if (node == null) {
                 return null;
@@ -736,10 +734,10 @@ public final class JournalEntry extends Document {
             return children.get(name);
         }
 
-        void accept(TraversingVisitor visitor, String path) throws IOException {
+        void accept(TraversingVisitor visitor, Path path) throws IOException {
             visitor.node(this, path);
             for (Map.Entry<String, TreeNode> entry : children.entrySet()) {
-                entry.getValue().accept(visitor, concat(path, entry.getKey()));
+                entry.getValue().accept(visitor, new Path(path, entry.getKey()));
             }
         }
 
@@ -768,7 +766,7 @@ public final class JournalEntry extends Document {
 
     private interface TraversingVisitor {
 
-        void node(TreeNode node, String path) throws IOException;
+        void node(TreeNode node, Path path) throws IOException;
     }
 
     private interface MapFactory {

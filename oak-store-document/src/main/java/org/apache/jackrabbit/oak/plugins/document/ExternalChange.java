@@ -145,7 +145,7 @@ abstract class ExternalChange {
                         // add changes for this particular clusterId to the externalSort
                         try {
                             fillExternalChanges(externalSort, invalidate,
-                                    PathUtils.ROOT_PATH, last, r,
+                                    Path.ROOT, last, r,
                                     store.getDocumentStore(), journalEntryConsumer,
                                     changeSetBuilder, journalPropertyHandler);
                         } catch (Exception e1) {

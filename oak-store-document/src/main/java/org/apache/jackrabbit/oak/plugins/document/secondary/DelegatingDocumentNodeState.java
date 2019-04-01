@@ -37,9 +37,6 @@ import org.jetbrains.annotations.Nullable;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static org.apache.jackrabbit.oak.commons.PathUtils.ROOT_PATH;
-import static org.apache.jackrabbit.oak.commons.PathUtils.concat;
-import static org.apache.jackrabbit.oak.commons.PathUtils.denotesRoot;
 
 /**
  * NodeState wrapper which wraps another NodeState (mostly SegmentNodeState)

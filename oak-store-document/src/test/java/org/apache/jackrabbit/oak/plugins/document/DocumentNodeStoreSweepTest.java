@@ -37,7 +37,6 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 
-import static org.apache.jackrabbit.oak.commons.PathUtils.ROOT_PATH;
 import static org.apache.jackrabbit.oak.plugins.document.TestUtils.NO_BINARY;
 import static org.apache.jackrabbit.oak.plugins.document.TestUtils.merge;
 import static org.apache.jackrabbit.oak.plugins.document.util.Utils.getAllDocuments;
@@ -216,7 +215,7 @@ public class DocumentNodeStoreSweepTest {
         crashDocumentNodeStore();
         // and remove the sweep revision for clusterId
         // this will look like an upgraded and crashed pre 1.8 node store
-        UpdateOp op = new UpdateOp(getIdFromPath(ROOT_PATH), false);
+        UpdateOp op = new UpdateOp(getIdFromPath(Path.ROOT), false);
         op.removeMapEntry("_sweepRev", new Revision(0, 0, clusterId));
         assertNotNull(store.findAndUpdate(Collection.NODES, op));
         NodeDocument rootDoc = getRootDocument(store);
