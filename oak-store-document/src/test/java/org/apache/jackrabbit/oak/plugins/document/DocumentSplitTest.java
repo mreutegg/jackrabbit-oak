@@ -416,11 +416,11 @@ public class DocumentSplitTest extends BaseDocumentMKTest {
 
     @Test
     public void cascadingSplitLongPath() {
-        String p = "/";
+        Path p = Path.ROOT;
         while (!Utils.isLongPath(p)) {
-            p = PathUtils.concat(p, "long-path-element");
+            p = new Path(p, "long-path-element");
         }
-        cascadingSplit(p);
+        cascadingSplit(p.toString());
     }
 
     private void cascadingSplit(String path) {

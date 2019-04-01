@@ -72,6 +72,7 @@ public class SimpleTest {
         assertEquals(2, Utils.pathDepth("/a/"));
         assertEquals(2, Utils.pathDepth("/a/b"));
         assertEquals(3, Utils.pathDepth("/a/b/c"));
+        assertEquals(2, Utils.pathDepth("a/b/c"));
     }
 
     @Test

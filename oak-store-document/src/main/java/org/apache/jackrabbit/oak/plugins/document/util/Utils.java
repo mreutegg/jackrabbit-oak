@@ -117,6 +117,22 @@ public class Utils {
         return depth;
     }
 
+    /**
+     * Calculates the depth prefix of the id for the given {@code path}. The is
+     * the same as {@link #pathDepth(String)}, but takes a {@link Path}
+     * argument.
+     *
+     * @param path a path.
+     * @return the id depth prefix for the given {@code path}.
+     */
+    public static int getIdDepth(Path path) {
+        int depth = path.getDepth();
+        if (!path.isAbsolute()) {
+            depth--;
+        }
+        return depth;
+    }
+
     @SuppressWarnings("unchecked")
     public static int estimateMemoryUsage(Map<?, Object> map) {
         if (map == null) {
@@ -245,8 +261,8 @@ public class Utils {
 
     public static String getIdFromPath(@NotNull Path path) {
         checkNotNull(path);
+        int depth = getIdDepth(path);
         Path parent = path.getParent();
-        int depth = path.getDepth();
         if (parent != null && isLongPath(path)) {
             byte[] hash = createSHA256Digest(parent.toString());
             return createHashedId(depth, hash, path.getName());
@@ -314,11 +330,7 @@ public class Utils {
         return Utils.getIdFromPath(parentPath);
     }
 
-    /**
-     * @deprecated Use {@link #isLongPath(Path)} instead.
-     */
-    @Deprecated
-    public static boolean isLongPath(String path) {
+    private static boolean isLongPath(String path) {
         // the most common case: a short path
         // avoid calculating the parent path
         if (path.length() < PATH_SHORT) {
@@ -382,17 +394,16 @@ public class Utils {
         throw new IllegalArgumentException("Invalid id: " + id);
     }
 
-    public static String getPreviousPathFor(Path path, Revision r, int height) {
+    public static Path getPreviousPathFor(Path path, Revision r, int height) {
         if (!path.isAbsolute()) {
             throw new IllegalArgumentException("path must be absolute: " + path);
         }
-        StringBuilder sb = new StringBuilder(path.length() + REVISION_LENGTH + 3);
-        sb.append("p").append(path);
-        if (sb.charAt(sb.length() - 1) != '/') {
-            sb.append('/');
+        Path prev = new Path("p");
+        for (String name : path.elements()) {
+            prev = new Path(prev, name);
         }
-        r.toStringBuilder(sb).append("/").append(height);
-        return sb.toString();
+        prev = new Path(prev, r.toString());
+        return new Path(prev, String.valueOf(height));
     }
 
     public static String getPreviousIdFor(Path path, Revision r, int height) {

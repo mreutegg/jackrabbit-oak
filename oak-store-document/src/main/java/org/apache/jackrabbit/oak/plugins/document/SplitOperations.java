@@ -314,11 +314,11 @@ class SplitOperations {
                 if (h == null || l == null) {
                     throw new IllegalStateException();
                 }
-                String prevPath = Utils.getPreviousPathFor(path, h, entry.getKey() + 1);
+                Path prevPath = Utils.getPreviousPathFor(path, h, entry.getKey() + 1);
                 String prevId = Utils.getIdFromPath(prevPath);
                 UpdateOp intermediate = new UpdateOp(prevId, true);
                 if (Utils.isIdFromLongPath(prevId)) {
-                    intermediate.set(NodeDocument.PATH, prevPath);
+                    intermediate.set(NodeDocument.PATH, prevPath.toString());
                 }
                 setPrevious(main, new Range(h, l, entry.getKey() + 1));
                 for (Range r : entry.getValue()) {
@@ -351,11 +351,11 @@ class SplitOperations {
             // move to another document
             main = new UpdateOp(id, false);
             setPrevious(main, new Range(high, low, 0));
-            String oldPath = Utils.getPreviousPathFor(path, high, 0);
+            Path oldPath = Utils.getPreviousPathFor(path, high, 0);
             String oldId = Utils.getIdFromPath(oldPath);
             UpdateOp old = new UpdateOp(oldId, true);
             if (Utils.isIdFromLongPath(oldId)) {
-                old.set(NodeDocument.PATH, oldPath);
+                old.set(NodeDocument.PATH, oldPath.toString());
             }
             for (String property : committedChanges.keySet()) {
                 NavigableMap<Revision, String> splitMap = committedChanges.get(property);

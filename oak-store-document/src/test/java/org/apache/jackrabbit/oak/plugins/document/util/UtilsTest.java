@@ -301,9 +301,9 @@ public class UtilsTest {
 
     @Test
     public void isIdFromLongPath() {
-        String path = "/test";
+        Path path = Path.fromString("/test");
         while (!Utils.isLongPath(path)) {
-            path += path;
+            path = new Path(path, path.getName());
         }
         String idFromLongPath = Utils.getIdFromPath(path);
         assertTrue(Utils.isIdFromLongPath(idFromLongPath));
@@ -311,6 +311,16 @@ public class UtilsTest {
         assertFalse(Utils.isIdFromLongPath(NodeDocument.MIN_ID_VALUE));
         assertFalse(Utils.isIdFromLongPath(NodeDocument.MAX_ID_VALUE));
         assertFalse(Utils.isIdFromLongPath(":"));
+    }
+
+    @Test
+    public void idDepth() {
+        assertEquals(0, Utils.getIdDepth(Path.ROOT));
+        assertEquals(0, Utils.getIdDepth(Path.fromString("a")));
+        assertEquals(1, Utils.getIdDepth(Path.fromString("/a")));
+        assertEquals(2, Utils.getIdDepth(Path.fromString("/a/b")));
+        assertEquals(3, Utils.getIdDepth(Path.fromString("/a/b/c")));
+        assertEquals(2, Utils.getIdDepth(Path.fromString("a/b/c")));
     }
 
     @Test
