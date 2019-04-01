@@ -58,7 +58,9 @@ public class MapDBMapFactory extends MapFactory {
                 .make();
     }
 
-    private static class PathSerializer extends BTreeKeySerializer<Path> {
+    private static class PathSerializer
+            extends BTreeKeySerializer<Path>
+            implements Serializable {
 
         @Override
         public void serialize(DataOutput out, int start, int end, Object[] keys)
