@@ -361,6 +361,7 @@ public class Utils {
         return index != -1 && index < id.length() - 1 && id.charAt(index + 1) == 'h';
     }
 
+    // TODO deprecate?
     public static String getPathFromId(String id) {
         if (isIdFromLongPath(id)) {
             throw new IllegalArgumentException("Id is hashed: " + id);
@@ -381,8 +382,8 @@ public class Utils {
         throw new IllegalArgumentException("Invalid id: " + id);
     }
 
-    public static String getPreviousPathFor(String path, Revision r, int height) {
-        if (!PathUtils.isAbsolute(path)) {
+    public static String getPreviousPathFor(Path path, Revision r, int height) {
+        if (!path.isAbsolute()) {
             throw new IllegalArgumentException("path must be absolute: " + path);
         }
         StringBuilder sb = new StringBuilder(path.length() + REVISION_LENGTH + 3);
@@ -394,7 +395,7 @@ public class Utils {
         return sb.toString();
     }
 
-    public static String getPreviousIdFor(String path, Revision r, int height) {
+    public static String getPreviousIdFor(Path path, Revision r, int height) {
         return getIdFromPath(getPreviousPathFor(path, r, height));
     }
 

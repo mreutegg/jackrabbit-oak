@@ -155,7 +155,7 @@ final class NodeDocumentSweeper {
                 new Function<NodeDocument, Map.Entry<Path, UpdateOp>>() {
             @Override
             public Map.Entry<Path, UpdateOp> apply(NodeDocument doc) {
-                return immutableEntry(Path.fromString(doc.getPath()), sweepOne(doc));
+                return immutableEntry(doc.getPath(), sweepOne(doc));
             }
         }), new Predicate<Map.Entry<Path, UpdateOp>>() {
             @Override

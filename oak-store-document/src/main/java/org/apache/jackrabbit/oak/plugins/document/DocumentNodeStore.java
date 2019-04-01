@@ -1236,7 +1236,7 @@ public final class DocumentNodeStore
             int numReturned = 0;
             for (NodeDocument doc : docs) {
                 numReturned++;
-                Path p = Path.fromString(doc.getPath());
+                Path p = doc.getPath();
                 // remember name of last returned document for
                 // potential next round of readChildDocs()
                 name = p.getName();
@@ -2915,7 +2915,7 @@ public final class DocumentNodeStore
 
         for (NodeDocument doc : store.query(Collection.NODES, fromKey, toKey,
                 NodeDocument.MODIFIED_IN_SECS, minValue, Integer.MAX_VALUE)) {
-            paths.add(Path.fromString(doc.getPath()));
+            paths.add(doc.getPath());
         }
 
         LOG.debug("diffManyChildren: Affected paths: {}", paths.size());

@@ -412,7 +412,7 @@ public class SimpleTest {
         NodeDocument foo = store.find(Collection.NODES, "2:/test/foo");
         assertNotNull(foo);
         assertFalse(foo.containsRevision(head));
-        assertEquals("/", foo.getCommitRootPath(head));
+        assertEquals(Path.ROOT, foo.getCommitRootPath(head));
 
         head = Revision.fromString(mk.commit("", "+\"/bar\":{}+\"/test/foo/bar\":{}", head.toString(), null));
 
@@ -424,12 +424,12 @@ public class SimpleTest {
         // /bar refers to root nodes a commit root
         NodeDocument bar = store.find(Collection.NODES, "1:/bar");
         assertNotNull(bar);
-        assertEquals("/", bar.getCommitRootPath(head));
+        assertEquals(Path.ROOT, bar.getCommitRootPath(head));
 
         // /test/foo/bar refers to root nodes a commit root
         bar = store.find(Collection.NODES, "3:/test/foo/bar");
         assertNotNull(bar);
-        assertEquals("/", bar.getCommitRootPath(head));
+        assertEquals(Path.ROOT, bar.getCommitRootPath(head));
 
     }
 

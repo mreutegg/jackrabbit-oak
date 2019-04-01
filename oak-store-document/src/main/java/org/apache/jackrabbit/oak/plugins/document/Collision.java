@@ -145,8 +145,8 @@ class Collision {
                                           @NotNull Revision other,
                                           @NotNull DocumentStore store,
                                           @NotNull RevisionContext context) {
-        String p = document.getPath();
-        String commitRootPath;
+        Path p = document.getPath();
+        Path commitRootPath;
         // first check if we can mark the commit with the given revision
         if (document.containsRevision(revision)) {
             if (isCommitted(context.getCommitValue(revision, document))) {
@@ -164,7 +164,7 @@ class Collision {
             }
         }
         // at this point we have a commitRootPath
-        UpdateOp op = new UpdateOp(Utils.getIdFromPath(Path.fromString(commitRootPath)), false);
+        UpdateOp op = new UpdateOp(Utils.getIdFromPath(commitRootPath), false);
         NodeDocument commitRoot = store.find(Collection.NODES, op.getId());
         // check commit status of revision
         if (isCommitted(context.getCommitValue(revision, commitRoot))) {

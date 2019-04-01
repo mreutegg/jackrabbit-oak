@@ -95,14 +95,15 @@ public class NodeStateEntryTraverser implements Iterable<NodeStateEntry>, Closea
     }
 
     private boolean includeDoc(NodeDocument doc) {
+        String path = doc.getPath().toString();
         return !doc.isSplitDocument()
-                && !NodeStateUtils.isHiddenPath(doc.getPath())
-                && pathPredicate.test(doc.getPath());
+                && !NodeStateUtils.isHiddenPath(path)
+                && pathPredicate.test(path);
     }
 
     @SuppressWarnings("StaticPseudoFunctionalStyleMethod")
     private Iterable<NodeStateEntry> getEntries(NodeDocument doc) {
-        Path path = Path.fromString(doc.getPath());
+        Path path = doc.getPath();
 
         DocumentNodeState nodeState = documentNodeStore.getNode(path, rootRevision);
 

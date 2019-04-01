@@ -432,7 +432,7 @@ public class VersionGCDeletionTest {
 
         @Override
         public int compare(NodeDocument o1, NodeDocument o2) {
-            return reverse.compare(Path.fromString(o1.getPath()), Path.fromString(o2.getPath()));
+            return reverse.compare(o1.getPath(), o2.getPath());
         }
     }
 }

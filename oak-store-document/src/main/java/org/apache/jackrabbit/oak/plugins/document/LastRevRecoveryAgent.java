@@ -294,7 +294,7 @@ public class LastRevRecoveryAgent {
             // most recent revision currently obtained from either a
             // _lastRev entry or an explicit modification on the document
             if (lastRevForParents != null) {
-                knownLastRevOrModification.put(Path.fromString(doc.getPath()), lastRevForParents);
+                knownLastRevOrModification.put(doc.getPath(), lastRevForParents);
             }
 
             //If both currentLastRev and lostLastRev are null it means
@@ -306,7 +306,7 @@ public class LastRevRecoveryAgent {
 
             //2. Update lastRev for parent paths aka rollup
             if (lastRevForParents != null) {
-                Path path = Path.fromString(doc.getPath());
+                Path path = doc.getPath();
                 changes.modified(path); // track all changes
                 while (true) {
                     path = path.getParent();

@@ -260,7 +260,7 @@ public class DocumentNodeStoreSweepTest {
         // get the revision of the uncommitted changes
         Revision r = null;
         for (NodeDocument d : Utils.getAllDocuments(store)) {
-            if (d.getPath().startsWith("/node-")) {
+            if (d.getPath().toString().startsWith("/node-")) {
                 r = Iterables.getFirst(d.getAllChanges(), null);
                 break;
             }
@@ -308,7 +308,7 @@ public class DocumentNodeStoreSweepTest {
         // store must now contain uncommitted changes
         NodeDocument doc = null;
         for (NodeDocument d : Utils.getAllDocuments(store)) {
-            if (d.getPath().startsWith("/node-")) {
+            if (d.getPath().toString().startsWith("/node-")) {
                 doc = d;
                 break;
             }

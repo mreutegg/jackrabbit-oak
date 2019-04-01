@@ -510,7 +510,7 @@ public class VersionGarbageCollectorIT {
         });
 
         NodeDocument doc = docs.take();
-        String name = PathUtils.getName(doc.getPath());
+        String name = doc.getPath().getName();
         // recreate node, which hasn't been removed yet
         name = name.equals("foo") ? "bar" : "foo";
         builder = store.getRoot().builder();
@@ -892,8 +892,11 @@ public class VersionGarbageCollectorIT {
         store.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
     }
 
-    private NodeDocument getDoc(String path){
-        return store.getDocumentStore().find(NODES, Utils.getIdFromPath(path), 0);
+    private NodeDocument getDoc(String path) {
+        return getDoc(Path.fromString(path));
     }
 
+    private NodeDocument getDoc(Path path) {
+        return store.getDocumentStore().find(NODES, Utils.getIdFromPath(path), 0);
+    }
 }

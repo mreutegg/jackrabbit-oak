@@ -224,7 +224,7 @@ public class RDBDocumentStoreTest extends AbstractDocumentStoreTest {
                     assertNotNull(ds.findAndUpdate(NODES, op));
                     updated = true;
                 }
-                if (doc.getPath().startsWith("/lastRevnode-")) {
+                if (doc.getPath().toString().startsWith("/lastRevnode-")) {
                     ids.add(doc.getId());
                 }
             }

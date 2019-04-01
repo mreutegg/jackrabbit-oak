@@ -77,7 +77,7 @@ class SplitOperations {
     private static final DocumentStore STORE = new MemoryDocumentStore();
 
     private final NodeDocument doc;
-    private final String path;
+    private final Path path;
     private final String id;
     private final Revision headRevision;
     private final RevisionContext context;
