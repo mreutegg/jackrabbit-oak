@@ -31,7 +31,6 @@ import static org.apache.jackrabbit.oak.plugins.document.Collection.JOURNAL;
 import static org.apache.jackrabbit.oak.plugins.document.Collection.NODES;
 import static org.apache.jackrabbit.oak.plugins.document.DocumentNodeStoreBuilder.MANY_CHILDREN_THRESHOLD;
 import static org.apache.jackrabbit.oak.plugins.document.NodeDocument.MODIFIED_IN_SECS_RESOLUTION;
-import static org.apache.jackrabbit.oak.plugins.document.Path.NULL;
 import static org.apache.jackrabbit.oak.plugins.document.Path.ROOT;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateOp.Key;
 import static org.apache.jackrabbit.oak.plugins.document.UpdateOp.Operation;
@@ -589,7 +588,7 @@ public final class DocumentNodeStore
         this.lastRevRecoveryAgent = new LastRevRecoveryAgent(store, this,
                 lastRevSeeker, clusterId -> this.signalClusterStateChange());
         this.disableBranches = builder.isDisableBranches();
-        this.missing = new DocumentNodeState(this, NULL,
+        this.missing = new DocumentNodeState(this, new Path("missing"),
                 new RevisionVector(new Revision(0, 0, 0))) {
             @Override
             public int getMemory() {

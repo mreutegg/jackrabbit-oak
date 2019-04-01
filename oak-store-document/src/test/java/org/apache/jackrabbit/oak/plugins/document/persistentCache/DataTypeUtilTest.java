@@ -80,19 +80,38 @@ public class DataTypeUtilTest {
     }
 
     @Test
-    public void pathToBufferNull() {
-        Path p = Path.NULL;
+    public void pathToBuffer() {
+        Path p = Path.fromString("/foo/bar/quux");
         DataTypeUtil.pathToBuffer(p, wb);
         ByteBuffer rb = readBufferFrom(wb);
         assertEquals(p, DataTypeUtil.pathFromBuffer(rb));
     }
 
     @Test
-    public void pathToBuffer() {
-        Path p = Path.fromString("/foo/bar/quux");
+    public void relPathToBuffer() {
+        Path p = Path.fromString("foo/bar/quux");
         DataTypeUtil.pathToBuffer(p, wb);
         ByteBuffer rb = readBufferFrom(wb);
         assertEquals(p, DataTypeUtil.pathFromBuffer(rb));
+    }
+
+    @Test
+    public void relPathSingleElementToBuffer() {
+        Path p = Path.fromString("foo");
+        DataTypeUtil.pathToBuffer(p, wb);
+        ByteBuffer rb = readBufferFrom(wb);
+        assertEquals(p, DataTypeUtil.pathFromBuffer(rb));
+    }
+
+    @Test
+    public void relPathMultipleToBuffer() {
+        Path fooBar = Path.fromString("foo/bar");
+        Path barBaz = Path.fromString("bar/baz");
+        DataTypeUtil.pathToBuffer(fooBar, wb);
+        DataTypeUtil.pathToBuffer(barBaz, wb);
+        ByteBuffer rb = readBufferFrom(wb);
+        assertEquals(fooBar, DataTypeUtil.pathFromBuffer(rb));
+        assertEquals(barBaz, DataTypeUtil.pathFromBuffer(rb));
     }
 
     @Test

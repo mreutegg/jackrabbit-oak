@@ -199,7 +199,7 @@ public class BundlingHandler {
     }
 
     private static class BundlingContext {
-        static final BundlingContext NULL = new BundlingContext(Path.NULL, Matcher.NON_MATCHING);
+        static final BundlingContext NULL = new BundlingContext(Path.ROOT, Matcher.NON_MATCHING);
         final Path bundlingPath;
         final Matcher matcher;
         final Set<PropertyState> metaProps = Sets.newHashSet();

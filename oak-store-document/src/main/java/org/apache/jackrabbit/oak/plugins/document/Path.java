@@ -40,11 +40,7 @@ import static com.google.common.collect.Iterables.elementsEqual;
  */
 public final class Path implements CacheValue, Comparable<Path> {
 
-    private static final String NULL_PATH_STRING = "<null>";
-
     public static final Path ROOT = new Path(null, "", "".hashCode());
-
-    public static final Path NULL = new Path(null, NULL_PATH_STRING, NULL_PATH_STRING.hashCode());
 
     @Nullable
     private final Path parent;
@@ -62,65 +58,108 @@ public final class Path implements CacheValue, Comparable<Path> {
         this.hash = hash;
     }
 
+    /**
+     * Creates a new {@code Path} from the given parent {@code Path}. The name
+     * of the new {@code Path} cannot be the empty {@code String}.
+     *
+     * @param parent the parent {@code Path}.
+     * @param name the name of the new {@code Path}.
+     * @throws IllegalArgumentException if the {@code name} is empty.
+     */
     public Path(@NotNull Path parent, @NotNull String name) {
         this(checkNotNull(parent), checkNotNull(name), -1);
         checkArgument(!name.isEmpty(), "name cannot be the empty String");
-        checkArgument(parent != NULL, "parent cannot be the NULL path");
     }
 
+    /**
+     * Creates a relative path with a single name element. The name cannot be
+     * the empty {@code String}.
+     *
+     * @param name the name of the first path element.
+     * @throws IllegalArgumentException if the {@code name} is empty.
+     */
+    public Path(@NotNull String name) {
+        this(null, checkNotNull(name), -1);
+        checkArgument(!name.isEmpty(), "name cannot be the empty String");
+    }
+
+    /**
+     * Returns the name of this path. The {@link #ROOT} is the only path with
+     * an empty name. That is a String with length zero.
+     *
+     * @return the name of this path.
+     */
     @NotNull
     public String getName() {
         return name;
     }
 
+    /**
+     * Returns the names of the path elements with increasing {@link #getDepth()}
+     * starting at depth 1.
+     * 
+     * @return the names of the path elements.
+     */
     @NotNull
     public Iterable<String> elements() {
-        List<String> elements = new ArrayList<>(getDepth());
-        Path p = this;
-        while (p.parent != null) {
-            elements.add(p.name);
-            p = p.parent;
-        }
-        return Lists.reverse(elements);
+        return elements(false);
     }
 
+    /**
+     * Returns {@code true} if this is the {@link #ROOT} path; {@code false}
+     * otherwise.
+     *
+     * @return whether this is the {@link #ROOT} path.
+     */
     public boolean isRoot() {
         return name.isEmpty();
     }
 
+    /**
+     * The parent of this path or {@code null} if this path does not have a
+     * parent. The {@link #ROOT} path and the first path element of a relative
+     * path do not have a parent.
+     *
+     * @return the parent of this path or {@code null} if this path does not
+     *      have a parent.
+     */
     @Nullable
     public Path getParent() {
         return parent;
     }
 
+    /**
+     * @return the number of characters of the {@code String} representation of
+     *  this path.
+     */
     public int length() {
         if (isRoot()) {
-            // root
             return 1;
-        } else if (this == NULL) {
-            return name.length();
         }
         int length = 0;
         Path p = this;
-        while (p.parent != null) {
-            length += p.name.length() + 1;
+        while (p != null) {
+            length += p.name.length();
+            if (p.parent != null) {
+                length++;
+            }
             p = p.parent;
         }
         return length;
     }
 
     /**
-     * The depth of this path. The {@link #ROOT} and {@link #NULL} paths have
-     * a depth of 0. The path {@code /foo/bar} has depth 2.
+     * The depth of this path. The {@link #ROOT} has a depth of 0. The path
+     * {@code /foo/bar} as well as {@code bar/baz} have depth 2.
      *
      * @return the depth of the path.
      */
     public int getDepth() {
         int depth = 0;
-        Path p = this;
-        while (p.parent != null) {
-            depth++;
-            p = p.parent;
+        for (Path p = this; p != null; p = p.parent) {
+            if (!p.isRoot()) {
+                depth++;
+            }
         }
         return depth;
     }
@@ -153,33 +192,54 @@ public final class Path implements CacheValue, Comparable<Path> {
      */
     public boolean isAncestorOf(@NotNull Path other) {
         checkNotNull(other);
-        if (this == NULL || other == NULL) {
-            return false;
-        }
         int depthDiff = other.getDepth() - getDepth();
         return depthDiff > 0
-                && elementsEqual(elements(), other.getAncestor(depthDiff).elements());
+                && elementsEqual(elements(true), other.getAncestor(depthDiff).elements(true));
     }
 
+    /**
+     * @return {@code true} if this is an absolute path; {@code false} otherwise.
+     */
+    public boolean isAbsolute() {
+        Path p = this;
+        while (p.parent != null) {
+            p = p.parent;
+        }
+        return p.isRoot();
+    }
+
+    /**
+     * Creates a {@code Path} from a {@code String}.
+     *
+     * @param path the {@code String} to parse.
+     * @return the {@code Path} from the {@code String}.
+     * @throws IllegalArgumentException if the {@code path} is the empty
+     *      {@code String}.
+     */
     @NotNull
     public static Path fromString(@NotNull String path) throws IllegalArgumentException {
         checkNotNull(path);
-        if (path.equals(NULL_PATH_STRING)) {
-            return NULL;
+        Path p = null;
+        if (PathUtils.isAbsolute(path)) {
+            p = ROOT;
         }
-        if (!PathUtils.isAbsolute(path)) {
-            throw new IllegalArgumentException("path must be absolute");
-        }
-        Path p = ROOT;
         for (String name : PathUtils.elements(path)) {
-            p = new Path(p, StringCache.get(name));
+            name = StringCache.get(name);
+            if (p == null) {
+                p = new Path(name);
+            } else {
+                p = new Path(p, StringCache.get(name));
+            }
+        }
+        if (p == null) {
+            throw new IllegalArgumentException("path must not be empty");
         }
         return p;
     }
 
     @NotNull
     public StringBuilder toStringBuilder(@NotNull StringBuilder sb) {
-        if (name.isEmpty()) {
+        if (isRoot()) {
             sb.append('/');
         } else {
             buildPath(sb);
@@ -202,18 +262,11 @@ public final class Path implements CacheValue, Comparable<Path> {
     @Override
     public int compareTo(@NotNull Path other) {
         checkNotNull(other);
-        // a few special cases
-        if (this == NULL) {
-            return other == NULL ? 0 : -1;
-        } else if (other == NULL) {
-            return 1;
-        }
-        // regular case (neither this nor other is NULL)
         int depth = getDepth();
         int otherDepth = other.getDepth();
         int minDepth = Math.min(depth, otherDepth);
-        Iterable<String> elements = getAncestor(depth - minDepth).elements();
-        Iterator<String> otherElements = other.getAncestor(otherDepth - minDepth).elements().iterator();
+        Iterable<String> elements = getAncestor(depth - minDepth).elements(true);
+        Iterator<String> otherElements = other.getAncestor(otherDepth - minDepth).elements(true).iterator();
         for (String name : elements) {
             String otherName = otherElements.next();
             int c = name.compareTo(otherName);
@@ -226,10 +279,8 @@ public final class Path implements CacheValue, Comparable<Path> {
 
     @Override
     public String toString() {
-        if (name.isEmpty()) {
+        if (isRoot()) {
             return "/";
-        } else if (this == NULL) {
-            return NULL_PATH_STRING;
         } else {
             return buildPath(new StringBuilder()).toString();
         }
@@ -257,10 +308,22 @@ public final class Path implements CacheValue, Comparable<Path> {
         return false;
     }
 
+    private Iterable<String> elements(boolean withRoot) {
+        int size = getDepth() + (withRoot ? 1 : 0);
+        List<String> elements = new ArrayList<>(size);
+        for (Path p = this; p != null; p = p.parent) {
+            if (!p.isRoot() || withRoot) {
+                elements.add(p.name);
+            }
+        }
+        return Lists.reverse(elements);
+    }
+
     private StringBuilder buildPath(StringBuilder sb) {
         if (parent != null) {
-            parent.buildPath(sb).append("/").append(name);
+            parent.buildPath(sb).append("/");
         }
+        sb.append(name);
         return sb;
     }
 }

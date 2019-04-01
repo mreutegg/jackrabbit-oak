@@ -72,7 +72,8 @@ class DataTypeUtil {
     }
 
     static void pathToBuffer(Path p, WriteBuffer buffer) {
-        buffer.putVarInt(p.getDepth() + 1);
+        int len = p.getDepth() + (p.isAbsolute() ? 1 : 0);
+        buffer.putVarInt(len);
         // write path elements backwards
         while (p != null) {
             StringDataType.INSTANCE.write(buffer, p.getName());
@@ -86,14 +87,17 @@ class DataTypeUtil {
         for (int i = 0; i < numElements; i++) {
             elements.add(StringDataType.INSTANCE.read(buffer));
         }
+        // elements are written backwards
+        String firstElement = elements.get(elements.size() - 1);
         Path p;
-        if (elements.size() == 1 && !elements.get(0).isEmpty()) {
-            p = Path.NULL;
-        } else {
+        if (firstElement.isEmpty()) {
             p = Path.ROOT;
-            for (int i = elements.size() - 2; i >= 0; i--) {
-                p = new Path(p, elements.get(i));
-            }
+        } else {
+            p = new Path(firstElement);
+        }
+        // construct path with remaining elements
+        for (int i = elements.size() - 2; i >= 0; i--) {
+            p = new Path(p, elements.get(i));
         }
         return p;
     }

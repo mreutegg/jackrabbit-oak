@@ -209,9 +209,6 @@ public class MemoryDiffCache extends DiffCache {
             this.path = checkNotNull(path);
             this.from = checkNotNull(from);
             this.to = checkNotNull(to);
-            if (path == Path.NULL) {
-                throw new IllegalArgumentException("NULL Path not allowed");
-            }
         }
 
         @NotNull

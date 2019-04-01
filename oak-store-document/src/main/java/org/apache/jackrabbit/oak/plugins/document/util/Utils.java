@@ -245,9 +245,6 @@ public class Utils {
 
     public static String getIdFromPath(@NotNull Path path) {
         checkNotNull(path);
-        if (path == Path.NULL) {
-            throw new IllegalArgumentException("Cannot get Id from NULL path");
-        }
         Path parent = path.getParent();
         int depth = path.getDepth();
         if (parent != null && isLongPath(path)) {
