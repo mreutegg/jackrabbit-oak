@@ -81,10 +81,12 @@ public final class PathRev implements CacheValue, Comparable<PathRev> {
 
     @Override
     public int hashCode() {
-    	int h = this.hash;
+        int h = this.hash;
         if (h == 0) {
-        	h = path.hashCode() ^ revision.hashCode();
-        	this.hash = h;
+            h = 17;
+            h = 37 * h + path.hashCode();
+            h = 37 * h + revision.hashCode();
+            this.hash = h;
         }
         return h;
     }

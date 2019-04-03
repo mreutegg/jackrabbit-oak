@@ -277,7 +277,11 @@ public class MemoryDiffCache extends DiffCache {
 
         @Override
         public int hashCode() {
-            return path.hashCode() ^ from.hashCode() ^ to.hashCode();
+            int h = 17;
+            h = 37 * h + path.hashCode();
+            h = 37 * h + from.hashCode();
+            h = 37 * h + to.hashCode();
+            return h;
         }
 
         @Override

@@ -97,7 +97,11 @@ public final class NamePathRev implements CacheValue, Comparable<NamePathRev> {
 
     @Override
     public int hashCode() {
-        return name.hashCode() ^ path.hashCode() ^ revision.hashCode();
+        int h = 17;
+        h = 37 * h + name.hashCode();
+        h = 37 * h + path.hashCode();
+        h = 37 * h + revision.hashCode();
+        return h;
     }
 
     @Override

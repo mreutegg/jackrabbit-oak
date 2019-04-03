@@ -290,7 +290,9 @@ public final class Path implements CacheValue, Comparable<Path> {
     public int hashCode() {
         int h = hash;
         if (h == -1 && parent != null) {
-            h = parent.hashCode() ^ name.hashCode();
+            h = 17;
+            h = 37 * h + parent.hashCode();
+            h = 37 * h + name.hashCode();
             hash = h;
         }
         return h;
