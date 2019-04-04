@@ -79,18 +79,19 @@ public final class NamePathRev implements CacheValue, Comparable<NamePathRev> {
 
     //---------------------------< Comparable >---------------------------------
 
-    public int compareTo(@NotNull NamePathRev b) {
-        if (this == b) {
+    public int compareTo(@NotNull NamePathRev other) {
+        if (this == other) {
             return 0;
         }
-        int compare = name.compareTo(b.name);
-        if (compare == 0) {
-            compare = path.compareTo(b.path);
+        int compare = this.name.compareTo(other.name);
+        if (compare != 0) {
+            return compare;
         }
-        if (compare == 0) {
-            compare = revision.compareTo(b.revision);
+        compare = this.path.compareTo(other.path);
+        if (compare != 0) {
+            return compare;
         }
-        return compare;
+        return this.revision.compareTo(other.revision);
     }
 
     //----------------------------< Object >------------------------------------
