@@ -24,8 +24,8 @@ import java.util.Comparator;
 import org.apache.jackrabbit.oak.plugins.document.util.Utils;
 
 /**
- * Implements a comparator, which sorts path string according to 1) their
- * depth (highest first) and 2) the path string itself.
+ * Implements a comparator, which sorts paths according to 1) their depth
+ * (highest first) and 2) the paths natural ordering.
  */
 public class PathComparator implements Comparator<Path>, Serializable {
 
@@ -43,6 +43,6 @@ public class PathComparator implements Comparator<Path>, Serializable {
         if (d1 != d2) {
             return Integer.signum(d2 - d1);
         }
-        return p1.toString().compareTo(p2.toString());
+        return p1.compareTo(p2);
     }
 }
