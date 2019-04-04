@@ -19,7 +19,6 @@
 package org.apache.jackrabbit.oak.plugins.document;
 
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.Objects;
 
 import org.apache.jackrabbit.oak.cache.CacheValue;
@@ -159,23 +158,6 @@ public final class Path implements CacheValue, Comparable<Path> {
     }
 
     /**
-     * Returns the number of path elements. Depending on {@code withRoot} the
-     * root of an absolute path is also taken into account.
-     *
-     * @param withRoot whether the root of an absolute path is also counted.
-     * @return the number of path elements.
-     */
-    private int getNumberOfPathElements(boolean withRoot) {
-        int depth = 0;
-        for (Path p = this; p != null; p = p.parent) {
-            if (withRoot || !p.isRoot()) {
-                depth++;
-            }
-        }
-        return depth;
-    }
-
-    /**
      * Get the nth ancestor of a path. The 1st ancestor is the parent path,
      * 2nd ancestor the grandparent path, and so on...
      * <p>
@@ -279,20 +261,26 @@ public final class Path implements CacheValue, Comparable<Path> {
 
     @Override
     public int compareTo(@NotNull Path other) {
-        checkNotNull(other);
-        int depth = getDepth();
-        int otherDepth = other.getDepth();
-        int minDepth = Math.min(depth, otherDepth);
-        Iterable<String> elements = getAncestor(depth - minDepth).elements(true);
-        Iterator<String> otherElements = other.getAncestor(otherDepth - minDepth).elements(true).iterator();
-        for (String name : elements) {
-            String otherName = otherElements.next();
-            int c = name.compareTo(otherName);
-            if (c != 0) {
-                return c;
-            }
+        if (this == other) {
+            return 0;
         }
-        return Integer.compare(depth, otherDepth);
+        Path t = this;
+        int off = t.getNumberOfPathElements(true) -
+                checkNotNull(other).getNumberOfPathElements(true);
+        int corrected = off;
+        while (corrected > 0) {
+            t = t.parent;
+            corrected--;
+        }
+        while (corrected < 0) {
+            other = other.parent;
+            corrected++;
+        }
+        int cp = comparePath(t, other);
+        if (cp != 0) {
+            return cp;
+        }
+        return Integer.signum(off);
     }
 
     @Override
@@ -300,7 +288,7 @@ public final class Path implements CacheValue, Comparable<Path> {
         if (isRoot()) {
             return "/";
         } else {
-            return buildPath(new StringBuilder()).toString();
+            return buildPath(new StringBuilder(length())).toString();
         }
     }
 
@@ -328,6 +316,8 @@ public final class Path implements CacheValue, Comparable<Path> {
         return false;
     }
 
+    //-------------------------< internal >-------------------------------------
+
     private Iterable<String> elements(boolean withRoot) {
         int size = getNumberOfPathElements(withRoot);
         String[] elements = new String[size];
@@ -347,5 +337,32 @@ public final class Path implements CacheValue, Comparable<Path> {
         }
         sb.append(name);
         return sb;
+    }
+
+    /**
+     * Returns the number of path elements. Depending on {@code withRoot} the
+     * root of an absolute path is also taken into account.
+     *
+     * @param withRoot whether the root of an absolute path is also counted.
+     * @return the number of path elements.
+     */
+    private int getNumberOfPathElements(boolean withRoot) {
+        int depth = 0;
+        for (Path p = this; p != null; p = p.parent) {
+            if (withRoot || !p.isRoot()) {
+                depth++;
+            }
+        }
+        return depth;
+    }
+
+    private static int comparePath(Path a, Path b) {
+        if (a.parent != b.parent) {
+            int cp = comparePath(a.parent, b.parent);
+            if (cp != 0) {
+                return cp;
+            }
+        }
+        return a.name.compareTo(b.name);
     }
 }
