@@ -33,7 +33,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.Iterables.elementsEqual;
 
 /**
- * <code>Path</code>...
+ * The {@code Path} class is closely modeled after the semantics of
+ * {@code PathUtils} in oak-commons. Corresponding methods in this class can
+ * be used as a replacement for the methods in {@code PathUtils} on {@code Path}
+ * objects.
  */
 public final class Path implements CacheValue, Comparable<Path> {
 
@@ -245,6 +248,13 @@ public final class Path implements CacheValue, Comparable<Path> {
         return p;
     }
 
+    /**
+     * Appends the {@code String} representation of this {@code Path} to the
+     * passed {@code StringBuilder}. See also {@link #toString()}.
+     *
+     * @param sb the {@code StringBuilder} this {@code Path} is appended to.
+     * @return the passed {@code StringBuilder}.
+     */
     @NotNull
     public StringBuilder toStringBuilder(@NotNull StringBuilder sb) {
         if (isRoot()) {
