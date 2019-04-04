@@ -18,12 +18,9 @@
  */
 package org.apache.jackrabbit.oak.plugins.document;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Objects;
-
-import com.google.common.collect.Lists;
 
 import org.apache.jackrabbit.oak.cache.CacheValue;
 import org.apache.jackrabbit.oak.commons.PathUtils;
@@ -155,9 +152,20 @@ public final class Path implements CacheValue, Comparable<Path> {
      * @return the depth of the path.
      */
     public int getDepth() {
+        return getNumberOfPathElements(false);
+    }
+
+    /**
+     * Returns the number of path elements. Depending on {@code withRoot} the
+     * root of an absolute path is also taken into account.
+     *
+     * @param withRoot whether the root of an absolute path is also counted.
+     * @return the number of path elements.
+     */
+    private int getNumberOfPathElements(boolean withRoot) {
         int depth = 0;
         for (Path p = this; p != null; p = p.parent) {
-            if (!p.isRoot()) {
+            if (withRoot || !p.isRoot()) {
                 depth++;
             }
         }
@@ -311,14 +319,16 @@ public final class Path implements CacheValue, Comparable<Path> {
     }
 
     private Iterable<String> elements(boolean withRoot) {
-        int size = getDepth() + (withRoot ? 1 : 0);
-        List<String> elements = new ArrayList<>(size);
-        for (Path p = this; p != null; p = p.parent) {
-            if (!p.isRoot() || withRoot) {
-                elements.add(p.name);
+        int size = getNumberOfPathElements(withRoot);
+        String[] elements = new String[size];
+        Path p = this;
+        for (int i = size - 1; p != null; i--) {
+            if (withRoot || !p.isRoot()) {
+                elements[i] = p.name;
             }
+            p = p.parent;
         }
-        return Lists.reverse(elements);
+        return Arrays.asList(elements);
     }
 
     private StringBuilder buildPath(StringBuilder sb) {
