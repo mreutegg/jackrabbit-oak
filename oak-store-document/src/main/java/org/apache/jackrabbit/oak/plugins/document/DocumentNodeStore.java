@@ -195,6 +195,13 @@ public final class DocumentNodeStore
     private int collisionGarbageBatchSize = Integer.getInteger("oak.documentMK.collisionGarbageBatchSize", 1000);
 
     /**
+     * The number of updates to batch with a single call to
+     * {@link DocumentStore#createOrUpdate(Collection, List)}.
+     */
+    private final int createOrUpdateBatchSize =
+            Integer.getInteger("oak.documentMK.createOrUpdateBatchSize", 1000);
+
+    /**
      * The document store without potentially lease checking wrapper.
      */
     private final DocumentStore nonLeaseCheckingStore;
@@ -2439,6 +2446,10 @@ public final class DocumentNodeStore
     @NotNull
     RevisionVector getSweepRevisions() {
         return sweepRevisions;
+    }
+
+    int getCreateOrUpdateBatchSize() {
+        return createOrUpdateBatchSize;
     }
 
     //-----------------------------< internal >---------------------------------
