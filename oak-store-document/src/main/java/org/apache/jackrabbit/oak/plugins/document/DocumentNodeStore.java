@@ -20,6 +20,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Iterables.filter;
+import static com.google.common.collect.Iterables.partition;
 import static com.google.common.collect.Iterables.transform;
 import static com.google.common.collect.Lists.reverse;
 import static java.util.Collections.singletonList;
@@ -1721,7 +1722,9 @@ public final class DocumentNodeStore
                     new ResetDiff(previous.asTrunkRevision(), operations));
             LOG.debug("reset: applying {} operations", operations.size());
             // apply reset operations
-            store.createOrUpdate(NODES, new ArrayList<>(operations.values()));
+            for (List<UpdateOp> ops : partition(operations.values(), getCreateOrUpdateBatchSize())) {
+                store.createOrUpdate(NODES, ops);
+            }
         }
         store.findAndUpdate(NODES, rootOp);
         // clean up in-memory branch data
