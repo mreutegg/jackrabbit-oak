@@ -159,6 +159,15 @@ public class LastRevRecoveryAgent {
                     startTime = sweepRev.getTimestamp();
                     reason = "sweepRev: " + sweepRev.toString();
                 }
+                // are there branch commits that were merged right before the
+                // process crashed and the recovery needs to go further back?
+                // go through branch commits and check if there are merge
+                // revisions that are newer than startTime
+                Revision bc = getEarliestBranchCommitMergedAfter(root, startTime, clusterId);
+                if (bc != null) {
+                    startTime = bc.getTimestamp();
+                    reason = "branchRev: " + bc.toString();
+                }
 
                 return recoverCandidates(nodeInfo, startTime, waitUntil, reason);
             }
@@ -459,6 +468,26 @@ public class LastRevRecoveryAgent {
     }
 
     //--------------------------< internal >------------------------------------
+
+    private Revision getEarliestBranchCommitMergedAfter(@NotNull NodeDocument doc,
+                                                        long timeMillis,
+                                                        int clusterId) {
+        Revision earliest = null;
+        for (Revision bc : doc.getLocalBranchCommits()) {
+            if (bc.getClusterId() != clusterId) {
+                continue;
+            }
+            String cv = revisionContext.getCommitValue(bc, doc);
+            if (isCommitted(cv)) {
+                Revision mergeRevision = resolveCommitRevision(bc, cv);
+                if (mergeRevision.getTimestamp() > timeMillis
+                        && bc.getTimestamp() < timeMillis) {
+                    earliest = Utils.min(earliest, bc);
+                }
+            }
+        }
+        return earliest;
+    }
 
     @Nullable
     private NodeDocument findNearestAncestorOrSelf(@NotNull Path path,
