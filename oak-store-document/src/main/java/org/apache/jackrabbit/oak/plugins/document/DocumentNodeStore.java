@@ -2745,10 +2745,8 @@ public final class DocumentNodeStore
         checkArgument(!checkNotNull(base).isBranch(),
                 "base must not be a branch revision: " + base);
 
-        RevisionVector startRevs = Utils.getStartRevisions(clusterNodes.values());
         // build commit before revision is created by the commit queue (OAK-7869)
-        CommitBuilder commitBuilder = new CommitBuilder(this, base)
-                .withStartRevisions(startRevs);
+        CommitBuilder commitBuilder = newCommitBuilder(base, null);
         changes.with(commitBuilder);
 
         boolean success = false;
@@ -2776,7 +2774,7 @@ public final class DocumentNodeStore
 
         checkOpen();
         Revision commitRevision = newRevision();
-        CommitBuilder commitBuilder = new CommitBuilder(this, commitRevision, base);
+        CommitBuilder commitBuilder = newCommitBuilder(base, commitRevision);
         changes.with(commitBuilder);
         if (isDisableBranches()) {
             // Regular branch commits do not need to acquire the background
@@ -2801,6 +2799,19 @@ public final class DocumentNodeStore
             }
         }
         return commitBuilder.build();
+    }
+
+    @NotNull
+    private CommitBuilder newCommitBuilder(@NotNull RevisionVector base,
+                                           @Nullable Revision commitRevision) {
+        CommitBuilder cb;
+        if (commitRevision != null) {
+            cb = new CommitBuilder(this, commitRevision, base);
+        } else {
+            cb = new CommitBuilder(this, base);
+        }
+        RevisionVector startRevs = Utils.getStartRevisions(clusterNodes.values());
+        return cb.withStartRevisions(startRevs);
     }
 
     /**

@@ -299,6 +299,60 @@ public class CollisionTest {
         assertNoCollisions(store, ROOT);
     }
 
+    @Test
+    public void collisionWithBranchOnForeignOrphanedBranchAfterRestart() throws Exception {
+        int updateLimit = 10;
+        DocumentStore store = new MemoryDocumentStore();
+        DocumentNodeStore ns1 = builderProvider.newBuilder()
+                .setDocumentStore(store).setAsyncDelay(0)
+                .setUpdateLimit(updateLimit).setClusterId(1).build();
+        DocumentNodeStore ns2 = builderProvider.newBuilder()
+                .setDocumentStore(store).setAsyncDelay(0)
+                .setUpdateLimit(updateLimit).setClusterId(2).build();
+
+        NodeBuilder builder = ns1.getRoot().builder();
+        // force a branch commit
+        for (int i = 0; i < updateLimit * 2; i++) {
+            builder.child("n-" + i).setProperty("p", "v");
+        }
+        ns1.dispose();
+
+        NodeDocument root = store.find(NODES, Utils.getIdFromPath(ROOT));
+        assertNotNull(root);
+        assertThat(root.getLocalBranchCommits(), not(empty()));
+
+        // start it up again
+        ns1 = builderProvider.newBuilder()
+                .setDocumentStore(store).setAsyncDelay(0)
+                .setUpdateLimit(updateLimit).setClusterId(1).build();
+
+        root = store.find(NODES, Utils.getIdFromPath(ROOT));
+        assertNotNull(root);
+        // on init the DocumentNodeStore removes orphaned
+        // branch commit entries on the root document
+        assertThat(root.getLocalBranchCommits(), empty());
+
+        // but some changes are still there
+        Path p = Path.fromString("/n-0");
+        NodeDocument doc = store.find(NODES, Utils.getIdFromPath(p));
+        assertNotNull(doc);
+        assertThat(doc.getLocalBranchCommits(), not(empty()));
+
+        ns2.updateClusterState();
+
+        builder = ns2.getRoot().builder();
+        builder.child("n-0");
+        // force a branch commit
+        for (int i = 0; i < updateLimit * 2; i++) {
+            builder.child("test").child("c-" + i);
+        }
+        merge(ns2, builder);
+
+        // must not create a collision marker for a branch commit
+        // from a clusterId that is inactive
+        assertNoCollisions(store, ROOT);
+    }
+
     private static void assertNoCollisions(DocumentStore store, Path p) {
         NodeDocument doc = store.find(NODES, Utils.getIdFromPath(p));
         assertNotNull(doc);
