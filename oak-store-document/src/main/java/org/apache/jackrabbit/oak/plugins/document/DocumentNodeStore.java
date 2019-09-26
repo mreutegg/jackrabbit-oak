@@ -19,7 +19,6 @@ package org.apache.jackrabbit.oak.plugins.document;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.common.collect.Iterables.filter;
 import static com.google.common.collect.Iterables.partition;
 import static com.google.common.collect.Iterables.transform;
 import static com.google.common.collect.Lists.reverse;
@@ -2244,19 +2243,7 @@ public final class DocumentNodeStore
      */
     @NotNull
     private RevisionVector getMinExternalRevisions() {
-        return new RevisionVector(transform(filter(clusterNodes.values(),
-                new Predicate<ClusterNodeInfoDocument>() {
-                    @Override
-                    public boolean apply(ClusterNodeInfoDocument input) {
-                        return input.getClusterId() != getClusterId();
-                    }
-                }),
-                new Function<ClusterNodeInfoDocument, Revision>() {
-            @Override
-            public Revision apply(ClusterNodeInfoDocument input) {
-                return new Revision(input.getStartTime(), 0, input.getClusterId());
-            }
-        }));
+        return Utils.getStartRevisions(clusterNodes.values()).remove(getClusterId());
     }
 
     /**
@@ -2758,8 +2745,10 @@ public final class DocumentNodeStore
         checkArgument(!checkNotNull(base).isBranch(),
                 "base must not be a branch revision: " + base);
 
+        RevisionVector startRevs = Utils.getStartRevisions(clusterNodes.values());
         // build commit before revision is created by the commit queue (OAK-7869)
-        CommitBuilder commitBuilder = new CommitBuilder(this, base);
+        CommitBuilder commitBuilder = new CommitBuilder(this, base)
+                .withStartRevisions(startRevs);
         changes.with(commitBuilder);
 
         boolean success = false;
