@@ -416,14 +416,14 @@ public class ConsolidatedListenerMBeanImpl implements ConsolidatedListenerMBean 
                     mbeans.eventListenerMBean.getQueueBacklogMillis(),
                     mbeans.changeProcessorMBean == null ? -1 : mbeans.changeProcessorMBean.getPrefilterSkipCount(),
                     mbeans.changeProcessorMBean == null ? -1 : mbeans.changeProcessorMBean.getPrefilterExcludeCount(),
-                    mbeans.changeProcessorMBean == null ? -1 : mbeans.changeProcessorMBean.getPrefilterIncludeCount(),
-                    mbeans.observerMBean.getQueueSize(),
-                    mbeans.observerMBean.getLocalEventCount(),
-                    mbeans.observerMBean.getExternalEventCount(),
-                    Arrays.toString(mbeans.filterConfigMBean.getPaths()),
-                    mbeans.filterConfigMBean.isIncludeClusterExternal(),
-                    mbeans.filterConfigMBean.isIncludeClusterLocal(),
-                    mbeans.observerMBean.getMaxQueueSize(),
+                    mbeans.changeProcessorMBean == null ? -1 : mbeans.changeProcessorMBean.getPrefilterIncludeCount(),       
+                    mbeans.observerMBean == null ? -1 : mbeans.observerMBean.getQueueSize(),
+                    mbeans.observerMBean == null ? -1 : mbeans.observerMBean.getLocalEventCount(),
+                    mbeans.observerMBean == null ? -1 : mbeans.observerMBean.getExternalEventCount(),
+                    mbeans.filterConfigMBean == null ? "n/a" : Arrays.toString(mbeans.filterConfigMBean.getPaths()),
+                    mbeans.filterConfigMBean == null ? false : mbeans.filterConfigMBean.isIncludeClusterExternal(),
+                    mbeans.filterConfigMBean == null ? false : mbeans.filterConfigMBean.isIncludeClusterLocal(),
+                    mbeans.observerMBean == null ? -1 : mbeans.observerMBean.getMaxQueueSize(),
             };
             try {
                 return new CompositeDataSupport(TYPE, FIELD_NAMES, values);
