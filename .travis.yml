@@ -26,7 +26,8 @@ install:
   - tar --skip-old-files -C $HOME/.mongodb -xf $HOME/.mongodb/mongodb-linux-x86_64-${MONGODB}.tgz
   - mkdir -p target/mongodb/data
   - cd target/mongodb
-  - python3.6 -m venv mtools
+  - python -V
+  - python -m venv mtools
   - source mtools/bin/activate
   - pip install --upgrade pip
   - pip install python-dateutil psutil pymongo mtools
