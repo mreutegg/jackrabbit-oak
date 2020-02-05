@@ -26,8 +26,8 @@ install:
   - tar --skip-old-files -C $HOME/.mongodb -xf $HOME/.mongodb/mongodb-linux-x86_64-${MONGODB}.tgz
   - mkdir -p target/mongodb/data
   - cd target/mongodb
-  - pyenv install --list
-  - pyenv global 3.6.7
+  - pyenv install 3.6.3
+  - pyenv global 3.6.3
   - python -V
   - python -m venv mtools
   - source mtools/bin/activate
