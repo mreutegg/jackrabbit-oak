@@ -27,8 +27,7 @@ install:
   - mkdir -p target/mongodb/data
   - cd target/mongodb
   - pyenv versions
-  - pyenv install 3.6.3
-  - pyenv global 3.6.3
+  - pyenv global 3.6
   - python -V
   - python -m venv mtools
   - source mtools/bin/activate
