@@ -15,7 +15,7 @@
 
 
 sudo: false
-dist: trusty
+dist: xenial
 env:
   global:
     - MONGODB=4.0.16
@@ -26,7 +26,7 @@ install:
   - tar --skip-old-files -C $HOME/.mongodb -xf $HOME/.mongodb/mongodb-linux-x86_64-${MONGODB}.tgz
   - mkdir -p target/mongodb/data
   - cd target/mongodb
-  - virtualenv -p `which python3.6` mtools
+  - virtualenv mtools
   - source mtools/bin/activate
   - pip install --upgrade pip
   - pip install python-dateutil psutil pymongo mtools
@@ -36,7 +36,7 @@ install:
 script:   mvn --batch-mode clean verify -DtrimStackTrace=false -Dbaseline.skip=true ${UT} ${PROFILE} -Dnsfixtures=DOCUMENT_NS -pl :${MODULE} -nsu
 language: java
 jdk:
-  - oraclejdk8
+  - openjdk8
 cache:
   directories:
     - $HOME/.m2
