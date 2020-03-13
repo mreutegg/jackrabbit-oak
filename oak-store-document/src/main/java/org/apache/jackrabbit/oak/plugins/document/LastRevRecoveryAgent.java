@@ -285,9 +285,11 @@ public class LastRevRecoveryAgent {
                 }
             });
 
-            // make sure the sweep revision is different / newer than the
-            // last journal entry written
             if (sweepRev.get() != null) {
+                // One or more journal entries were created by the sweeper.
+                // Make sure the sweep revision is different / newer than the
+                // last journal entry written so far. UnsavedModification
+                // further down needs a new revision for its journal entry.
                 sweepRev.set(Utils.max(sweepRev.get(), context.newRevision()));
             }
         }
