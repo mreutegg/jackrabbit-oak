@@ -77,6 +77,8 @@ public class RDBDataSourceFactory {
                 dsclazz.getMethod("setUsername", String.class).invoke(ds, username);
                 dsclazz.getMethod("setPassword", String.class).invoke(ds, passwd);
                 dsclazz.getMethod("setUrl", String.class).invoke(ds, url);
+                dsclazz.getMethod("setMaxActive", int.class).invoke(ds,
+                        Integer.getInteger("org.apache.jackrabbit.oak.plugins.document.rdb.RDBDataSourceFactory.maxActive", 100));
                 String interceptors = System.getProperty(
                         "org.apache.jackrabbit.oak.plugins.document.rdb.RDBDataSourceFactory.jdbcInterceptors",
                         "SlowQueryReport(threshold=10000);ConnectionState;StatementCache");
