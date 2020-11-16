@@ -76,6 +76,7 @@ public class SessionDelegate {
     static final Logger auditLogger = LoggerFactory.getLogger("org.apache.jackrabbit.oak.audit");
     static final Logger readOperationLogger = LoggerFactory.getLogger("org.apache.jackrabbit.oak.jcr.operations.reads");
     static final Logger writeOperationLogger = LoggerFactory.getLogger("org.apache.jackrabbit.oak.jcr.operations.writes");
+    static final Logger readMetricsLogger = LoggerFactory.getLogger("org.apache.jackrabbit.oak.jcr.metrics.reads");
 
     private final ContentSession contentSession;
     private final SecurityProvider securityProvider;
@@ -197,6 +198,7 @@ public class SessionDelegate {
     @NotNull
     public <T> T perform(@NotNull SessionOperation<T> sessionOperation) throws RepositoryException {
         long t0 = clock.getTime();
+        long t1 = readMetricsLogger.isDebugEnabled() ? System.nanoTime() : 0;
 
         // Acquire the exclusive lock for accessing session internals.
         // No other session should be holding the lock, so we log a
@@ -210,7 +212,7 @@ public class SessionDelegate {
                 logOperationDetails(contentSession, sessionOperation);
                 return result;
             } finally {
-                postPerform(sessionOperation, t0);
+                postPerform(sessionOperation, t1);
             }
         } finally {
             lock.unlock();
@@ -232,6 +234,7 @@ public class SessionDelegate {
     @Nullable
     public <T> T performNullable(@NotNull SessionOperation<T> sessionOperation) throws RepositoryException {
         long t0 = clock.getTime();
+        long t1 = readMetricsLogger.isDebugEnabled() ? System.nanoTime() : 0;
 
         // Acquire the exclusive lock for accessing session internals.
         // No other session should be holding the lock, so we log a
@@ -245,7 +248,7 @@ public class SessionDelegate {
                 logOperationDetails(contentSession, sessionOperation);
                 return result;
             } finally {
-                postPerform(sessionOperation, t0);
+                postPerform(sessionOperation, t1);
             }
         } finally {
             lock.unlock();
@@ -263,6 +266,7 @@ public class SessionDelegate {
      */
     public void performVoid(SessionOperation<Void> sessionOperation) throws RepositoryException {
         long t0 = clock.getTime();
+        long t1 = readMetricsLogger.isDebugEnabled() ? System.nanoTime() : 0;
 
         // Acquire the exclusive lock for accessing session internals.
         // No other session should be holding the lock, so we log a
@@ -275,7 +279,7 @@ public class SessionDelegate {
                 sessionOperation.performVoid();
                 logOperationDetails(contentSession, sessionOperation);
             } finally {
-                postPerform(sessionOperation, t0);
+                postPerform(sessionOperation, t1);
             }
         } finally {
             lock.unlock();
@@ -631,17 +635,18 @@ public class SessionDelegate {
     }
 
     private void postPerform(@NotNull SessionOperation<?> op, long t0) {
-        sessionCounters.accessTime = t0;
-        long dt = NANOSECONDS.convert(clock.getTime() - t0, MILLISECONDS);
+        long now = clock.getTime();
+        sessionCounters.accessTime = now;
+        long dt = t0 == 0 ? 0 : System.nanoTime() - t0;
         sessionOpCount--;
         if (op.isUpdate()) {
-            sessionCounters.writeTime = t0;
+            sessionCounters.writeTime = now;
             sessionCounters.writeCount++;
             writeCounter.mark();
             writeDuration.update(dt, TimeUnit.NANOSECONDS);
             updateCount++;
         } else {
-            sessionCounters.readTime = t0;
+            sessionCounters.readTime = now;
             sessionCounters.readCount++;
             readCounter.mark();
             readDuration.update(dt, TimeUnit.NANOSECONDS);

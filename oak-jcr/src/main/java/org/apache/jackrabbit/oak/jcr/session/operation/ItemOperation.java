@@ -34,4 +34,8 @@ public abstract class ItemOperation<U> extends SessionOperation<U> {
         item.checkAlive();
     }
 
+    @Override
+    protected String getPath() {
+        return item.getPath();
+    }
 }

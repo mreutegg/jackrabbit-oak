@@ -21,10 +21,24 @@ import org.apache.jackrabbit.oak.jcr.delegate.NodeDelegate;
 public abstract class NodeOperation<U> extends ItemOperation<U> {
 
     protected final NodeDelegate node;
+    private final String relPath;
 
-    protected NodeOperation(NodeDelegate node, String name) {
+    protected NodeOperation(NodeDelegate node, String name, String relPath) {
         super(node, name);
         this.node = node;
+        this.relPath = relPath;
     }
 
+    protected NodeOperation(NodeDelegate node, String name) {
+        this(node, name, null);
+    }
+
+    @Override
+    protected String getPath() {
+        if (relPath == null) {
+            return item.getPath();
+        } else {
+            return item.getPath() + "/" + relPath;
+        }
+    }
 }

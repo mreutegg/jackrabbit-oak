@@ -116,8 +116,17 @@ public class SessionImpl implements JackrabbitSession {
     }
 
     private abstract class ReadOperation<T> extends SessionOperation<T> {
-        protected ReadOperation(String name) {
+
+        private final String path;
+
+        protected ReadOperation(String name, String path) {
             super(name);
+            this.path = path;
+        }
+
+        @Override
+        protected String getPath() {
+            return path;
         }
 
         @Override
@@ -179,7 +188,7 @@ public class SessionImpl implements JackrabbitSession {
     public Node getNodeOrNull(final String absPath) throws RepositoryException {
         checkNotNull(absPath);
         checkAlive();
-        return sd.performNullable(new ReadOperation<Node>("getNodeOrNull") {
+        return sd.performNullable(new ReadOperation<Node>("getNodeOrNull", absPath) {
             @Override
             public Node performNullable() throws RepositoryException {
                 try {
@@ -204,7 +213,7 @@ public class SessionImpl implements JackrabbitSession {
             } catch (PathNotFoundException e) {
                 return null;
             }
-            return sd.performNullable(new ReadOperation<Property>("getPropertyOrNull") {
+            return sd.performNullable(new ReadOperation<Property>("getPropertyOrNull", absPath) {
                 @Override
                 public Property performNullable() {
                     PropertyDelegate pd = sd.getProperty(oakPath);
@@ -223,7 +232,7 @@ public class SessionImpl implements JackrabbitSession {
     public Item getItemOrNull(final String absPath) throws RepositoryException {
         checkNotNull(absPath);
         checkAlive();
-        return sd.performNullable(new ReadOperation<Item>("getItemOrNull") {
+        return sd.performNullable(new ReadOperation<Item>("getItemOrNull", absPath) {
             @Override
             public Item performNullable() throws RepositoryException {
                 return getItemInternal(getOakPathOrThrow(absPath));
@@ -286,7 +295,7 @@ public class SessionImpl implements JackrabbitSession {
     @NotNull
     public Node getRootNode() throws RepositoryException {
         checkAlive();
-        return sd.perform(new ReadOperation<Node>("getRootNode") {
+        return sd.perform(new ReadOperation<Node>("getRootNode", "/") {
             @NotNull
             @Override
             public Node perform() throws RepositoryException {
@@ -316,7 +325,7 @@ public class SessionImpl implements JackrabbitSession {
     @NotNull
     private Node getNodeById(@NotNull final String id) throws RepositoryException {
         checkAlive();
-        return sd.perform(new ReadOperation<Node>("getNodeById") {
+        return sd.perform(new ReadOperation<Node>("getNodeById", "id") {
             @NotNull
             @Override
             public Node perform() throws RepositoryException {
@@ -628,7 +637,7 @@ public class SessionImpl implements JackrabbitSession {
         checkAlive();
         final String oakPath = getOakPathOrThrow(checkNotNull(absPath));
         checkNotNull(actions);
-        return sd.perform(new ReadOperation<Boolean>("hasPermission") {
+        return sd.perform(new ReadOperation<Boolean>("hasPermission", absPath) {
             @NotNull
             @Override
             public Boolean perform() throws RepositoryException {

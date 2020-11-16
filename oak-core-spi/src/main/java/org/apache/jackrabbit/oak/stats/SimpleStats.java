@@ -101,7 +101,7 @@ public final class SimpleStats implements TimerStats, MeterStats, CounterStats, 
     @Override
     public void update(long duration, TimeUnit unit) {
         counter++;
-        statsHolder.getAndAdd(unit.toMillis(duration));
+        statsHolder.getAndAdd(unit.toMicros(duration));
     }
 
     @Override

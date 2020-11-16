@@ -549,7 +549,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     @NotNull
     public Node getNode(String relPath) throws RepositoryException {
         final String oakPath = getOakPathOrThrowNotFound(relPath);
-        return perform(new NodeOperation<Node>(dlg, "getNode") {
+        return perform(new NodeOperation<Node>(dlg, "getNode", relPath) {
             @NotNull
             @Override
             public Node perform() throws RepositoryException {
@@ -566,7 +566,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     @Override
     @NotNull
     public NodeIterator getNodes() throws RepositoryException {
-        return perform(new NodeOperation<NodeIterator>(dlg, "getNodes") {
+        return perform(new NodeOperation<NodeIterator>(dlg, "getNodes", "*") {
             @NotNull
             @Override
             public NodeIterator perform() throws RepositoryException {
@@ -597,7 +597,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     @NotNull
     public NodeIterator getNodes(final String namePattern)
             throws RepositoryException {
-        return perform(new NodeOperation<NodeIterator>(dlg, "getNodes") {
+        return perform(new NodeOperation<NodeIterator>(dlg, "getNodes", namePattern) {
             @NotNull
             @Override
             public NodeIterator perform() throws RepositoryException {
@@ -640,7 +640,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     @NotNull
     public Property getProperty(String relPath) throws RepositoryException {
         final String oakPath = getOakPathOrThrowNotFound(relPath);
-        return perform(new NodeOperation<PropertyImpl>(dlg, "getProperty") {
+        return perform(new NodeOperation<PropertyImpl>(dlg, "getProperty", relPath) {
             @NotNull
             @Override
             public PropertyImpl perform() throws RepositoryException {
@@ -658,7 +658,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     @Override
     @NotNull
     public PropertyIterator getProperties() throws RepositoryException {
-        return perform(new NodeOperation<PropertyIterator>(dlg, "getProperties") {
+        return perform(new NodeOperation<PropertyIterator>(dlg, "getProperties", "*") {
             @NotNull
             @Override
             public PropertyIterator perform() throws RepositoryException {
@@ -673,7 +673,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     @Override
     @NotNull
     public PropertyIterator getProperties(final String namePattern) throws RepositoryException {
-        return perform(new NodeOperation<PropertyIterator>(dlg, "getProperties") {
+        return perform(new NodeOperation<PropertyIterator>(dlg, "getProperties", namePattern) {
             @NotNull
             @Override
             public PropertyIterator perform() throws RepositoryException {
@@ -843,7 +843,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     public boolean hasNode(String relPath) throws RepositoryException {
         try {
             final String oakPath = getOakPathOrThrow(relPath);
-            return perform(new NodeOperation<Boolean>(dlg, "hasNode") {
+            return perform(new NodeOperation<Boolean>(dlg, "hasNode", relPath) {
                 @NotNull
                 @Override
                 public Boolean perform() throws RepositoryException {
@@ -859,7 +859,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
     public boolean hasProperty(String relPath) throws RepositoryException {
         try {
             final String oakPath = getOakPathOrThrow(relPath);
-            return perform(new NodeOperation<Boolean>(dlg, "hasProperty") {
+            return perform(new NodeOperation<Boolean>(dlg, "hasProperty", relPath) {
                 @NotNull
                 @Override
                 public Boolean perform() throws RepositoryException {
@@ -878,7 +878,7 @@ public class NodeImpl<T extends NodeDelegate> extends ItemImpl<T> implements Nod
 
     @Override
     public boolean hasProperties() throws RepositoryException {
-        return perform(new NodeOperation<Boolean>(dlg, "hasProperties") {
+        return perform(new NodeOperation<Boolean>(dlg, "hasProperties", "*") {
             @NotNull
             @Override
             public Boolean perform() throws RepositoryException {

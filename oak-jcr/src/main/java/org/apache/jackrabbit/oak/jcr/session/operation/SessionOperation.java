@@ -40,6 +40,10 @@ public abstract class SessionOperation<T> {
         this(name, false);
     }
 
+    protected String getPath() {
+        return "";
+    }
+
     /**
      * Returns {@code true} if this operation updates the the transient
      */
@@ -86,7 +90,7 @@ public abstract class SessionOperation<T> {
      */
     @Override
     public String toString() {
-        return name;
+        return name + " " + getPath();
     }
 
 }
