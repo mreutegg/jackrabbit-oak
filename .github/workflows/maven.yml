@@ -37,4 +37,4 @@ jobs:
     - name: Build dependencies
       run: mvn -B -DskipTests -Dbaseline.skip=true -T 1C -am -nsu -pl :${{ matrix.module }} install
     - name: Test module
-      run: mvn -B -nsu -pl ${{ matrix.ut }} ${{ matrix.profile }} :${{ matrix.module }} verify
+      run: mvn -B -nsu ${{ matrix.ut }} ${{ matrix.profile }} -pl :${{ matrix.module }} verify
