@@ -26,6 +26,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-maven-
     - name: Build dependencies
-      run: mvn -B -DskipTests -Dbaseline.skip=true -T 1C -am -nsu -pl :{{ matrix.module }} install
+      run: mvn -B -DskipTests -Dbaseline.skip=true -T 1C -am -nsu -pl :${{ matrix.module }} install
     - name: Test module
       run: mvn -B -nsu -pl :${{ matrix.module }} verify
