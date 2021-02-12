@@ -21,6 +21,11 @@ jobs:
           - module: oak-jcr
             profile: ''
             ut: ''
+    services:
+      mongodb:
+        image: mongo:4.0
+        ports:
+          - 27017:27017
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK 1.8
@@ -37,4 +42,4 @@ jobs:
     - name: Build dependencies
       run: mvn -B -DskipTests -Dbaseline.skip=true -T 1C -am -nsu -pl :${{ matrix.module }} install
     - name: Test module
-      run: mvn -B -nsu ${{ matrix.ut }} ${{ matrix.profile }} -pl :${{ matrix.module }} verify
+      run: mvn -B -nsu -Dnsfixtures=DOCUMENT_NS ${{ matrix.ut }} ${{ matrix.profile }} -pl :${{ matrix.module }} verify
