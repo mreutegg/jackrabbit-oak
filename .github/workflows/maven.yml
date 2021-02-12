@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         module: [oak-store-document, oak-lucene, oak-it, oak-run, oak-upgrade, oak-pojosr, oak-it-osgi]
-        profile: '-PintegrationTesting'
+        profile: [-PintegrationTesting]
         ut: ''
         include:
           - module: oak-jcr
