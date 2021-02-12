@@ -11,7 +11,16 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        module: [oak-api, oak-commons]
+        module: [oak-store-document, oak-lucene, oak-it, oak-run, oak-upgrade, oak-pojosr, oak-it-osgi]
+        profile: -PintegrationTesting
+        ut: ''
+        include:
+          - module: oak-jcr
+            profile: -PintegrationTesting
+            ut: -Dsurefire.skip.ut=true
+          - module: oak-jcr
+            profile: ''
+            ut: ''
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK 1.8
@@ -28,4 +37,4 @@ jobs:
     - name: Build dependencies
       run: mvn -B -DskipTests -Dbaseline.skip=true -T 1C -am -nsu -pl :${{ matrix.module }} install
     - name: Test module
-      run: mvn -B -nsu -pl :${{ matrix.module }} verify
+      run: mvn -B -nsu -pl ${{ matrix.ut }} ${{ matrix.profile }} :${{ matrix.module }} verify
