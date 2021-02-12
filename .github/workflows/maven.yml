@@ -2,7 +2,7 @@ name: Java CI with Maven
 
 on:
   push:
-    branches: [ trunk ]
+    branches: [ github-workflow ]
   pull_request:
     branches: [ trunk ]
 
