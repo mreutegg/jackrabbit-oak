@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [oak-api, oak-commons]
     steps:
     - uses: actions/checkout@v2
     - name: Set up JDK 1.8
@@ -22,36 +25,7 @@ jobs:
         key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
         restore-keys: |
           ${{ runner.os }}-maven-
-    - name: Build with Maven
-      run: mvn -B -DskipTests -Dbaseline.skip=true -T 1C install
-    - name: Store artifacts
-      uses: actions/upload-artifact@v2
-      with:
-        name: artifacts
-        path: ~/.m2/repository/org/apache/jackrabbit
-  test:
-    needs: build
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        module: [oak-api, oak-commons]
-    steps:
-      - uses: actions/checkout@v2
-      - name: Set up JDK 1.8
-        uses: actions/setup-java@v1
-        with:
-          java-version: 1.8
-      - name: Cache local Maven repository
-        uses: actions/cache@v2
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
-      - name: Install artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: artifacts
-          path: ~/.m2/repository/org/apache/jackrabbit
-      - name: Build with Maven
-        run: mvn -B -nsu -pl :${{ matrix.module }} verify
+    - name: Build dependencies
+      run: mvn -B -DskipTests -Dbaseline.skip=true -T 1C -am -nsu -pl :{{ matrix.module }} install
+    - name: Test module
+      run: mvn -B -nsu -pl :${{ matrix.module }} verify
