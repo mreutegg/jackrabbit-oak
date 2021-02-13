@@ -4,7 +4,7 @@ on:
   push:
     branches: [ github-workflow ]
   pull_request:
-    branches: [ trunk ]
+    branches: [ github-workflow ]
 
 jobs:
   build:
