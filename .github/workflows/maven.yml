@@ -4,7 +4,7 @@ on:
   push:
     branches: [ github-workflow ]
   pull_request:
-    branches: [ trunk ]
+    branches: [ github-workflow ]
 
 jobs:
   build:
@@ -42,4 +42,6 @@ jobs:
     - name: Build dependencies
       run: mvn -B -DskipTests -Dbaseline.skip=true -T 1C -am -nsu -pl :${{ matrix.module }} install
     - name: Test module
-      run: mvn -B -nsu -Dnsfixtures=DOCUMENT_NS ${{ matrix.ut }} ${{ matrix.profile }} -pl :${{ matrix.module }} verify
+      run: mvn -B -nsu -Dnsfixtures=DOCUMENT_NS -Dskip.coverage=false ${{ matrix.ut }} ${{ matrix.profile }} -pl :${{ matrix.module }} verify
+    - name: Upload to Codecov
+      run: bash <(curl -s https://codecov.io/bash)
