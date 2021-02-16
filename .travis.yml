@@ -19,7 +19,7 @@ services:
   - docker
 env:
   global:
-    - MONGODB=4.0.16
+    - MONGODB=4.4.3
   matrix:
     - MODULE=oak-jcr PROFILE="-PintegrationTesting" UT="-Dsurefire.skip.ut=true" MONGODB_MODE="--single"
     - MODULE=oak-jcr PROFILE="" UT="" MONGODB_MODE="--single"
