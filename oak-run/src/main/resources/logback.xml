@@ -18,7 +18,7 @@
 <configuration>
 
   <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
-    <target>System.err</target>
+    <target>System.out</target>
     <encoder>
       <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
     </encoder>
@@ -53,6 +53,8 @@
 
   <!-- Display information messages from oak-run composite-prepare -->
   <logger name="org.apache.jackrabbit.oak.run.CompositePrepareCommand" level="INFO"/>
+
+  <logger name="org.apache.jackrabbit.oak.run.LookupCommand" level="INFO"/>
 
   <root level="warn">
     <appender-ref ref="STDERR" />

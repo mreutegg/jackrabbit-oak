@@ -70,5 +70,6 @@ public final class AvailableModes {
             .put("segment-copy", new SegmentCopyCommand())
             .put("server", new ServerCommand())
             .put("purge-index-versions", new PurgeOldIndexVersionCommand())
+            .put("lookup", new LookupCommand())
             .build());
 }
