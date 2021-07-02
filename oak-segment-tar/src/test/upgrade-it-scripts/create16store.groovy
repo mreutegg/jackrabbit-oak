@@ -38,3 +38,4 @@ nodeStore = session.store
 builder = nodeStore.getRoot().builder()
 addNodes(builder, 10, 5)
 nodeStore.merge(builder, EmptyHook.INSTANCE, CommitInfo.EMPTY);
+nodeStore.revisions.flush()
