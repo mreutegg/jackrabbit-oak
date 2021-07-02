@@ -31,8 +31,12 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 
 import org.apache.jackrabbit.oak.segment.SegmentVersion;
 import org.apache.jackrabbit.oak.segment.data.SegmentData;
@@ -64,12 +68,26 @@ public class UpgradeIT {
                 "console", fileStoreHome.getRoot().getAbsolutePath(), "--read-write",
                 ":load create16store.groovy")
                 .directory(new File("target", "upgrade-it"))
-                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
-                .redirectError(ProcessBuilder.Redirect.INHERIT)
+                .redirectErrorStream(true)
                 .start();
+        consume(oakConsole.getInputStream());
         assertTrue(
                 "Timeout while creating the source repository",
                 oakConsole.waitFor(2, MINUTES));
+    }
+
+    private void consume(InputStream in) {
+        new Thread(() -> {
+            BufferedReader r = new BufferedReader(new InputStreamReader(in));
+            String line;
+            try {
+                while ((line = r.readLine()) != null) {
+                    System.out.println(line);
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     @Test
