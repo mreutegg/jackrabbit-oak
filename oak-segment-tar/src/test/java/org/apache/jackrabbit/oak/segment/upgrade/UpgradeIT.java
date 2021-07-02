@@ -64,6 +64,8 @@ public class UpgradeIT {
                 "console", fileStoreHome.getRoot().getAbsolutePath(), "--read-write",
                 ":load create16store.groovy")
                 .directory(new File("target", "upgrade-it"))
+                .redirectOutput(ProcessBuilder.Redirect.INHERIT)
+                .redirectError(ProcessBuilder.Redirect.INHERIT)
                 .start();
         assertTrue(
                 "Timeout while creating the source repository",
