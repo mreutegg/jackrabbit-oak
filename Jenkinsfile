@@ -43,12 +43,14 @@ def buildModule(moduleSpec) {
         node(label: 'ubuntu') {
             timeout(60) {
                 checkout scm
-                sh "mvn --batch-mode -Dbaseline.skip=true -T 1C clean install -DskipTests -pl :${moduleName} -am"
-                try {
-                    sh "mvn --batch-mode ${testOptions} -DtrimStackTrace=false -Dnsfixtures=SEGMENT_TAR,DOCUMENT_NS verify -pl :${moduleName}"
-                } finally {
-                    archiveArtifacts(artifacts: '*/target/unit-tests.log', allowEmptyArchive: true)
-                    junit '*/target/surefire-reports/*.xml,*/target/failsafe-reports/*.xml'
+                withMaven {
+					sh "mvn --batch-mode -Dbaseline.skip=true -T 1C clean install -DskipTests -pl :${moduleName} -am"
+					try {
+						sh "mvn --batch-mode ${testOptions} -DtrimStackTrace=false -Dnsfixtures=SEGMENT_TAR,DOCUMENT_NS verify -pl :${moduleName}"
+					} finally {
+						archiveArtifacts(artifacts: '*/target/unit-tests.log', allowEmptyArchive: true)
+						junit '*/target/surefire-reports/*.xml,*/target/failsafe-reports/*.xml'
+					}
                 }
             }
         }
