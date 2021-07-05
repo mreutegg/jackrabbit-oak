@@ -19,8 +19,6 @@
  */
 
 def OAK_MODULES = 'oak-pojosr,oak-it-osgi'
-def JAVA_JDK_11=tool name: 'jdk_11_latest', type: 'hudson.model.JDK'
-def MAVEN_3_LATEST=tool name: 'maven_3_latest', type: 'hudson.tasks.Maven$MavenInstallation'
 
 properties([buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '20'))])
 
@@ -43,6 +41,8 @@ def buildModule(moduleSpec) {
     }
     stage('build ' + moduleSpec) {
         node(label: 'ubuntu') {
+            def JAVA_JDK_11=tool name: 'jdk_11_latest', type: 'hudson.model.JDK'
+            def MAVEN_3_LATEST=tool name: 'maven_3_latest', type: 'hudson.tasks.Maven$MavenInstallation'
             timeout(60) {
                 checkout scm
                 withEnv(["Path+JDK=$JAVA_JDK_11/bin","Path+MAVEN=$MAVEN_3_LATEST/bin","JAVA_HOME=$JAVA_JDK_11"]) {
