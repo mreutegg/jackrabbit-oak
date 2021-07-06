@@ -52,9 +52,9 @@ def buildModule(moduleSpec) {
                     // clean all modules
                     sh "${MAVEN_CMD} -T 1C clean"
                     // build and install up to desired module
-                    sh "${MAVEN_CMD} -Dbaseline.skip=true -T 1C clean install -DskipTests -pl :${moduleName} -am"
+                    sh "${MAVEN_CMD} -Dbaseline.skip=true -T 1C install -DskipTests -pl :${moduleName} -am"
                     try {
-                        sh "${MAVEN_CMD} ${testOptions} -Prat -DtrimStackTrace=false -Dnsfixtures=SEGMENT_TAR,DOCUMENT_NS verify -pl :${moduleName}"
+                        sh "${MAVEN_CMD} ${testOptions} -Prat -DtrimStackTrace=false -Dnsfixtures=SEGMENT_TAR,DOCUMENT_NS clean verify -pl :${moduleName}"
                     } finally {
                         archiveArtifacts(artifacts: '*/target/unit-tests.log', allowEmptyArchive: true)
                         junit(testResults: '*/target/surefire-reports/*.xml,*/target/failsafe-reports/*.xml', allowEmptyResults: true)
