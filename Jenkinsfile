@@ -47,6 +47,9 @@ def buildModule(moduleSpec) {
             timeout(60) {
                 checkout scm
                 withEnv(["Path+JDK=$JAVA_JDK_11/bin","Path+MAVEN=$MAVEN_3_LATEST/bin","JAVA_HOME=$JAVA_JDK_11"]) {
+                    // clean all modules
+                    sh "${MAVEN_CMD} -T 1C clean"
+                    // build and install up to desired module
                     sh "${MAVEN_CMD} -Dbaseline.skip=true -T 1C clean install -DskipTests -pl :${moduleName} -am"
                     try {
                         sh "${MAVEN_CMD} ${testOptions} -Prat -DtrimStackTrace=false -Dnsfixtures=SEGMENT_TAR,DOCUMENT_NS verify -pl :${moduleName}"
