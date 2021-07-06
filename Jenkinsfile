@@ -19,7 +19,6 @@
  */
 
 def OAK_MODULES = 'oak-api,oak-auth-external,oak-auth-ldap,oak-authorization-cug,oak-authorization-principalbased,oak-benchmarks,oak-benchmarks-elastic,oak-benchmarks-lucene,oak-benchmarks-solr,oak-blob,oak-blob-cloud,oak-blob-cloud-azure,oak-blob-plugins,oak-commons,oak-core,oak-core-spi,oak-examples,oak-exercise,oak-http,oak-it,oak-it-osgi,oak-jackrabbit-api,oak-jcr:ut,oak-jcr:it,oak-lucene,oak-pojosr,oak-query-spi,oak-run,oak-run-commons,oak-run-elastic,oak-search,oak-search-elastic,oak-search-mt,oak-security-spi,oak-segment-aws,oak-segment-azure,oak-segment-remote,oak-segment-tar,oak-solr-core,oak-solr-osgi,oak-standalone,oak-store-composite,oak-store-document,oak-store-spi,oak-upgrade,oak-webapp'
-def MAVEN_CMD = "mvn --batch-mode -Dmaven.repo.local=${env.HOME}/maven-repositories/${env.EXECUTOR_NUMBER}"
 
 properties([buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '20'))])
 
@@ -44,6 +43,7 @@ def buildModule(moduleSpec) {
         node(label: 'ubuntu') {
             def JAVA_JDK_11=tool name: 'jdk_11_latest', type: 'hudson.model.JDK'
             def MAVEN_3_LATEST=tool name: 'maven_3_latest', type: 'hudson.tasks.Maven$MavenInstallation'
+            def MAVEN_CMD = "mvn --batch-mode -Dmaven.repo.local=${env.HOME}/maven-repositories/${env.EXECUTOR_NUMBER}"
             timeout(60) {
                 checkout scm
                 withEnv(["Path+JDK=$JAVA_JDK_11/bin","Path+MAVEN=$MAVEN_3_LATEST/bin","JAVA_HOME=$JAVA_JDK_11"]) {
