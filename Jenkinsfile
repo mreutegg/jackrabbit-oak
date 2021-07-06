@@ -18,7 +18,9 @@
  * under the License.
  */
 
-def OAK_MODULES = 'oak-api,oak-auth-external,oak-auth-ldap,oak-authorization-cug,oak-authorization-principalbased,oak-benchmarks,oak-benchmarks-elastic,oak-benchmarks-lucene,oak-benchmarks-solr,oak-blob,oak-blob-cloud,oak-blob-cloud-azure,oak-blob-plugins,oak-commons,oak-core,oak-core-spi,oak-examples,oak-exercise,oak-http,oak-it,oak-it-osgi,oak-jackrabbit-api,oak-jcr:ut,oak-jcr:it,oak-lucene,oak-pojosr,oak-query-spi,oak-run,oak-run-commons,oak-run-elastic,oak-search,oak-search-elastic,oak-search-mt,oak-security-spi,oak-segment-aws,oak-segment-azure,oak-segment-remote,oak-segment-tar,oak-solr-core,oak-solr-osgi,oak-standalone,oak-store-composite,oak-store-document,oak-store-spi,oak-upgrade,oak-webapp'
+// schedule oak-jcr:ut,oak-search-elastic,oak-segment-tar,oak-store-document first
+// because they are longest running modules
+def OAK_MODULES = 'oak-jcr:ut,oak-search-elastic,oak-segment-tar,oak-store-document,oak-api,oak-auth-external,oak-auth-ldap,oak-authorization-cug,oak-authorization-principalbased,oak-benchmarks,oak-benchmarks-elastic,oak-benchmarks-lucene,oak-benchmarks-solr,oak-blob,oak-blob-cloud,oak-blob-cloud-azure,oak-blob-plugins,oak-commons,oak-core,oak-core-spi,oak-examples,oak-exercise,oak-http,oak-it,oak-it-osgi,oak-jackrabbit-api,oak-jcr:it,oak-lucene,oak-pojosr,oak-query-spi,oak-run,oak-run-commons,oak-run-elastic,oak-search,oak-search-mt,oak-security-spi,oak-segment-aws,oak-segment-azure,oak-segment-remote,oak-solr-core,oak-solr-osgi,oak-standalone,oak-store-composite,oak-store-spi,oak-upgrade,oak-webapp'
 
 properties([buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '10'))])
 
@@ -39,7 +41,7 @@ def buildModule(moduleSpec) {
             testOptions = '-PintegrationTesting -Dsurefire.skip.ut=true' 
         }
     }
-    stage('build ' + moduleSpec) {
+    stage(moduleSpec) {
         node(label: 'ubuntu') {
             def JAVA_JDK_11=tool name: 'jdk_11_latest', type: 'hudson.model.JDK'
             def MAVEN_3_LATEST=tool name: 'maven_3_latest', type: 'hudson.tasks.Maven$MavenInstallation'
