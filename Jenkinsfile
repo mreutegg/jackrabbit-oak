@@ -20,7 +20,7 @@
 
 def OAK_MODULES = 'oak-api,oak-auth-external,oak-auth-ldap,oak-authorization-cug,oak-authorization-principalbased,oak-benchmarks,oak-benchmarks-elastic,oak-benchmarks-lucene,oak-benchmarks-solr,oak-blob,oak-blob-cloud,oak-blob-cloud-azure,oak-blob-plugins,oak-commons,oak-core,oak-core-spi,oak-examples,oak-exercise,oak-http,oak-it,oak-it-osgi,oak-jackrabbit-api,oak-jcr:ut,oak-jcr:it,oak-lucene,oak-pojosr,oak-query-spi,oak-run,oak-run-commons,oak-run-elastic,oak-search,oak-search-elastic,oak-search-mt,oak-security-spi,oak-segment-aws,oak-segment-azure,oak-segment-remote,oak-segment-tar,oak-solr-core,oak-solr-osgi,oak-standalone,oak-store-composite,oak-store-document,oak-store-spi,oak-upgrade,oak-webapp'
 
-properties([buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '20'))])
+properties([buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '', numToKeepStr: '10'))])
 
 def buildModule(moduleSpec) {
     def moduleName = ''
@@ -49,7 +49,7 @@ def buildModule(moduleSpec) {
                 withEnv(["Path+JDK=$JAVA_JDK_11/bin","Path+MAVEN=$MAVEN_3_LATEST/bin","JAVA_HOME=$JAVA_JDK_11"]) {
                     sh "${MAVEN_CMD} -Dbaseline.skip=true -T 1C clean install -DskipTests -pl :${moduleName} -am"
                     try {
-                        sh "${MAVEN_CMD} ${testOptions} -DtrimStackTrace=false -Dnsfixtures=SEGMENT_TAR,DOCUMENT_NS verify -pl :${moduleName}"
+                        sh "${MAVEN_CMD} ${testOptions} -Prat -DtrimStackTrace=false -Dnsfixtures=SEGMENT_TAR,DOCUMENT_NS verify -pl :${moduleName}"
                     } finally {
                         archiveArtifacts(artifacts: '*/target/unit-tests.log', allowEmptyArchive: true)
                         junit(testResults: '*/target/surefire-reports/*.xml,*/target/failsafe-reports/*.xml', allowEmptyResults: true)
