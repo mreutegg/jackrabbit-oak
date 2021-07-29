@@ -28,6 +28,54 @@ var oak = (function(global){
         print("Oak Mongo Helpers");
     };
 
+    api.blobHistogram = function(limit) {
+        if (limit === undefined) {
+            limit = 0;
+        }
+        var histogram = {};
+        var size = 128;
+        for (var i = 0; i < 18; i++) {
+            histogram[size] = 0;
+            size *= 2;
+        }
+        var numDocs = 0;
+
+        db.nodes.find({_bin:1}).limit(limit).forEach(function(d) {
+            if (++numDocs % 1000 == 0) {
+                print("Scanned " + numDocs + " so far...");
+            }
+            for (var sub in d) {
+               if (!d.hasOwnProperty(sub) || typeof d[sub] != 'object') {
+                   continue;
+               }
+               for (var k in d[sub]) {
+                   if (!d[sub].hasOwnProperty(k)) {
+                       continue;
+                   }
+                   if (!d[sub][k]) {
+                       continue;
+                   }
+                   var o = d[sub][k].toString();
+                   if (o.startsWith('":blobId:0x')) {
+                      var s = o.length;
+                      var size = 128;
+                      for (var i = 0; i < 18; i++) {
+                          if (s < size) {
+                              histogram[size] = histogram[size] + s;
+                              break;
+                          }
+                          size *= 2;
+                      }
+                   }
+               }
+            }
+        });
+
+        for (var s in histogram) {
+            print(s + ": " + histogram[s]);
+        }
+    };
+
     /**
      * Prints all ids of documents in the nodes collection that contain changes
      * with the given revisions. Example:
