@@ -28,6 +28,44 @@ var oak = (function(global){
         print("Oak Mongo Helpers");
     };
 
+    api.missingBin = function(fix) {
+        var numDocs = 0;
+        var numMissing = 0;
+
+        db.nodes.find().forEach(function(d) {
+            if (++numDocs % 1000000 == 0) {
+                print("Scanned " + numDocs + " so far...");
+            }
+            for (var sub in d) {
+               if (!d.hasOwnProperty(sub) || typeof d[sub] != 'object') {
+                   continue;
+               }
+               for (var k in d[sub]) {
+                   if (!d[sub].hasOwnProperty(k)) {
+                       continue;
+                   }
+                   if (!d[sub][k]) {
+                       continue;
+                   }
+                   var o = d[sub][k].toString();
+                   if (o.startsWith('":blobId:')) {
+                        if (!d._bin) {
+                            var op = "Found ";
+                            if (fix) {
+                                op = "Fixed ";
+                                db.nodes.update({_id: d._id}, {$set: {_bin: NumberLong(1)}});
+                            }
+                            print(op + d._id);
+                            numMissing++;
+                            return;
+                        }
+                   }
+               }
+            }
+        });
+        print("Total affected documents: " + numMissing);
+    };
+
     /**
      * Prints all ids of documents in the nodes collection that contain changes
      * with the given revisions. Example:
