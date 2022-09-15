@@ -18,6 +18,7 @@
 package org.apache.jackrabbit.oak.run;
 
 import com.google.common.io.Closer;
+
 import org.apache.jackrabbit.oak.Oak;
 import org.apache.jackrabbit.oak.api.ContentRepository;
 import org.apache.jackrabbit.oak.api.ContentSession;
@@ -33,6 +34,8 @@ import org.apache.jackrabbit.oak.plugins.version.ReadOnlyVersionManager;
 import org.apache.jackrabbit.oak.spi.query.QueryIndexProvider;
 import org.apache.jackrabbit.oak.spi.security.OpenSecurityProvider;
 import org.jetbrains.annotations.NotNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.jcr.SimpleCredentials;
 import java.io.IOException;
@@ -40,6 +43,11 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.apache.jackrabbit.JcrConstants.JCR_BASEVERSION;
+import static org.apache.jackrabbit.JcrConstants.JCR_SYSTEM;
+import static org.apache.jackrabbit.JcrConstants.JCR_VERSIONHISTORY;
 
 /**
  * Generate a report with the list of affected versionHistory nodes containing
@@ -47,14 +55,18 @@ import java.util.Map;
  * This is something that shouldn't happen when Oak is strictly used, but some
  * external tools may introduce this kind of inconsistencies.
  */
-public class GenerateVersionInconsistencyReport {
+    public class GenerateVersionInconsistencyReport {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GenerateVersionInconsistencyReport.class);
 
     private static String VERSION_STORAGE_PATH = "/jcr:system/jcr:versionStorage";
     private static int PROGRESS_WAITING_TIME_MILLIS = 20 * 1000;
 
-    private volatile int count = 0;
-    private volatile int emptyNodesCount = 0;
-    private volatile int wrongNodesCount = 0;
+    private final AtomicLong count = new AtomicLong();
+    private final AtomicLong emptyNodesCount = new AtomicLong();
+    private final AtomicLong wrongNodesCount = new AtomicLong();
+    private final AtomicLong missingVersionHistoryCount = new AtomicLong();
+    private final AtomicLong missingBaseVersionCount = new AtomicLong();
     private volatile boolean runningJob = false;
 
     /**
@@ -131,12 +143,15 @@ public class GenerateVersionInconsistencyReport {
 
             HashSet<Tree> emptyNodes = new HashSet<>();
             HashMap<String, String> wrongNodes = new HashMap<>();
+            Map<String, String> baseVersionMissing = new HashMap<>();
+            Map<String, String> versionHistoryMissing = new HashMap<>();
 
             System.out.println("Searching for inconsistencies in version history...");
             runningJob = true;
             Thread progressThread = new Thread(new ProgressThread());
             progressThread.start();
             iterateAndFindEmptyAndWrongVersionNodes(tree, 3, readOnlyVersionManager, emptyNodes, wrongNodes);
+            checkVersionableNodes(root, readOnlyVersionManager, baseVersionMissing, versionHistoryMissing);
             runningJob = false;
             System.out.println("Job Finished. Traversed: " + count + " nodes. Found " + emptyNodesCount + " empty and " + wrongNodesCount + " wrong nodes.");
             System.out.println();
@@ -156,6 +171,24 @@ public class GenerateVersionInconsistencyReport {
             }
             System.out.println("Total wrong nodes: " + wrongNodes.size());
             System.out.println("=== End of versionHistory nodes with wrong primaryType list ===");
+            System.out.println();
+
+            System.out.println("=== List 3: versionable nodes with missing version history ===");
+            for (Map.Entry<String, String> entry : versionHistoryMissing.entrySet()) {
+                String nodePath = entry.getKey();
+                System.out.println(nodePath + " => " + entry.getValue());
+            }
+            System.out.println("Total missing version histories: " + versionHistoryMissing.size());
+            System.out.println("=== End of versionable nodes with missing version history ===");
+            System.out.println();
+
+            System.out.println("=== List 4: versionable nodes with missing base version ===");
+            for (Map.Entry<String, String> entry : baseVersionMissing.entrySet()) {
+                String nodePath = entry.getKey();
+                System.out.println(nodePath + " => " + entry.getValue());
+            }
+            System.out.println("Total missing base version: " + baseVersionMissing.size());
+            System.out.println("=== End of versionable nodes with missing base version ===");
 
             dns.dispose();
         } catch (Throwable e) {
@@ -165,24 +198,73 @@ public class GenerateVersionInconsistencyReport {
         }
     }
 
+    private void checkVersionableNodes(Root root,
+                                       ReadOnlyVersionManager vMgr,
+                                       Map<String, String> baseVersionMissing,
+                                       Map<String, String> versionHistoryMissing) {
+        for (Tree t : root.getTree("/").getChildren()) {
+            if (!t.getName().equals(JCR_SYSTEM)) {
+                checkVersionableNodes(t, vMgr, baseVersionMissing, versionHistoryMissing);
+            }
+        }
+    }
+
+    private void checkVersionableNodes(Tree tree,
+                                       ReadOnlyVersionManager vMgr,
+                                       Map<String, String> baseVersionMissing,
+                                       Map<String, String> versionHistoryMissing) {
+        count.incrementAndGet();
+        if (tree.hasProperty(JCR_BASEVERSION)) {
+            boolean exists = false;
+            try {
+                if (vMgr.getBaseVersion(tree) != null) {
+                    exists = true;
+                }
+            } catch (Exception e) {
+                LOG.debug("Exception while getting base version for {}", tree.getPath(), e);
+            }
+            if (!exists) {
+                baseVersionMissing.put(tree.getPath(), tree.getProperty(JCR_BASEVERSION).getValue(Type.REFERENCE));
+                missingBaseVersionCount.incrementAndGet();
+            }
+        }
+        if (tree.hasProperty(JCR_VERSIONHISTORY)) {
+            boolean exists = false;
+            try {
+                if (vMgr.getVersionHistory(tree) != null) {
+                    exists = true;
+                }
+            } catch (Exception e) {
+                LOG.debug("Exception while getting version history for {}", tree.getPath(), e);
+            }
+            if (!exists) {
+                versionHistoryMissing.put(tree.getPath(), tree.getProperty(JCR_VERSIONHISTORY).getValue(Type.REFERENCE));
+                missingVersionHistoryCount.incrementAndGet();
+            }
+        }
+        for (Tree c : tree.getChildren()) {
+            checkVersionableNodes(c, vMgr, baseVersionMissing, versionHistoryMissing);
+        }
+    }
+
     private void iterateAndFindEmptyAndWrongVersionNodes(Tree root, int level, ReadOnlyVersionManager readOnlyVersionManager, HashSet<Tree> emptyNodes, HashMap<String, String> wrongNodes) {
         for (Tree treeNode : root.getChildren()) {
-            count++;
+            count.incrementAndGet();
             if (treeNode.getPropertyCount() == 0) {
                 emptyNodes.add(treeNode);
-                emptyNodesCount++;
+                emptyNodesCount.incrementAndGet();
             }
             if (level == 6) {
                 PropertyState prop = treeNode.getProperty("jcr:primaryType");
                 if (prop == null) {
                     wrongNodes.put(treeNode.getPath(), "is null");
-                    wrongNodesCount++;
+                    wrongNodesCount.incrementAndGet();
                 } else if (Type.STRING.equals(prop.getType())) {
                     wrongNodes.put(treeNode.getPath(), "not a String");
-                    wrongNodesCount++;
+                    wrongNodesCount.incrementAndGet();
                 } else if (!"nt:versionHistory".equals(prop.getValue(Type.STRING))) {
                     wrongNodes.put(treeNode.getPath(), "is set to " + prop.getValue(Type.STRING));
-                    wrongNodesCount++;
+                    wrongNodesCount.incrementAndGet();
                 }
             }
             iterateAndFindEmptyAndWrongVersionNodes(treeNode, level+1, readOnlyVersionManager, emptyNodes, wrongNodes);
@@ -193,7 +275,8 @@ public class GenerateVersionInconsistencyReport {
         public void run() {
             try {
                 while (runningJob) {
-                    System.out.println("Job is running... Traversed " + count + " nodes. Found " + emptyNodesCount + " empty and " + wrongNodesCount + " wrong nodes.");
+                    System.out.println("Job is running... Traversed " + count + " nodes. Found " + emptyNodesCount.get() + " empty and " + wrongNodesCount.get() + " wrong nodes. " +
+                            "Found " + missingVersionHistoryCount + " missing version histories and " + missingBaseVersionCount + " missing base versions.");
                     Thread.sleep(PROGRESS_WAITING_TIME_MILLIS);
                 }
             } catch (InterruptedException e) {
