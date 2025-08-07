@@ -22,8 +22,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.jcr.Node;
 import javax.jcr.NodeIterator;
@@ -36,8 +39,11 @@ import org.apache.jackrabbit.guava.common.util.concurrent.ListenableFuture;
 import org.apache.jackrabbit.guava.common.util.concurrent.ListeningExecutorService;
 import org.apache.jackrabbit.guava.common.util.concurrent.MoreExecutors;
 
+import org.apache.jackrabbit.oak.commons.concurrent.ExecutorCloser;
 import org.apache.jackrabbit.oak.fixture.NodeStoreFixture;
 import org.junit.Test;
+
+import static org.junit.Assert.fail;
 
 /**
  * Test cases asserting concurrent session access does not
@@ -46,6 +52,46 @@ import org.junit.Test;
 public class ConcurrentReadIT extends AbstractRepositoryTest {
     public ConcurrentReadIT(NodeStoreFixture fixture) {
         super(fixture);
+    }
+
+    @Test
+    public void concurrentReadRefresh() throws Exception {
+        final Session session = createAdminSession();
+        try {
+            final Node testRoot = session.getRootNode().addNode("test-root");
+            session.save();
+
+            final String jcrPrimaryTypeExpanded = "{" + session.getNamespaceURI("jcr") + "}primaryType";
+
+            final AtomicBoolean stop = new AtomicBoolean(false);
+            ExecutorService executorService = Executors.newSingleThreadExecutor();
+            try {
+                Future<?> result = executorService.submit(() -> {
+                    try {
+                        while (!stop.get()) {
+                            testRoot.getProperty(jcrPrimaryTypeExpanded);
+                        }
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+                long end = System.currentTimeMillis() + 1000 * 100; // 100 seconds
+                while (System.currentTimeMillis() < end && !result.isDone()) {
+                    session.refresh(false);
+                }
+                stop.set(true);
+                try {
+                    result.get();
+                } catch (ExecutionException e) {
+                    e.getCause().printStackTrace();
+                    fail("Concurrent read/write failed: " + e.getCause());
+                }
+            } finally {
+                new ExecutorCloser(executorService).close();
+            }
+        } finally {
+            session.logout();
+        }
     }
 
     @Test
